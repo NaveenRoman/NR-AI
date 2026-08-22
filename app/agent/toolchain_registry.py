@@ -10,13 +10,54 @@ from typing import Any, Dict, List, Optional
 
 class ToolchainRegistry:
     """
-    NR AI Centralized Toolchain Registry.
+    NR AI Centralized Toolchain Registry with Persistent Installation Memory.
     Detects and inspects the physical availability, exact versions,
-    executable paths, and specific capabilities of all developer SDKs and runtimes.
+    executable paths, installation status, and specific capabilities of all developer SDKs and runtimes.
     """
+
+    MEMORY_FILE = Path("data/toolchains/installation_memory.json")
 
     def __init__(self):
         self._cache: Optional[Dict[str, Dict[str, Any]]] = None
+        self.MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self.installation_memory: Dict[str, Dict[str, Any]] = self._load_memory()
+
+    def _load_memory(self) -> Dict[str, Dict[str, Any]]:
+        if self.MEMORY_FILE.exists():
+            try:
+                return json.loads(self.MEMORY_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                return {}
+        return {}
+
+    def _save_memory(self) -> None:
+        try:
+            self.MEMORY_FILE.write_text(json.dumps(self.installation_memory, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def record_installation_state(
+        self,
+        tool_name: str,
+        status: str,
+        version: Optional[str] = None,
+        path: Optional[str] = None,
+        capabilities: Optional[List[str]] = None,
+        missing_components: Optional[List[str]] = None,
+        human_action_required: Optional[str] = None,
+    ) -> None:
+        import time
+        self.installation_memory[tool_name.lower()] = {
+            "name": tool_name,
+            "status": status,
+            "version": version,
+            "path": path,
+            "capabilities": capabilities or [],
+            "missing_components": missing_components or [],
+            "human_action_required": human_action_required,
+            "last_validated": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        }
+        self._save_memory()
 
     def probe_all(self, refresh: bool = False) -> Dict[str, Dict[str, Any]]:
         if self._cache is not None and not refresh:
@@ -43,6 +84,18 @@ class ToolchainRegistry:
             "git": self._probe_git(),
         }
         self._cache = tools
+
+        for k, v in tools.items():
+            self.record_installation_state(
+                tool_name=v.get("name", k),
+                status=v.get("status", "UNAVAILABLE"),
+                version=v.get("version"),
+                path=v.get("path"),
+                capabilities=v.get("capabilities"),
+                missing_components=v.get("missing_components"),
+                human_action_required=v.get("human_action_required"),
+            )
+
         return tools
 
     def get_tool(self, name: str) -> Dict[str, Any]:
@@ -157,7 +210,11 @@ class ToolchainRegistry:
     def _probe_maven(self) -> Dict[str, Any]:
         mvn_cmd = shutil.which("mvn") or shutil.which("mvn.cmd")
         if not mvn_cmd:
-            return self._unavailable("Maven")
+            return self._unavailable(
+                "Maven",
+                missing=["mvn.cmd", "Maven Wrapper"],
+                human_action="Provide mvnw.cmd wrapper in project or install via 'winget install Apache.Maven'"
+            )
         try:
             res = subprocess.run([mvn_cmd, "-v"], capture_output=True, text=True, shell=True, timeout=3)
             return {
@@ -169,12 +226,16 @@ class ToolchainRegistry:
                 "capabilities": ["dependency_resolution", "package_build"],
             }
         except Exception:
-            return self._unavailable("Maven")
+            return self._unavailable("Maven", missing=["mvn execution error"])
 
     def _probe_gradle(self) -> Dict[str, Any]:
         gradle_cmd = shutil.which("gradle") or shutil.which("gradle.bat")
         if not gradle_cmd:
-            return self._unavailable("Gradle")
+            return self._unavailable(
+                "Gradle",
+                missing=["gradle.bat", "Gradle Wrapper"],
+                human_action="Provide gradlew.bat wrapper in project or install via 'winget install Gradle.Gradle'"
+            )
         try:
             res = subprocess.run([gradle_cmd, "-v"], capture_output=True, text=True, shell=True, timeout=3)
             return {
@@ -186,7 +247,120 @@ class ToolchainRegistry:
                 "capabilities": ["android_build", "kotlin_compilation", "task_execution"],
             }
         except Exception:
-            return self._unavailable("Gradle")
+            return self._unavailable("Gradle", missing=["gradle execution error"])
+
+    def _probe_unity(self) -> Dict[str, Any]:
+        candidates = [
+            r"C:\Program Files\Unity\Hub\Editor\2022.3.35f1\Editor\Unity.exe",
+            r"C:\Program Files\Unity\Editor\Unity.exe",
+        ]
+        unity_exe = next((p for p in candidates if os.path.exists(p)), None)
+        if not unity_exe:
+            return self._unavailable(
+                "Unity Editor",
+                missing=["Unity.exe", "Unity Hub Editor folder"],
+                human_action="Install Unity Editor 2022.3 LTS via Unity Hub and sign in with Unity ID"
+            )
+        return {
+            "name": "Unity Editor",
+            "available": True,
+            "status": "AVAILABLE",
+            "version": "2022.3.35f1",
+            "path": str(unity_exe),
+            "capabilities": ["batch_mode_build", "scene_execution", "csharp_scripting"],
+        }
+
+    def _probe_unreal_editor(self) -> Dict[str, Any]:
+        candidates = [
+            r"C:\Program Files\Epic Games\UE_5.3\Engine\Binaries\Win64\UnrealEditor.exe",
+            r"C:\Program Files\Epic Games\UE_5.2\Engine\Binaries\Win64\UnrealEditor.exe",
+        ]
+        editor_exe = next((p for p in candidates if os.path.exists(p)), None)
+        if not editor_exe:
+            return self._unavailable(
+                "Unreal Editor",
+                missing=["UnrealEditor.exe", "Epic Games UE5 Installation"],
+                human_action="Install Unreal Engine 5.3 via Epic Games Launcher and accept license"
+            )
+        return {
+            "name": "Unreal Editor",
+            "available": True,
+            "status": "AVAILABLE",
+            "version": "5.3",
+            "path": str(editor_exe),
+            "capabilities": ["editor_launch", "gameplay_simulation", "blueprint_compilation"],
+        }
+
+    def _probe_unreal_ubt(self) -> Dict[str, Any]:
+        candidates = [
+            r"C:\Program Files\Epic Games\UE_5.3\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe",
+        ]
+        ubt_exe = next((p for p in candidates if os.path.exists(p)), None)
+        if not ubt_exe:
+            return self._unavailable(
+                "UnrealBuildTool (UBT)",
+                missing=["UnrealBuildTool.exe", "DotNET UBT binary"],
+                human_action="Install Unreal Engine 5.3 via Epic Games Launcher"
+            )
+        return {
+            "name": "UnrealBuildTool (UBT)",
+            "available": True,
+            "status": "AVAILABLE",
+            "version": "5.3",
+            "path": str(ubt_exe),
+            "capabilities": ["cpp_module_compilation", "uht_reflection_generation"],
+        }
+
+    def _probe_msvc(self) -> Dict[str, Any]:
+        cl_exe = shutil.which("cl") or shutil.which("cl.exe")
+        if not cl_exe:
+            return self._unavailable(
+                "MSVC (cl.exe)",
+                missing=["cl.exe", "Visual Studio C++ Build Tools"],
+                human_action="Install Visual Studio C++ Build Tools workload"
+            )
+        return {
+            "name": "MSVC (cl.exe)",
+            "available": True,
+            "status": "AVAILABLE",
+            "version": "MSVC C++ Compiler",
+            "path": str(cl_exe),
+            "capabilities": ["c_cpp_compilation", "native_windows_build"],
+        }
+
+    def _probe_docker(self) -> Dict[str, Any]:
+        docker_exe = shutil.which("docker") or shutil.which("docker.exe")
+        if not docker_exe:
+            return self._unavailable(
+                "Docker",
+                missing=["docker.exe", "Docker Desktop daemon"],
+                human_action="Install Docker Desktop via installer and start Docker daemon"
+            )
+        return {
+            "name": "Docker",
+            "available": True,
+            "status": "AVAILABLE",
+            "version": "Installed",
+            "path": str(docker_exe),
+            "capabilities": ["container_build", "docker_compose", "daemon_client"],
+        }
+
+    def _unavailable(
+        self,
+        name: str,
+        missing: Optional[List[str]] = None,
+        human_action: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "name": name,
+            "available": False,
+            "status": "BLOCKED — HUMAN ACTION REQUIRED" if human_action else "UNAVAILABLE",
+            "version": None,
+            "path": None,
+            "capabilities": [],
+            "missing_components": missing or [f"{name} binary not found"],
+            "human_action_required": human_action,
+        }
 
     def _probe_android_sdk(self) -> Dict[str, Any]:
         sdk_paths = [
@@ -388,12 +562,19 @@ class ToolchainRegistry:
         except Exception:
             return self._unavailable("Git")
 
-    def _unavailable(self, name: str) -> Dict[str, Any]:
+    def _unavailable(
+        self,
+        name: str,
+        missing: Optional[List[str]] = None,
+        human_action: Optional[str] = None,
+    ) -> Dict[str, Any]:
         return {
             "name": name,
             "available": False,
-            "status": "UNAVAILABLE",
+            "status": "BLOCKED — HUMAN ACTION REQUIRED" if human_action else "UNAVAILABLE",
             "version": None,
             "path": None,
             "capabilities": [],
+            "missing_components": missing or [f"{name} binary not found"],
+            "human_action_required": human_action,
         }

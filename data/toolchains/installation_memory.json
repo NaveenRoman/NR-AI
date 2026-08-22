@@ -1,0 +1,248 @@
+{
+  "python": {
+    "name": "Python",
+    "status": "AVAILABLE",
+    "version": "3.11.9",
+    "path": "C:\\NR-AI\\.venv\\Scripts\\python.exe",
+    "capabilities": [
+      "runtime",
+      "unittest",
+      "sqlite3",
+      "bytecode_compilation",
+      "http_server"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "node.js": {
+    "name": "Node.js",
+    "status": "AVAILABLE",
+    "version": "v22.20.0",
+    "path": "C:\\Program Files\\nodejs\\node.EXE",
+    "capabilities": [
+      "runtime",
+      "syntax_check",
+      "v8_engine",
+      "commonjs",
+      "esm"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "npm": {
+    "name": "npm",
+    "status": "AVAILABLE",
+    "version": "10.9.3",
+    "path": "C:\\Program Files\\nodejs\\npm.CMD",
+    "capabilities": [
+      "package_manager",
+      "dependency_resolution",
+      "script_runner"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "java runtime": {
+    "name": "Java Runtime",
+    "status": "AVAILABLE",
+    "version": "23.0.1",
+    "path": "C:\\Program Files\\Common Files\\Oracle\\Java\\javapath\\java.EXE",
+    "capabilities": [
+      "jvm_execution",
+      "bytecode_runner",
+      "spring_boot_runner"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "java compiler (javac)": {
+    "name": "Java Compiler (javac)",
+    "status": "AVAILABLE",
+    "version": "23.0.1",
+    "path": "C:\\Program Files\\Common Files\\Oracle\\Java\\javapath\\javac.EXE",
+    "capabilities": [
+      "bytecode_compilation",
+      "java_compiler"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "maven": {
+    "name": "Maven",
+    "status": "BLOCKED \u2014 HUMAN ACTION REQUIRED",
+    "version": null,
+    "path": null,
+    "capabilities": [],
+    "missing_components": [
+      "mvn.cmd",
+      "Maven Wrapper"
+    ],
+    "human_action_required": "Provide mvnw.cmd wrapper in project or install via 'winget install Apache.Maven'",
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "gradle": {
+    "name": "Gradle",
+    "status": "BLOCKED \u2014 HUMAN ACTION REQUIRED",
+    "version": null,
+    "path": null,
+    "capabilities": [],
+    "missing_components": [
+      "gradle.bat",
+      "Gradle Wrapper"
+    ],
+    "human_action_required": "Provide gradlew.bat wrapper in project or install via 'winget install Gradle.Gradle'",
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "android sdk": {
+    "name": "Android SDK",
+    "status": "AVAILABLE",
+    "version": "35.0.0",
+    "path": "C:\\Users\\navee\\AppData\\Local\\Android\\Sdk",
+    "capabilities": [
+      "aapt2_resource_compile",
+      "manifest_inspection",
+      "avd_management"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "adb (android debug bridge)": {
+    "name": "ADB (Android Debug Bridge)",
+    "status": "AVAILABLE",
+    "version": "Android Debug Bridge version 1.0.41",
+    "path": "C:\\Users\\navee\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+    "capabilities": [
+      "device_discovery",
+      "apk_install",
+      "logcat_streaming"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "flutter": {
+    "name": "Flutter",
+    "status": "AVAILABLE",
+    "version": "Installed (Dart 3.7.0)",
+    "path": "C:\\flutter\\bin\\flutter.BAT",
+    "capabilities": [
+      "flutter_create",
+      "flutter_analyze",
+      "flutter_test",
+      "flutter_build"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "dart sdk": {
+    "name": "Dart SDK",
+    "status": "AVAILABLE",
+    "version": "3.7.0",
+    "path": "C:\\flutter\\bin\\dart.BAT",
+    "capabilities": [
+      "dart_analyze",
+      "dart_test",
+      "dart_run",
+      "static_analysis"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "unity editor": {
+    "name": "Unity Editor",
+    "status": "UNAVAILABLE",
+    "version": null,
+    "path": null,
+    "capabilities": [],
+    "missing_components": [
+      "Unity Editor binary not found"
+    ],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "unreal editor": {
+    "name": "Unreal Editor",
+    "status": "UNAVAILABLE",
+    "version": null,
+    "path": null,
+    "capabilities": [],
+    "missing_components": [
+      "Unreal Editor binary not found"
+    ],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "unrealbuildtool (ubt)": {
+    "name": "UnrealBuildTool (UBT)",
+    "status": "UNAVAILABLE",
+    "version": null,
+    "path": null,
+    "capabilities": [],
+    "missing_components": [
+      "UnrealBuildTool (UBT) binary not found"
+    ],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "msvc (cl.exe)": {
+    "name": "MSVC (cl.exe)",
+    "status": "UNAVAILABLE",
+    "version": null,
+    "path": null,
+    "capabilities": [],
+    "missing_components": [
+      "MSVC (cl.exe) binary not found"
+    ],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "windows sdk": {
+    "name": "Windows SDK",
+    "status": "AVAILABLE",
+    "version": "10.0.22621.0",
+    "path": "C:\\Program Files (x86)\\Windows Kits\\10",
+    "capabilities": [
+      "windows_headers",
+      "win32_api",
+      "directx_sdks"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "docker": {
+    "name": "Docker",
+    "status": "UNAVAILABLE",
+    "version": null,
+    "path": null,
+    "capabilities": [],
+    "missing_components": [
+      "Docker binary not found"
+    ],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  },
+  "git": {
+    "name": "Git",
+    "status": "AVAILABLE",
+    "version": "2.45.1.windows.1",
+    "path": "C:\\Program Files\\Git\\cmd\\git.EXE",
+    "capabilities": [
+      "version_control",
+      "branching",
+      "status_diff",
+      "safe_checkpoints"
+    ],
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:09:25"
+  }
+}

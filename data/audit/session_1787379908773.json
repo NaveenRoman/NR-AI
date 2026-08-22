@@ -1,0 +1,39 @@
+{
+  "session_id": "session_1787379908773",
+  "total_events": 3,
+  "events": [
+    {
+      "timestamp": 1787379909.0272875,
+      "formatted_time": "2026-08-22 11:55:09",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "Fix the error in this Python program"
+      }
+    },
+    {
+      "timestamp": 1787379909.0272875,
+      "formatted_time": "2026-08-22 11:55:09",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 1,
+        "actions": [
+          "fix_code"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787379909.2793956,
+      "formatted_time": "2026-08-22 11:55:09",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "fix_code",
+        "description": "Analyze and heal errors in data/test_buggy.py",
+        "result_message": null
+      }
+    }
+  ]
+}

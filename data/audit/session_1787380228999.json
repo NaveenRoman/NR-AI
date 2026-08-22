@@ -1,0 +1,39 @@
+{
+  "session_id": "session_1787380228999",
+  "total_events": 3,
+  "events": [
+    {
+      "timestamp": 1787380229.229625,
+      "formatted_time": "2026-08-22 12:00:29",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "Create a Python program that prints Hello NR AI and run it"
+      }
+    },
+    {
+      "timestamp": 1787380229.229625,
+      "formatted_time": "2026-08-22 12:00:29",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 1,
+        "actions": [
+          "code_execute"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787380229.3504457,
+      "formatted_time": "2026-08-22 12:00:29",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "code_execute",
+        "description": "Create and execute hello_nr_ai.py",
+        "result_message": null
+      }
+    }
+  ]
+}

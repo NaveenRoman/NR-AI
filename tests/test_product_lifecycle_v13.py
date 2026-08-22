@@ -40,7 +40,7 @@ class TestProductLifecycleV13(unittest.TestCase):
 
         # Unreal editor status must be transparent
         unreal_tool = registry.get_tool("unreal_editor")
-        self.assertIn(unreal_tool["status"], ["AVAILABLE", "UNAVAILABLE"])
+        self.assertIn(unreal_tool["status"], ["AVAILABLE", "UNAVAILABLE", "BLOCKED — HUMAN ACTION REQUIRED"])
 
     def test_02_dependency_graph_impact_analysis(self):
         """Verifies DependencyGraph accurately tracks downstream dependents."""
