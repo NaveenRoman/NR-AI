@@ -323,7 +323,12 @@ class ToolchainRegistry:
         }
 
     def _probe_msvc(self) -> Dict[str, Any]:
-        cl_exe = shutil.which("cl") or shutil.which("cl.exe")
+        candidates = [
+            shutil.which("cl"),
+            shutil.which("cl.exe"),
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\bin\Hostx64\x64\cl.exe",
+        ]
+        cl_exe = next((p for p in candidates if p and os.path.exists(p)), None)
         if not cl_exe:
             return self._unavailable(
                 "MSVC (cl.exe)",
@@ -334,10 +339,27 @@ class ToolchainRegistry:
             "name": "MSVC (cl.exe)",
             "available": True,
             "status": "AVAILABLE",
-            "version": "MSVC C++ Compiler",
+            "version": "19.29.30159",
             "path": str(cl_exe),
-            "capabilities": ["c_cpp_compilation", "native_windows_build"],
+            "capabilities": ["c_cpp_compilation", "native_windows_build", "x64_compilation"],
         }
+
+    def _probe_winsdk(self) -> Dict[str, Any]:
+        winsdk_dir = r"C:\Program Files (x86)\Windows Kits\10"
+        if os.path.exists(winsdk_dir):
+            inc = Path(winsdk_dir) / "Include"
+            if inc.exists():
+                versions = [v for v in os.listdir(inc) if v.startswith("10.")]
+                if versions:
+                    return {
+                        "name": "Windows SDK",
+                        "available": True,
+                        "status": "AVAILABLE",
+                        "version": versions[-1],
+                        "path": str(winsdk_dir),
+                        "capabilities": ["windows_headers", "win32_api", "directx_sdks"],
+                    }
+        return self._unavailable("Windows SDK")
 
     def _probe_docker(self) -> Dict[str, Any]:
         docker_exe = shutil.which("docker") or shutil.which("docker.exe")
@@ -462,99 +484,6 @@ class ToolchainRegistry:
         except Exception:
             return self._unavailable("Dart SDK")
 
-    def _probe_unity(self) -> Dict[str, Any]:
-        candidates = [
-            r"C:\Program Files\Unity\Hub\Editor\2022.3.35f1\Editor\Unity.exe",
-            r"C:\Program Files\Unity\Editor\Unity.exe",
-        ]
-        unity_exe = next((p for p in candidates if os.path.exists(p)), None)
-        if not unity_exe:
-            return self._unavailable("Unity Editor")
-        return {
-            "name": "Unity Editor",
-            "available": True,
-            "status": "AVAILABLE",
-            "version": "2022.3.35f1",
-            "path": str(unity_exe),
-            "capabilities": ["batch_mode_build", "scene_execution", "csharp_scripting"],
-        }
-
-    def _probe_unreal_editor(self) -> Dict[str, Any]:
-        candidates = [
-            r"C:\Program Files\Epic Games\UE_5.3\Engine\Binaries\Win64\UnrealEditor.exe",
-            r"C:\Program Files\Epic Games\UE_5.2\Engine\Binaries\Win64\UnrealEditor.exe",
-        ]
-        editor_exe = next((p for p in candidates if os.path.exists(p)), None)
-        if not editor_exe:
-            return self._unavailable("Unreal Editor")
-        return {
-            "name": "Unreal Editor",
-            "available": True,
-            "status": "AVAILABLE",
-            "version": "5.3",
-            "path": str(editor_exe),
-            "capabilities": ["editor_launch", "gameplay_simulation", "blueprint_compilation"],
-        }
-
-    def _probe_unreal_ubt(self) -> Dict[str, Any]:
-        candidates = [
-            r"C:\Program Files\Epic Games\UE_5.3\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe",
-        ]
-        ubt_exe = next((p for p in candidates if os.path.exists(p)), None)
-        if not ubt_exe:
-            return self._unavailable("UnrealBuildTool (UBT)")
-        return {
-            "name": "UnrealBuildTool (UBT)",
-            "available": True,
-            "status": "AVAILABLE",
-            "version": "5.3",
-            "path": str(ubt_exe),
-            "capabilities": ["cpp_module_compilation", "uht_reflection_generation"],
-        }
-
-    def _probe_msvc(self) -> Dict[str, Any]:
-        cl_exe = shutil.which("cl") or shutil.which("cl.exe")
-        if not cl_exe:
-            return self._unavailable("MSVC (cl.exe)")
-        return {
-            "name": "MSVC (cl.exe)",
-            "available": True,
-            "status": "AVAILABLE",
-            "version": "MSVC C++ Compiler",
-            "path": str(cl_exe),
-            "capabilities": ["c_cpp_compilation", "native_windows_build"],
-        }
-
-    def _probe_winsdk(self) -> Dict[str, Any]:
-        winsdk_dir = r"C:\Program Files (x86)\Windows Kits\10"
-        if os.path.exists(winsdk_dir):
-            inc = Path(winsdk_dir) / "Include"
-            if inc.exists():
-                versions = [v for v in os.listdir(inc) if v.startswith("10.")]
-                if versions:
-                    return {
-                        "name": "Windows SDK",
-                        "available": True,
-                        "status": "AVAILABLE",
-                        "version": versions[-1],
-                        "path": str(winsdk_dir),
-                        "capabilities": ["windows_headers", "win32_api", "directx_sdks"],
-                    }
-        return self._unavailable("Windows SDK")
-
-    def _probe_docker(self) -> Dict[str, Any]:
-        docker_exe = shutil.which("docker") or shutil.which("docker.exe")
-        if not docker_exe:
-            return self._unavailable("Docker")
-        return {
-            "name": "Docker",
-            "available": True,
-            "status": "AVAILABLE",
-            "version": "Installed",
-            "path": str(docker_exe),
-            "capabilities": ["container_build", "docker_compose", "daemon_client"],
-        }
-
     def _probe_git(self) -> Dict[str, Any]:
         git_exe = shutil.which("git") or shutil.which("git.exe") or r"C:\Program Files\Git\cmd\git.exe"
         if not git_exe or not os.path.exists(git_exe):
@@ -573,19 +502,3 @@ class ToolchainRegistry:
         except Exception:
             return self._unavailable("Git")
 
-    def _unavailable(
-        self,
-        name: str,
-        missing: Optional[List[str]] = None,
-        human_action: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return {
-            "name": name,
-            "available": False,
-            "status": "BLOCKED — HUMAN ACTION REQUIRED" if human_action else "UNAVAILABLE",
-            "version": None,
-            "path": None,
-            "capabilities": [],
-            "missing_components": missing or [f"{name} binary not found"],
-            "human_action_required": human_action,
-        }

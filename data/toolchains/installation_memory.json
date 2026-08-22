@@ -13,7 +13,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "node.js": {
     "name": "Node.js",
@@ -29,7 +29,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "npm": {
     "name": "npm",
@@ -43,7 +43,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "java runtime": {
     "name": "Java Runtime",
@@ -57,7 +57,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "java compiler (javac)": {
     "name": "Java Compiler (javac)",
@@ -70,7 +70,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "maven": {
     "name": "Maven",
@@ -84,7 +84,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "gradle": {
     "name": "Gradle",
@@ -99,7 +99,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "android sdk": {
     "name": "Android SDK",
@@ -113,7 +113,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "adb (android debug bridge)": {
     "name": "ADB (Android Debug Bridge)",
@@ -127,7 +127,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "flutter": {
     "name": "Flutter",
@@ -142,7 +142,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "dart sdk": {
     "name": "Dart SDK",
@@ -157,55 +157,60 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "unity editor": {
     "name": "Unity Editor",
-    "status": "UNAVAILABLE",
+    "status": "BLOCKED \u2014 HUMAN ACTION REQUIRED",
     "version": null,
     "path": null,
     "capabilities": [],
     "missing_components": [
-      "Unity Editor binary not found"
+      "Unity.exe",
+      "Unity Hub Editor folder"
     ],
-    "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "human_action_required": "Install Unity Editor 2022.3 LTS via Unity Hub and sign in with Unity ID",
+    "last_validated": "2026-08-22 15:05:55"
   },
   "unreal editor": {
     "name": "Unreal Editor",
-    "status": "UNAVAILABLE",
+    "status": "BLOCKED \u2014 HUMAN ACTION REQUIRED",
     "version": null,
     "path": null,
     "capabilities": [],
     "missing_components": [
-      "Unreal Editor binary not found"
+      "UnrealEditor.exe",
+      "Epic Games UE5 Installation"
     ],
-    "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "human_action_required": "Install Unreal Engine 5.3 via Epic Games Launcher and accept license",
+    "last_validated": "2026-08-22 15:05:55"
   },
   "unrealbuildtool (ubt)": {
     "name": "UnrealBuildTool (UBT)",
-    "status": "UNAVAILABLE",
+    "status": "BLOCKED \u2014 HUMAN ACTION REQUIRED",
     "version": null,
     "path": null,
     "capabilities": [],
     "missing_components": [
-      "UnrealBuildTool (UBT) binary not found"
+      "UnrealBuildTool.exe",
+      "DotNET UBT binary"
     ],
-    "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "human_action_required": "Install Unreal Engine 5.3 via Epic Games Launcher",
+    "last_validated": "2026-08-22 15:05:55"
   },
   "msvc (cl.exe)": {
     "name": "MSVC (cl.exe)",
-    "status": "UNAVAILABLE",
-    "version": null,
-    "path": null,
-    "capabilities": [],
-    "missing_components": [
-      "MSVC (cl.exe) binary not found"
+    "status": "AVAILABLE",
+    "version": "19.29.30159",
+    "path": "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Tools\\MSVC\\14.29.30133\\bin\\Hostx64\\x64\\cl.exe",
+    "capabilities": [
+      "c_cpp_compilation",
+      "native_windows_build",
+      "x64_compilation"
     ],
+    "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "windows sdk": {
     "name": "Windows SDK",
@@ -219,19 +224,20 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   },
   "docker": {
     "name": "Docker",
-    "status": "UNAVAILABLE",
+    "status": "BLOCKED \u2014 HUMAN ACTION REQUIRED",
     "version": null,
     "path": null,
     "capabilities": [],
     "missing_components": [
-      "Docker binary not found"
+      "docker.exe",
+      "Docker Desktop daemon"
     ],
-    "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "human_action_required": "Run C:\\NR-AI\\tools\\DockerDesktopInstaller.exe with Windows Administrator UAC approval and accept the WSL2 prompt",
+    "last_validated": "2026-08-22 15:05:55"
   },
   "git": {
     "name": "Git",
@@ -246,6 +252,6 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 14:37:32"
+    "last_validated": "2026-08-22 15:05:55"
   }
 }
