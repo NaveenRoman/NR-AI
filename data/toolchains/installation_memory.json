@@ -13,7 +13,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "node.js": {
     "name": "Node.js",
@@ -29,7 +29,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "npm": {
     "name": "npm",
@@ -43,7 +43,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "java runtime": {
     "name": "Java Runtime",
@@ -57,7 +57,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "java compiler (javac)": {
     "name": "Java Compiler (javac)",
@@ -70,7 +70,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "maven": {
     "name": "Maven",
@@ -83,7 +83,7 @@
       "Maven Wrapper"
     ],
     "human_action_required": "Provide mvnw.cmd wrapper in project or install via 'winget install Apache.Maven'",
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "gradle": {
     "name": "Gradle",
@@ -96,7 +96,7 @@
       "Gradle Wrapper"
     ],
     "human_action_required": "Provide gradlew.bat wrapper in project or install via 'winget install Gradle.Gradle'",
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "android sdk": {
     "name": "Android SDK",
@@ -110,7 +110,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "adb (android debug bridge)": {
     "name": "ADB (Android Debug Bridge)",
@@ -124,7 +124,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "flutter": {
     "name": "Flutter",
@@ -139,7 +139,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "dart sdk": {
     "name": "Dart SDK",
@@ -154,7 +154,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "unity editor": {
     "name": "Unity Editor",
@@ -166,7 +166,7 @@
       "Unity Editor binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "unreal editor": {
     "name": "Unreal Editor",
@@ -178,7 +178,7 @@
       "Unreal Editor binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "unrealbuildtool (ubt)": {
     "name": "UnrealBuildTool (UBT)",
@@ -190,7 +190,7 @@
       "UnrealBuildTool (UBT) binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "msvc (cl.exe)": {
     "name": "MSVC (cl.exe)",
@@ -202,7 +202,7 @@
       "MSVC (cl.exe) binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "windows sdk": {
     "name": "Windows SDK",
@@ -216,7 +216,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "docker": {
     "name": "Docker",
@@ -228,7 +228,7 @@
       "Docker binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   },
   "git": {
     "name": "Git",
@@ -243,6 +243,6 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:09:25"
+    "last_validated": "2026-08-22 12:34:09"
   }
 }
