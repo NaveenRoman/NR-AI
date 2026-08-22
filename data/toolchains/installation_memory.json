@@ -13,7 +13,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "node.js": {
     "name": "Node.js",
@@ -29,7 +29,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "npm": {
     "name": "npm",
@@ -43,7 +43,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "java runtime": {
     "name": "Java Runtime",
@@ -57,7 +57,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "java compiler (javac)": {
     "name": "Java Compiler (javac)",
@@ -70,33 +70,36 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "maven": {
     "name": "Maven",
-    "status": "BLOCKED \u2014 HUMAN ACTION REQUIRED",
-    "version": null,
-    "path": null,
-    "capabilities": [],
-    "missing_components": [
-      "mvn.cmd",
-      "Maven Wrapper"
+    "status": "AVAILABLE",
+    "version": "Apache Maven 3.9.6 (bc0240f3c744dd6b6ec2920b3cd08dcc295161ae)",
+    "path": "C:\\NR-AI\\tools\\apache-maven-3.9.6\\bin\\mvn.cmd",
+    "capabilities": [
+      "dependency_resolution",
+      "package_build",
+      "spring_boot_packaging"
     ],
-    "human_action_required": "Provide mvnw.cmd wrapper in project or install via 'winget install Apache.Maven'",
-    "last_validated": "2026-08-22 12:34:09"
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:57:51"
   },
   "gradle": {
     "name": "Gradle",
-    "status": "BLOCKED \u2014 HUMAN ACTION REQUIRED",
-    "version": null,
-    "path": null,
-    "capabilities": [],
-    "missing_components": [
-      "gradle.bat",
-      "Gradle Wrapper"
+    "status": "AVAILABLE",
+    "version": "8.10.2",
+    "path": "C:\\NR-AI\\tools\\gradle-8.10.2\\bin\\gradle.bat",
+    "capabilities": [
+      "android_build",
+      "kotlin_compilation",
+      "task_execution",
+      "spring_boot_build"
     ],
-    "human_action_required": "Provide gradlew.bat wrapper in project or install via 'winget install Gradle.Gradle'",
-    "last_validated": "2026-08-22 12:34:09"
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-08-22 12:57:51"
   },
   "android sdk": {
     "name": "Android SDK",
@@ -110,7 +113,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "adb (android debug bridge)": {
     "name": "ADB (Android Debug Bridge)",
@@ -124,7 +127,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "flutter": {
     "name": "Flutter",
@@ -139,7 +142,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "dart sdk": {
     "name": "Dart SDK",
@@ -154,7 +157,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "unity editor": {
     "name": "Unity Editor",
@@ -166,7 +169,7 @@
       "Unity Editor binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "unreal editor": {
     "name": "Unreal Editor",
@@ -178,7 +181,7 @@
       "Unreal Editor binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "unrealbuildtool (ubt)": {
     "name": "UnrealBuildTool (UBT)",
@@ -190,7 +193,7 @@
       "UnrealBuildTool (UBT) binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "msvc (cl.exe)": {
     "name": "MSVC (cl.exe)",
@@ -202,7 +205,7 @@
       "MSVC (cl.exe) binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "windows sdk": {
     "name": "Windows SDK",
@@ -216,7 +219,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "docker": {
     "name": "Docker",
@@ -228,7 +231,7 @@
       "Docker binary not found"
     ],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   },
   "git": {
     "name": "Git",
@@ -243,6 +246,6 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 12:34:09"
+    "last_validated": "2026-08-22 12:57:51"
   }
 }

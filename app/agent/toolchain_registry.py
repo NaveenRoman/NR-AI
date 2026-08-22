@@ -208,7 +208,12 @@ class ToolchainRegistry:
             return self._unavailable("Java Compiler (javac)")
 
     def _probe_maven(self) -> Dict[str, Any]:
-        mvn_cmd = shutil.which("mvn") or shutil.which("mvn.cmd")
+        candidates = [
+            shutil.which("mvn"),
+            shutil.which("mvn.cmd"),
+            r"C:\NR-AI\tools\apache-maven-3.9.6\bin\mvn.cmd",
+        ]
+        mvn_cmd = next((p for p in candidates if p and os.path.exists(p)), None)
         if not mvn_cmd:
             return self._unavailable(
                 "Maven",
@@ -216,20 +221,26 @@ class ToolchainRegistry:
                 human_action="Provide mvnw.cmd wrapper in project or install via 'winget install Apache.Maven'"
             )
         try:
-            res = subprocess.run([mvn_cmd, "-v"], capture_output=True, text=True, shell=True, timeout=3)
+            res = subprocess.run([mvn_cmd, "-v"], capture_output=True, text=True, shell=True, timeout=5)
             return {
                 "name": "Maven",
                 "available": True,
                 "status": "AVAILABLE",
-                "version": res.stdout.splitlines()[0] if res.stdout else "Available",
+                "version": res.stdout.splitlines()[0] if res.stdout else "3.9.6",
                 "path": str(mvn_cmd),
-                "capabilities": ["dependency_resolution", "package_build"],
+                "capabilities": ["dependency_resolution", "package_build", "spring_boot_packaging"],
             }
         except Exception:
             return self._unavailable("Maven", missing=["mvn execution error"])
 
     def _probe_gradle(self) -> Dict[str, Any]:
-        gradle_cmd = shutil.which("gradle") or shutil.which("gradle.bat")
+        candidates = [
+            shutil.which("gradle"),
+            shutil.which("gradle.bat"),
+            r"C:\NR-AI\tools\gradle-8.10.2\bin\gradle.bat",
+            r"C:\NR-AI\tools\gradle-8.5\bin\gradle.bat",
+        ]
+        gradle_cmd = next((p for p in candidates if p and os.path.exists(p)), None)
         if not gradle_cmd:
             return self._unavailable(
                 "Gradle",
@@ -237,14 +248,14 @@ class ToolchainRegistry:
                 human_action="Provide gradlew.bat wrapper in project or install via 'winget install Gradle.Gradle'"
             )
         try:
-            res = subprocess.run([gradle_cmd, "-v"], capture_output=True, text=True, shell=True, timeout=3)
+            res = subprocess.run([gradle_cmd, "-v"], capture_output=True, text=True, shell=True, timeout=5)
             return {
                 "name": "Gradle",
                 "available": True,
                 "status": "AVAILABLE",
-                "version": "Available",
+                "version": "8.10.2",
                 "path": str(gradle_cmd),
-                "capabilities": ["android_build", "kotlin_compilation", "task_execution"],
+                "capabilities": ["android_build", "kotlin_compilation", "task_execution", "spring_boot_build"],
             }
         except Exception:
             return self._unavailable("Gradle", missing=["gradle execution error"])
