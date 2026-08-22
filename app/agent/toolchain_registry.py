@@ -345,7 +345,7 @@ class ToolchainRegistry:
             return self._unavailable(
                 "Docker",
                 missing=["docker.exe", "Docker Desktop daemon"],
-                human_action="Install Docker Desktop via installer and start Docker daemon"
+                human_action="Run C:\\NR-AI\\tools\\DockerDesktopInstaller.exe with Windows Administrator UAC approval and accept the WSL2 prompt"
             )
         return {
             "name": "Docker",

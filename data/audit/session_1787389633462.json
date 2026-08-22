@@ -1,0 +1,24 @@
+{
+  "session_id": "session_1787389633462",
+  "total_events": 2,
+  "events": [
+    {
+      "timestamp": 1787389633.605338,
+      "formatted_time": "2026-08-22 14:37:13",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "What time is it?"
+      }
+    },
+    {
+      "timestamp": 1787389633.6073563,
+      "formatted_time": "2026-08-22 14:37:13",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "Hello NR AI"
+      }
+    }
+  ]
+}
