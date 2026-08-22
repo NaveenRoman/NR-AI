@@ -1,0 +1,15 @@
+{
+  "session_id": "session_1787374967219",
+  "total_events": 1,
+  "events": [
+    {
+      "timestamp": 1787374967.228935,
+      "formatted_time": "2026-08-22 10:32:47",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "What time is it"
+      }
+    }
+  ]
+}

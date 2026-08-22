@@ -1,0 +1,51 @@
+{
+  "session_id": "session_1787374582199",
+  "total_events": 4,
+  "events": [
+    {
+      "timestamp": 1787374582.2067637,
+      "formatted_time": "2026-08-22 10:26:22",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "add payment"
+      }
+    },
+    {
+      "timestamp": 1787374582.2088194,
+      "formatted_time": "2026-08-22 10:26:22",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 2,
+        "actions": [
+          "write_code",
+          "run_terminal_cmd"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787374582.2108247,
+      "formatted_time": "2026-08-22 10:26:22",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "write_code",
+        "description": "Create PaymentService module",
+        "result_message": null
+      }
+    },
+    {
+      "timestamp": 1787374582.5672567,
+      "formatted_time": "2026-08-22 10:26:22",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "run_terminal_cmd",
+        "description": "Verify test suite",
+        "result_message": "Command completed successfully"
+      }
+    }
+  ]
+}

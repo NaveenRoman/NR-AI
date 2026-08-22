@@ -1,0 +1,39 @@
+{
+  "session_id": "session_1787375508037",
+  "total_events": 3,
+  "events": [
+    {
+      "timestamp": 1787375508.0475442,
+      "formatted_time": "2026-08-22 10:41:48",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "stop"
+      }
+    },
+    {
+      "timestamp": 1787375508.048537,
+      "formatted_time": "2026-08-22 10:41:48",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 1,
+        "actions": [
+          "cancel_task"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787375508.0495286,
+      "formatted_time": "2026-08-22 10:41:48",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "cancel_task",
+        "description": "Cancel current active task",
+        "result_message": "Task cancelled successfully."
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+:root {
+  --primary: #6366f1;
+  --bg: #0f172a;
+  --card-bg: #1e293b;
+  --text: #f8fafc;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+body { background: var(--bg); color: var(--text); padding: 2rem; }
+.dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; }
+.card { background: var(--card-bg); padding: 1.5rem; border-radius: 12px; border: 1px solid #334155; }
+.stat { font-size: 2rem; font-weight: bold; color: var(--primary); margin-top: 0.5rem; }

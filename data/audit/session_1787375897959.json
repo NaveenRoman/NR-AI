@@ -1,0 +1,39 @@
+{
+  "session_id": "session_1787375897959",
+  "total_events": 3,
+  "events": [
+    {
+      "timestamp": 1787375897.9882083,
+      "formatted_time": "2026-08-22 10:48:17",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "Build a Spring Boot banking backend"
+      }
+    },
+    {
+      "timestamp": 1787375897.9918528,
+      "formatted_time": "2026-08-22 10:48:17",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 1,
+        "actions": [
+          "spring_create"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787375898.0137572,
+      "formatted_time": "2026-08-22 10:48:18",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "spring_create",
+        "description": "Scaffold Spring Boot Java microservice backend",
+        "result_message": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uber NextGen — Ride Hailing Platform</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Leaflet Map Styles and Script -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-logo">Uber</span>
+        <span class="brand-tag">Autonomous Mobility</span>
+      </div>
+      <div class="mode-switch">
+        <button id="btn-rider-mode" class="mode-btn active">Rider View</button>
+        <button id="btn-driver-mode" class="mode-btn">Driver Dispatch</button>
+      </div>
+    </header>
+
+    <!-- Main Workspace: Split View Map + Drawer -->
+    <main class="main-content">
+      <!-- Interactive Leaflet Map Container -->
+      <div id="map-view" class="map-container"></div>
+
+      <!-- Floating Controls Panel -->
+      <section class="controls-panel">
+        
+        <!-- RIDER SECTION -->
+        <div id="rider-panel" class="view-panel active">
+          <div class="panel-card">
+            <h2>Where to?</h2>
+            
+            <div class="input-group">
+              <label for="pickup-input">Pickup Location</label>
+              <div class="input-field">
+                <span class="icon-dot green"></span>
+                <input type="text" id="pickup-input" value="Market Street, San Francisco" placeholder="Enter pickup spot" />
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label for="dropoff-input">Dropoff Destination</label>
+              <div class="input-field">
+                <span class="icon-dot black"></span>
+                <input type="text" id="dropoff-input" value="Union Square, San Francisco" placeholder="Enter destination" />
+              </div>
+            </div>
+
+            <!-- Ride Tier Selector -->
+            <div class="ride-tiers">
+              <div class="tier-card active" data-type="UberX">
+                <div class="tier-info">
+                  <h3>UberX</h3>
+                  <p class="tier-desc">Affordable, compact rides</p>
+                </div>
+                <div class="tier-price" id="price-uberx">$12.50</div>
+              </div>
+
+              <div class="tier-card" data-type="Comfort">
+                <div class="tier-info">
+                  <h3>Comfort</h3>
+                  <p class="tier-desc">Newer cars with extra legroom</p>
+                </div>
+                <div class="tier-price" id="price-comfort">$16.80</div>
+              </div>
+
+              <div class="tier-card" data-type="UberXL">
+                <div class="tier-info">
+                  <h3>UberXL</h3>
+                  <p class="tier-desc">SUVs for groups up to 6</p>
+                </div>
+                <div class="tier-price" id="price-uberxl">$21.00</div>
+              </div>
+
+              <div class="tier-card" data-type="Black">
+                <div class="tier-info">
+                  <h3>Black</h3>
+                  <p class="tier-desc">Premium luxury & top drivers</p>
+                </div>
+                <div class="tier-price" id="price-black">$31.50</div>
+              </div>
+            </div>
+
+            <!-- Request Ride Action -->
+            <button id="btn-request-ride" class="primary-btn">Request UberX</button>
+
+            <!-- Active Ride Live Status Card -->
+            <div id="ride-status-card" class="status-card hidden">
+              <div class="status-header">
+                <span class="pulse-indicator"></span>
+                <h4 id="status-title">Looking for nearby drivers...</h4>
+              </div>
+              <div class="driver-profile hidden" id="driver-profile">
+                <div class="driver-avatar">AR</div>
+                <div class="driver-details">
+                  <strong id="driver-name">Alex Rivera (4.95 ★)</strong>
+                  <span id="driver-vehicle">Tesla Model 3 • 7XYZ987</span>
+                </div>
+              </div>
+              <div class="eta-box">
+                <span>Estimated Arrival</span>
+                <strong id="eta-timer">3 mins</strong>
+              </div>
+              <button id="btn-cancel-ride" class="cancel-btn">Cancel Ride</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- DRIVER DISPATCH SECTION -->
+        <div id="driver-panel" class="view-panel">
+          <div class="panel-card">
+            <div class="driver-status-toggle">
+              <div>
+                <h2>Driver Portal</h2>
+                <p id="driver-status-text">You are currently ONLINE</p>
+              </div>
+              <button id="btn-toggle-online" class="online-toggle-btn online">ONLINE</button>
+            </div>
+
+            <!-- Live Incoming Request Modal/Card -->
+            <div id="incoming-request-card" class="incoming-card">
+              <div class="incoming-header">
+                <span class="badge new-badge">New Dispatch Request</span>
+                <h3 id="incoming-fare">$14.50</h3>
+              </div>
+              <div class="incoming-route">
+                <p><strong>From:</strong> <span id="inc-from">Market Street, SF</span></p>
+                <p><strong>To:</strong> <span id="inc-to">Union Square, SF</span></p>
+              </div>
+              <div class="incoming-actions">
+                <button id="btn-accept-dispatch" class="accept-btn">Accept Ride</button>
+                <button id="btn-decline-dispatch" class="decline-btn">Decline</button>
+              </div>
+            </div>
+
+            <div class="driver-metrics">
+              <div class="metric-box">
+                <span>Today's Earnings</span>
+                <strong>$148.50</strong>
+              </div>
+              <div class="metric-box">
+                <span>Trips Completed</span>
+                <strong>8</strong>
+              </div>
+              <div class="metric-box">
+                <span>Acceptance Rate</span>
+                <strong>98%</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+  </div>
+
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

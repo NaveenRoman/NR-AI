@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+*.bak
+*.flat
+data/test_*/
+data/real_benchmarks/

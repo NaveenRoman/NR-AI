@@ -1,0 +1,28 @@
+{
+  "session_id": "session_1787374641319",
+  "total_events": 2,
+  "events": [
+    {
+      "timestamp": 1787374641.3273392,
+      "formatted_time": "2026-08-22 10:27:21",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "undo the last change"
+      }
+    },
+    {
+      "timestamp": 1787374641.328604,
+      "formatted_time": "2026-08-22 10:27:21",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 1,
+        "actions": [
+          "rollback_last_change"
+        ]
+      }
+    }
+  ]
+}

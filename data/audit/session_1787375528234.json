@@ -1,0 +1,51 @@
+{
+  "session_id": "session_1787375528234",
+  "total_events": 4,
+  "events": [
+    {
+      "timestamp": 1787375528.2426226,
+      "formatted_time": "2026-08-22 10:42:08",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "Create a Flutter application"
+      }
+    },
+    {
+      "timestamp": 1787375528.2447631,
+      "formatted_time": "2026-08-22 10:42:08",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 2,
+        "actions": [
+          "flutter_create",
+          "flutter_inspect"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787375528.258019,
+      "formatted_time": "2026-08-22 10:42:08",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "flutter_create",
+        "description": "Scaffold complete Flutter application architecture",
+        "result_message": null
+      }
+    },
+    {
+      "timestamp": 1787375528.271489,
+      "formatted_time": "2026-08-22 10:42:08",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "flutter_inspect",
+        "description": "Inspect Flutter project architecture",
+        "result_message": null
+      }
+    }
+  ]
+}

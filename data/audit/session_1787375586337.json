@@ -1,0 +1,39 @@
+{
+  "session_id": "session_1787375586337",
+  "total_events": 3,
+  "events": [
+    {
+      "timestamp": 1787375586.3464215,
+      "formatted_time": "2026-08-22 10:43:06",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "Update the program to print Hello NR AI"
+      }
+    },
+    {
+      "timestamp": 1787375586.3474863,
+      "formatted_time": "2026-08-22 10:43:06",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 1,
+        "actions": [
+          "batch_replace"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787375586.363749,
+      "formatted_time": "2026-08-22 10:43:06",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "batch_replace",
+        "description": "Update print statement to 'Hello NR AI'",
+        "result_message": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "session_id": "session_1787374672105",
+  "total_events": 3,
+  "events": [
+    {
+      "timestamp": 1787374672.114689,
+      "formatted_time": "2026-08-22 10:27:52",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "undo the last change"
+      }
+    },
+    {
+      "timestamp": 1787374672.1166837,
+      "formatted_time": "2026-08-22 10:27:52",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 1,
+        "actions": [
+          "rollback_last_change"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787374672.1331844,
+      "formatted_time": "2026-08-22 10:27:52",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "rollback_last_change",
+        "description": "Roll back last file modification from checkpoint",
+        "result_message": null
+      }
+    }
+  ]
+}

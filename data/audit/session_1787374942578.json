@@ -1,0 +1,39 @@
+{
+  "session_id": "session_1787374942578",
+  "total_events": 3,
+  "events": [
+    {
+      "timestamp": 1787374942.586687,
+      "formatted_time": "2026-08-22 10:32:22",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "Change the button color to green"
+      }
+    },
+    {
+      "timestamp": 1787374942.587814,
+      "formatted_time": "2026-08-22 10:32:22",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 1,
+        "actions": [
+          "android_change_color"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787374942.6029966,
+      "formatted_time": "2026-08-22 10:32:22",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "android_change_color",
+        "description": "Update PrimaryButtonColor in Android theme",
+        "result_message": "Updated button color to 0xFF00C853"
+      }
+    }
+  ]
+}

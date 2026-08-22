@@ -1,0 +1,51 @@
+{
+  "session_id": "session_1787374919186",
+  "total_events": 4,
+  "events": [
+    {
+      "timestamp": 1787374919.1949193,
+      "formatted_time": "2026-08-22 10:31:59",
+      "event_type": "user_request",
+      "status": "success",
+      "details": {
+        "query": "Create a new Android app"
+      }
+    },
+    {
+      "timestamp": 1787374919.1959226,
+      "formatted_time": "2026-08-22 10:31:59",
+      "event_type": "plan_generated",
+      "status": "success",
+      "details": {
+        "intent": "complex_task",
+        "action_count": 2,
+        "actions": [
+          "android_create",
+          "android_inspect"
+        ]
+      }
+    },
+    {
+      "timestamp": 1787374919.2062597,
+      "formatted_time": "2026-08-22 10:31:59",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "android_create",
+        "description": "Scaffold modern Jetpack Compose Android application",
+        "result_message": null
+      }
+    },
+    {
+      "timestamp": 1787374919.2236788,
+      "formatted_time": "2026-08-22 10:31:59",
+      "event_type": "action_executed",
+      "status": "success",
+      "details": {
+        "action_type": "android_inspect",
+        "description": "Inspect Android project structure",
+        "result_message": null
+      }
+    }
+  ]
+}
