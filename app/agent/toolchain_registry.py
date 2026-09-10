@@ -262,23 +262,45 @@ class ToolchainRegistry:
 
     def _probe_unity(self) -> Dict[str, Any]:
         candidates = [
+            r"C:\Program Files\Unity 2022.3.35f1\Editor\Unity.exe",
             r"C:\Program Files\Unity\Hub\Editor\2022.3.35f1\Editor\Unity.exe",
+            r"C:\Program Files\Unity 2022.3.76f1\Editor\Unity.exe",
+            r"C:\Unity\Hub\Editor\2022.3.35f1\Editor\Unity.exe",
+            r"C:\Unity\Hub\Editor\2022.3.76f1\Editor\Unity.exe",
             r"C:\Program Files\Unity\Editor\Unity.exe",
         ]
         unity_exe = next((p for p in candidates if os.path.exists(p)), None)
+        if not unity_exe:
+            # Check any installed Unity under Program Files or Unity
+            for root_dir in [r"C:\Program Files", r"C:\Unity\Hub\Editor", r"C:\Program Files\Unity\Hub\Editor"]:
+                if os.path.exists(root_dir):
+                    for entry in Path(root_dir).glob("Unity*/Editor/Unity.exe"):
+                        if entry.exists():
+                            unity_exe = str(entry)
+                            break
+                if unity_exe:
+                    break
         if not unity_exe:
             return self._unavailable(
                 "Unity Editor",
                 missing=["Unity.exe", "Unity Hub Editor folder"],
                 human_action="Install Unity Editor 2022.3 LTS via Unity Hub and sign in with Unity ID"
             )
+        actual_ver = "2022.3.35f1"
+        try:
+            res = subprocess.run([unity_exe, "-version"], capture_output=True, text=True, timeout=5)
+            if res.stdout.strip():
+                actual_ver = res.stdout.strip().splitlines()[0].strip()
+        except Exception:
+            pass
+
         return {
             "name": "Unity Editor",
             "available": True,
             "status": "AVAILABLE",
-            "version": "2022.3.35f1",
+            "version": actual_ver,
             "path": str(unity_exe),
-            "capabilities": ["batch_mode_build", "scene_execution", "csharp_scripting"],
+            "capabilities": ["batch_mode_build", "scene_execution", "csharp_scripting", "windows_standalone_player"],
         }
 
     def _probe_unreal_editor(self) -> Dict[str, Any]:

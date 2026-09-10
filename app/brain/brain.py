@@ -4,11 +4,14 @@ from typing import Any, Dict, Optional
 
 from app.agent.action_dispatcher import ActionDispatcher
 from app.agent.autonomous_loop import AutonomousDevLoop
+from app.agent.model_provider import OpenAIProvider
+from app.agent.model_router import ModelRouter
 from app.agent.service_supervisor import ServiceSupervisor
 from app.agent.task_planner import TaskPlanner
 from app.commands.app_launcher import AppLauncher
 from app.commands.system_command import SystemCommand
 from app.commands.time_command import TimeCommand
+from app.config.model_config import ModelConfig
 from app.memory.audit_logger import AuditLogger
 from app.memory.context_memory import ProjectContextMemory
 
@@ -55,11 +58,16 @@ class NRBrain:
         self.app_launcher = AppLauncher()
         self.planner = TaskPlanner(memory=self.memory)
         self.dispatcher = ActionDispatcher(memory=self.memory)
+        self.model_config = ModelConfig.from_env()
+        self.provider = OpenAIProvider(config=self.model_config)
+        self.router = ModelRouter(config=self.model_config, provider=self.provider)
         self.autonomous_loop = AutonomousDevLoop(
             planner=self.planner,
             dispatcher=self.dispatcher,
             memory=self.memory,
             audit_logger=self.audit,
+            provider=self.provider,
+            router=self.router,
         )
 
     def think(self, text: str) -> str:
@@ -163,8 +171,16 @@ class NRBrain:
             return "Task completed successfully."
 
         # -----------------------------
-        # Fallback
+        # Fallback & AI Routing
         # -----------------------------
+        if self.provider.is_available():
+            try:
+                ai_res = self.router.execute(prompt=text)
+                if ai_res.get("success") and ai_res.get("content"):
+                    return ai_res["content"].strip()
+            except Exception:
+                pass
+
         return (
             f"I heard you say: {text}. "
             "I don't have a command for that yet."

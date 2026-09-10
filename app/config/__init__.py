@@ -1,3 +1,46 @@
+from app.config.model_config import (
+    ALL_GEMINI_MODELS,
+    ALL_MODELS,
+    ALL_OPENAI_MODELS,
+    GEMINI_1_5_FLASH,
+    GEMINI_2_5_FLASH,
+    GEMINI_3_6_FLASH,
+    GPT_5_6_LUNA,
+    GPT_5_6_SOL,
+    GPT_5_6_TERRA,
+    GPT_6_ASTRA,
+    MODEL_REGISTRY,
+    PROVIDER_GOOGLE,
+    PROVIDER_OPENAI,
+    TIER_COMPLEX,
+    TIER_HIGHEST,
+    TIER_NORMAL,
+    TIER_ROUTINE,
+    ModelConfig,
+    ModelSpec,
+)
 from app.config.voice_config import VoiceConfig
 
-__all__ = ["VoiceConfig"]
+__all__ = [
+    "VoiceConfig",
+    "ModelConfig",
+    "ModelSpec",
+    "MODEL_REGISTRY",
+    "GPT_6_ASTRA",
+    "GPT_5_6_SOL",
+    "GPT_5_6_TERRA",
+    "GPT_5_6_LUNA",
+    "GEMINI_3_6_FLASH",
+    "GEMINI_2_5_FLASH",
+    "GEMINI_1_5_FLASH",
+    "PROVIDER_OPENAI",
+    "PROVIDER_GOOGLE",
+    "ALL_MODELS",
+    "ALL_OPENAI_MODELS",
+    "ALL_GEMINI_MODELS",
+    "TIER_ROUTINE",
+    "TIER_NORMAL",
+    "TIER_COMPLEX",
+    "TIER_HIGHEST",
+]
+

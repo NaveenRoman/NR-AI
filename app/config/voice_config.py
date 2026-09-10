@@ -27,6 +27,14 @@ class VoiceConfig:
     fallback_to_text: bool = True
     speak_errors_only: bool = False
 
+    # Wake Word & Activation Settings
+    wake_word_enabled: bool = True
+    wake_words: list[str] = field(
+        default_factory=lambda: ["hey nr", "hello nr", "ok nr", "hey nr ai"]
+    )
+    push_to_talk_fallback: bool = True
+    offline_wake_model: Optional[str] = None
+
     @classmethod
     def from_env(cls) -> "VoiceConfig":
         """Load configuration from environment variables if present."""
@@ -39,4 +47,6 @@ class VoiceConfig:
             tts_rate=int(os.getenv("NR_TTS_RATE", "175")),
             tts_volume=float(os.getenv("NR_TTS_VOLUME", "1.0")),
             silent_mode=os.getenv("NR_SILENT_MODE", "false").lower() == "true",
+            wake_word_enabled=os.getenv("NR_WAKE_WORD_ENABLED", "true").lower() == "true",
+            push_to_talk_fallback=os.getenv("NR_PUSH_TO_TALK", "true").lower() == "true",
         )

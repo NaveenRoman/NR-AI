@@ -30,82 +30,122 @@ class AppLauncher:
         }
 
     def _launch_path(self, path):
-        """Launch an executable or Windows shortcut."""
+        """Launch an executable or Windows shortcut safely without shell=True."""
 
         if not path:
-            return False
+            return False, "Target path is empty"
 
         try:
-            # Windows shortcuts (.lnk) should be opened with
-            # the Windows shell.
-            if path.lower().endswith(".lnk"):
+            # Windows shortcuts (.lnk) should be opened with the Windows shell.
+            if str(path).lower().endswith(".lnk"):
                 os.startfile(path)
-                return True
+                return True, f"Started shell shortcut: {path}"
 
-            # Executables can be launched directly.
-            if path.lower().endswith(".exe"):
-                subprocess.Popen([path])
-                return True
+            # Executables can be launched directly without shell interpretation.
+            if str(path).lower().endswith(".exe"):
+                proc = subprocess.Popen([str(path)], shell=False)
+                return True, f"Started process (PID: {proc.pid}): {path}"
 
             # Other registered launch targets.
             os.startfile(path)
-            return True
+            return True, f"Started via startfile: {path}"
 
         except Exception as error:
             print(f"Launcher error: {error}")
-            return False
+            return False, str(error)
 
-    def launch(self, application_name):
-        name = application_name.lower().strip()
+    def launch_detailed(self, application_name: str) -> dict:
+        """
+        Validates authorization, discovers target, and safely launches approved application.
+        Returns detailed status metadata.
+        """
+        raw_name = (application_name or "").strip()
+        name_lower = raw_name.lower()
+        normalized = self.discovery.normalize_name(name_lower)
 
-        if name not in self.approved_applications:
-            return (
-                f"I am not authorized to launch "
-                f"{application_name} yet."
-            )
+        # Strict authorization check against whitelist (checking both raw and normalized names)
+        if name_lower not in self.approved_applications and normalized not in self.approved_applications:
+            return {
+                "success": False,
+                "application": raw_name,
+                "authorized": False,
+                "path": None,
+                "launch_detail": None,
+                "message": f"I am not authorized to launch {raw_name} yet.",
+                "error": "UNAUTHORIZED_APPLICATION",
+            }
 
-        discovered = self.discovery.find_application(name)
+        discovered = self.discovery.find_application(normalized)
 
         if not discovered:
-            return (
-                f"I couldn't find {application_name} "
-                "on this computer."
-            )
+            return {
+                "success": False,
+                "application": raw_name,
+                "authorized": True,
+                "path": None,
+                "launch_detail": None,
+                "message": f"I couldn't find {raw_name} on this computer.",
+                "error": "APPLICATION_NOT_FOUND",
+            }
 
         # Registry results can be dictionaries.
         if isinstance(discovered, dict):
             path = discovered.get("path")
+            app_display_name = discovered.get("name", raw_name)
 
             if not path:
-                return (
-                    f"I found {discovered.get('name', application_name)}, "
-                    "but I couldn't find a launch target."
-                )
+                return {
+                    "success": False,
+                    "application": app_display_name,
+                    "authorized": True,
+                    "path": None,
+                    "launch_detail": None,
+                    "message": f"I found {app_display_name}, but I couldn't find a launch target.",
+                    "error": "TARGET_PATH_MISSING",
+                }
         else:
             path = discovered
 
-        print(f"🔎 Found: {path}")
+        try:
+            print(f"Found: {path}")
+        except Exception:
+            pass
 
-        if self._launch_path(path):
-            return f"{application_name} is opening."
+        success, detail = self._launch_path(path)
+        if success:
+            return {
+                "success": True,
+                "application": raw_name,
+                "authorized": True,
+                "path": str(path),
+                "launch_detail": detail,
+                "message": f"{raw_name} is opening.",
+                "error": None,
+            }
 
-        return f"I couldn't open {application_name}."
+        return {
+            "success": False,
+            "application": raw_name,
+            "authorized": True,
+            "path": str(path),
+            "launch_detail": detail,
+            "message": f"I couldn't open {raw_name}.",
+            "error": detail or "LAUNCH_FAILED",
+        }
+
+    def launch(self, application_name):
+        return self.launch_detailed(application_name)["message"]
 
     def execute(self, command):
         command = command.lower().strip()
 
-        if not command.startswith("open "):
-            return None
+        for prefix in ("open ", "launch ", "start "):
+            if command.startswith(prefix):
+                application_name = command[len(prefix):].strip()
+                if application_name:
+                    return self.launch(application_name)
 
-        application_name = command[5:].strip()
-
-        if not application_name:
-            return None
-
-        if application_name not in self.approved_applications:
-            return None
-
-        return self.launch(application_name)
+        return None
 
 
 if __name__ == "__main__":

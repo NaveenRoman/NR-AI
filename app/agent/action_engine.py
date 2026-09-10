@@ -1,5 +1,8 @@
 import time
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
 
 
 class ActionEngine:

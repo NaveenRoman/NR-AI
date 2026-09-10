@@ -13,7 +13,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "node.js": {
     "name": "Node.js",
@@ -29,7 +29,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "npm": {
     "name": "npm",
@@ -43,7 +43,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "java runtime": {
     "name": "Java Runtime",
@@ -57,7 +57,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "java compiler (javac)": {
     "name": "Java Compiler (javac)",
@@ -70,7 +70,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "maven": {
     "name": "Maven",
@@ -84,7 +84,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "gradle": {
     "name": "Gradle",
@@ -99,7 +99,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "android sdk": {
     "name": "Android SDK",
@@ -113,7 +113,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "adb (android debug bridge)": {
     "name": "ADB (Android Debug Bridge)",
@@ -127,7 +127,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "flutter": {
     "name": "Flutter",
@@ -142,7 +142,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "dart sdk": {
     "name": "Dart SDK",
@@ -157,20 +157,22 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "unity editor": {
     "name": "Unity Editor",
-    "status": "BLOCKED \u2014 HUMAN ACTION REQUIRED",
-    "version": null,
-    "path": null,
-    "capabilities": [],
-    "missing_components": [
-      "Unity.exe",
-      "Unity Hub Editor folder"
+    "status": "AVAILABLE",
+    "version": "2022.3.35f1",
+    "path": "C:\\Program Files\\Unity 2022.3.35f1\\Editor\\Unity.exe",
+    "capabilities": [
+      "batch_mode_build",
+      "scene_execution",
+      "csharp_scripting",
+      "windows_standalone_player"
     ],
-    "human_action_required": "Install Unity Editor 2022.3 LTS via Unity Hub and sign in with Unity ID",
-    "last_validated": "2026-08-22 15:10:57"
+    "missing_components": [],
+    "human_action_required": null,
+    "last_validated": "2026-09-10 13:33:54"
   },
   "unreal editor": {
     "name": "Unreal Editor",
@@ -183,7 +185,7 @@
       "Epic Games UE5 Installation"
     ],
     "human_action_required": "Install Unreal Engine 5.3 via Epic Games Launcher and accept license",
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "unrealbuildtool (ubt)": {
     "name": "UnrealBuildTool (UBT)",
@@ -196,7 +198,7 @@
       "DotNET UBT binary"
     ],
     "human_action_required": "Install Unreal Engine 5.3 via Epic Games Launcher",
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "msvc (cl.exe)": {
     "name": "MSVC (cl.exe)",
@@ -210,7 +212,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "windows sdk": {
     "name": "Windows SDK",
@@ -224,7 +226,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "docker": {
     "name": "Docker",
@@ -237,7 +239,7 @@
       "Docker Desktop daemon"
     ],
     "human_action_required": "Run C:\\NR-AI\\tools\\DockerDesktopInstaller.exe with Windows Administrator UAC approval and accept the WSL2 prompt",
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   },
   "git": {
     "name": "Git",
@@ -252,6 +254,6 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-08-22 15:10:57"
+    "last_validated": "2026-09-10 13:33:54"
   }
 }

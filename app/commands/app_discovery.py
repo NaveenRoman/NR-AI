@@ -34,11 +34,13 @@ class AppDiscovery:
 
             "vs": "visual studio",
             "visual studio": "visual studio",
+            "visual studio 2022": "visual studio",
 
             "android": "android studio",
             "android studio": "android studio",
 
-            "unity": "unity hub",
+            "unity": "unity",
+            "unity editor": "unity",
             "unity hub": "unity hub",
 
             "chrome": "google chrome",
@@ -46,6 +48,12 @@ class AppDiscovery:
 
             "notepad": "notepad",
             "calculator": "calculator",
+            "calc": "calculator",
+            "paint": "paint",
+            "mspaint": "paint",
+            "command prompt": "cmd",
+            "cmd": "cmd",
+            "powershell": "powershell",
         }
 
     # ---------------------------------------------------------
@@ -101,6 +109,9 @@ class AppDiscovery:
                 if target == "unity hub" and (
                     "visual studio" in filename
                 ):
+                    continue
+
+                if target == "unity" and "hub" in filename:
                     continue
 
                 return shortcut
@@ -266,6 +277,11 @@ class AppDiscovery:
                 ),
             ],
 
+            "unity": [
+                r"C:\Program Files\Unity 2022.3.35f1\Editor\Unity.exe",
+                r"C:\Program Files\Unity\Editor\Unity.exe",
+            ],
+
             "unity hub": [
                 r"C:\Program Files\Unity Hub\Unity Hub.exe",
                 r"C:\Program Files\Unity\Hub\Unity Hub.exe",
@@ -290,6 +306,18 @@ class AppDiscovery:
             "calculator": [
                 r"C:\Windows\System32\calc.exe",
             ],
+
+            "paint": [
+                r"C:\Windows\System32\mspaint.exe",
+            ],
+
+            "cmd": [
+                r"C:\Windows\System32\cmd.exe",
+            ],
+
+            "powershell": [
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            ],
         }
 
         locations = known_locations.get(target, [])
@@ -297,6 +325,15 @@ class AppDiscovery:
         for location in locations:
             if os.path.isfile(location):
                 return location
+
+        if target == "unity":
+            try:
+                unity_matches = glob.glob(r"C:\Program Files\Unity*\Editor\Unity.exe")
+                for m in unity_matches:
+                    if os.path.isfile(m):
+                        return m
+            except OSError:
+                pass
 
         return None
 

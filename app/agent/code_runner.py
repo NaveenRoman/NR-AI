@@ -96,6 +96,8 @@ class PythonRunner(BaseLanguageRunner):
 
         start_time = time.perf_counter()
         try:
+            run_env = dict(os.environ)
+            run_env["PYTHONIOENCODING"] = "utf-8"
             process = subprocess.run(
                 command,
                 cwd=self.workspace,
@@ -103,6 +105,7 @@ class PythonRunner(BaseLanguageRunner):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=run_env,
                 timeout=timeout,
             )
             duration_ms = (time.perf_counter() - start_time) * 1000

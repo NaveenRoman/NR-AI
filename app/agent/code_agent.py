@@ -58,6 +58,8 @@ class CodeAgent:
         self,
         workspace: Optional[str] = None,
         max_retries: int = 3,
+        provider: Optional[Any] = None,
+        router: Optional[Any] = None,
     ):
         self.workspace = Path(workspace or os.getcwd()).resolve()
         self.max_retries = max_retries
@@ -69,6 +71,11 @@ class CodeAgent:
         self.runner = CodeRunner(workspace=str(self.workspace))
         self.analyzer = ErrorAnalyzer()
         self.recovery = RecoveryEngine(max_retries=self.max_retries)
+
+        self.provider = provider
+        self.router = router
+        if self.provider is not None or self.router is not None:
+            self.recovery.attach_openai_reasoner(provider=self.provider, router=self.router)
 
     # -------------------------------------------------
     # BACKWARD COMPATIBLE CONVENIENCE METHODS

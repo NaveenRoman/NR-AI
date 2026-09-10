@@ -1,8 +1,17 @@
+import enum
 import sys
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 import pyttsx3
 from app.config.voice_config import VoiceConfig
+
+
+class AssistantState(enum.Enum):
+    IDLE = "IDLE"
+    LISTENING = "LISTENING"
+    THINKING = "THINKING"
+    SPEAKING = "SPEAKING"
+    ERROR = "ERROR"
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -110,6 +119,22 @@ class VoiceSpeaker:
         else:
             self.backend = Pyttsx3TTS(self.config)
 
+        self.state = AssistantState.IDLE
+        self._state_callbacks: List[Callable[[AssistantState], None]] = []
+
+    def set_state(self, new_state: AssistantState) -> None:
+        """Update current assistant state and notify registered listeners."""
+        self.state = new_state
+        for cb in self._state_callbacks:
+            try:
+                cb(new_state)
+            except Exception:
+                pass
+
+    def add_state_callback(self, callback: Callable[[AssistantState], None]) -> None:
+        """Register a callback for state transition notifications."""
+        self._state_callbacks.append(callback)
+
     def _clean_for_speech(self, text: str) -> str:
         """
         Sanitize text before speaking:
@@ -134,14 +159,21 @@ class VoiceSpeaker:
         if not text:
             return
 
-        safe_print(f"🤖 NR AI: {text}")
+        self.set_state(AssistantState.SPEAKING)
+        try:
+            safe_print(f"🤖 NR AI: {text}")
 
-        if not self.config.tts_enabled and not force:
-            return
+            if not self.config.tts_enabled and not force:
+                return
 
-        speech_text = self._clean_for_speech(text)
-        if speech_text:
-            self.backend.speak(speech_text)
+            speech_text = self._clean_for_speech(text)
+            if speech_text:
+                self.backend.speak(speech_text)
+        except Exception as e:
+            self.set_state(AssistantState.ERROR)
+            safe_print(f"⚠️ Speech synthesis failure: {e}")
+        finally:
+            self.set_state(AssistantState.IDLE)
 
 
 if __name__ == "__main__":

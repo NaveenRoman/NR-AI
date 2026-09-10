@@ -46,6 +46,57 @@ class RecoveryEngine:
         """Attach an external AI or LLM reasoning model for complex code repair."""
         self.custom_ai_reasoner = reasoner_fn
 
+    def attach_openai_reasoner(
+        self,
+        provider: Optional[Any] = None,
+        router: Optional[Any] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        """
+        Attaches the centralized OpenAI provider to the recovery engine.
+        Routes complex debugging/repair to GPT-6 Astra by default.
+        """
+        from app.agent.model_provider import OpenAIProvider
+        from app.agent.model_router import ModelRouter
+        from app.config.model_config import GPT_6_ASTRA
+
+        active_provider = provider or OpenAIProvider()
+        active_router = router or ModelRouter(provider=active_provider)
+        target_model = model or active_router.route(task_type="highest", explicit_model=model) or GPT_6_ASTRA
+
+        def _ai_reasoner(error_info: Dict[str, Any], source_code: str) -> Optional[str]:
+            if not active_provider.is_available():
+                return None
+
+            prompt = (
+                f"Fix this code error.\n\n"
+                f"Language: {error_info.get('language')}\n"
+                f"Error: {error_info.get('type')}: {error_info.get('message')}\n"
+                f"Line: {error_info.get('line')}\n"
+                f"Source Code:\n```\n{source_code}\n```\n\n"
+                f"Return ONLY the complete raw fixed source code with NO markdown delimiters, NO backticks, NO explanations."
+            )
+            res = active_provider.generate(
+                prompt=prompt,
+                model=target_model,
+                system_prompt="You are an expert autonomous software debugger. Return only the raw corrected code.",
+                temperature=0.1,
+            )
+            if res.get("success") and res.get("content"):
+                fixed = res["content"].strip()
+                if fixed.startswith("```"):
+                    lines = fixed.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                if fixed and source_code.endswith("\n") and not fixed.endswith("\n"):
+                    fixed += "\n"
+                return fixed
+            return None
+
+        self.set_custom_reasoner(_ai_reasoner)
+
     def reset_history(self) -> None:
         self.patch_history.clear()
 

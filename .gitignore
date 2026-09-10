@@ -1,3 +1,4 @@
+# Existing NR-AI rules
 .venv/
 __pycache__/
 *.pyc
@@ -5,3 +6,66 @@ __pycache__/
 *.flat
 data/test_*/
 data/real_benchmarks/
+
+# Python
+venv/
+ENV/
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.egg-info/
+dist/
+build/
+
+# Secrets & Private Config
+.env
+.env.*
+*.pem
+*.key
+*.cert
+*.pfx
+secrets/
+credentials/
+tokens/
+
+# Logs & Runtime Data
+*.log
+data/audit/
+data/audit_*/
+data/audit_test/
+data/audit_live/
+data/audit_live_vision/
+data/screenshots/
+scratch/
+companion_output.py
+cloud_execution_audit_report.json
+step2_model_verification.json
+matrix_test.py
+gallery_app_analysis.py
+
+# Android
+.gradle/
+build/
+app/build/
+local.properties
+nr_android_test/
+*.apk
+*.aab
+
+# IDE & Local Machine
+.idea/
+.vscode/
+*.iml
+*.sublime-workspace
+*.sublime-project
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Local Tools & Workspaces
+tools/
+workspace/
+.git_backup/

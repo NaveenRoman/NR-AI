@@ -19,41 +19,31 @@ class WindowVision:
     5. Converts coordinates back to screen coordinates.
     """
 
-    def __init__(self):
-        self.window_manager = WindowManager()
-        self.screen_vision = ScreenVision()
+    def __init__(self, window_manager=None, screen_vision=None):
+        self.window_manager = window_manager or WindowManager()
+        self.screen_vision = screen_vision or ScreenVision(window_manager=self.window_manager)
 
         self.output_directory = "data/screenshots/window"
-
-        os.makedirs(
-            self.output_directory,
-            exist_ok=True
-        )
+        os.makedirs(self.output_directory, exist_ok=True)
 
     # ---------------------------------------------------------
     # Find target window
     # ---------------------------------------------------------
 
     def find_window(self, application_name):
-        return self.window_manager.find_window(
-            application_name
-        )
+        return self.window_manager.find_window(application_name)
 
     # ---------------------------------------------------------
     # Activate target window
     # ---------------------------------------------------------
 
     def activate_window(self, application_name):
-        matches = self.find_window(
-            application_name
-        )
-
+        matches = self.find_window(application_name)
         if not matches:
             return False, None
 
         # Prefer the currently active matching window.
         active = self.window_manager.get_active_window()
-
         selected = None
 
         if active:
@@ -64,29 +54,19 @@ class WindowVision:
 
         # Otherwise use the first visible, non-minimized window.
         if selected is None:
-
             for match in matches:
-                if (
-                    match["visible"]
-                    and not match["minimized"]
-                ):
+                if match["visible"] and not match["minimized"]:
                     selected = match
                     break
 
         if selected is None:
             selected = matches[0]
 
-        success, message = (
-            self.window_manager.activate_window(
-                selected["title"]
-            )
-        )
-
+        success, message = self.window_manager.activate_window(selected["title"])
         if not success:
             return False, None
 
-        time.sleep(0.5)
-
+        time.sleep(0.3)
         return True, selected
 
     # ---------------------------------------------------------
@@ -96,12 +76,10 @@ class WindowVision:
     def capture_window(
         self,
         application_name,
-        filename="window.png"
+        filename=None,
+        save_to_disk=False,
     ):
-        success, window = self.activate_window(
-            application_name
-        )
-
+        success, window = self.activate_window(application_name)
         if not success:
             return None
 
@@ -110,53 +88,38 @@ class WindowVision:
         width = window["width"]
         height = window["height"]
 
-        # Windows can report tiny negative offsets when a
-        # window is maximized/border-adjusted.
+        # Windows can report tiny negative offsets when a window is maximized/border-adjusted.
         screenshot_left = max(0, left)
         screenshot_top = max(0, top)
 
-        # If the reported window extends outside the screen,
-        # clip it to the actual screen dimensions.
-        screen_width, screen_height = pyautogui.size()
+        screen_size = self.screen_vision.get_screen_size()
+        screen_width = screen_size["width"]
+        screen_height = screen_size["height"]
 
-        screenshot_width = min(
-            width,
-            screen_width - screenshot_left
-        )
-
-        screenshot_height = min(
-            height,
-            screen_height - screenshot_top
-        )
+        screenshot_width = min(width, screen_width - screenshot_left)
+        screenshot_height = min(height, screen_height - screenshot_top)
 
         if screenshot_width <= 0 or screenshot_height <= 0:
             return None
 
-        screenshot = pyautogui.screenshot(
-            region=(
-                screenshot_left,
-                screenshot_top,
-                screenshot_width,
-                screenshot_height
-            )
-        )
+        region = (screenshot_left, screenshot_top, screenshot_width, screenshot_height)
+        image = self.screen_vision.grab_image(region=region)
 
-        path = os.path.join(
-            self.output_directory,
-            filename
-        )
-
-        screenshot.save(path)
+        path = None
+        if save_to_disk and filename:
+            path = os.path.join(self.output_directory, filename)
+            image.save(path)
 
         return {
+            "image": image,
             "path": path,
             "window": window,
             "region": {
                 "left": screenshot_left,
                 "top": screenshot_top,
                 "width": screenshot_width,
-                "height": screenshot_height
-            }
+                "height": screenshot_height,
+            },
         }
 
     # ---------------------------------------------------------
@@ -166,19 +129,20 @@ class WindowVision:
     def read_window(
         self,
         application_name,
-        filename="window_ocr.png"
+        filename=None,
     ):
         capture = self.capture_window(
             application_name,
-            filename
+            filename=filename,
+            save_to_disk=bool(filename),
         )
 
         if not capture:
             return None
 
-        # Use ScreenVision's OCR engine on the cropped image.
+        # Use ScreenVision's OCR engine on the in-memory cropped image.
         detected = self.screen_vision.read_screen(
-            capture["path"]
+            capture["image"]
         )
 
         region = capture["region"]

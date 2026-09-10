@@ -59,59 +59,52 @@ class StateVerifier:
 
         target = expected_text.strip().lower()
 
+        # 1. Exact match search
         for item in detected:
-
             text = item["text"].strip()
-
             confidence = item["confidence"]
-
             if (
                 text.lower() == target
-                and
-                confidence >= self.minimum_confidence
+                and confidence >= self.minimum_confidence
             ):
-
-                print(
-                    "\n========================================"
-                )
-
-                print(
-                    "🟢 EXPECTED STATE FOUND"
-                )
-
-                print(
-                    "========================================"
-                )
-
-                print(
-                    f"Text: {text}"
-                )
-
-                print(
-                    f"Confidence: {confidence:.2f}"
-                )
-
                 box = item["box"]
-
                 x_values = [point[0] for point in box]
                 y_values = [point[1] for point in box]
-
                 center = (
-                int((min(x_values) + max(x_values)) / 2),
-                int((min(y_values) + max(y_values)) / 2)
+                    int((min(x_values) + max(x_values)) / 2),
+                    int((min(y_values) + max(y_values)) / 2)
                 )
-
-                print(
-                    f"Coordinates: {center}"
-                )
-
                 return {
                     "success": True,
                     "expected": expected_text,
                     "text": text,
                     "confidence": confidence,
                     "coordinates": center,
-                    "message": "Expected state verified."
+                    "message": "Expected state verified (exact match)."
+                }
+
+        # 2. Substring match fallback
+        for item in detected:
+            text = item["text"].strip()
+            confidence = item["confidence"]
+            if (
+                (target in text.lower() or text.lower() in target)
+                and confidence >= max(0.60, self.minimum_confidence - 0.15)
+            ):
+                box = item["box"]
+                x_values = [point[0] for point in box]
+                y_values = [point[1] for point in box]
+                center = (
+                    int((min(x_values) + max(x_values)) / 2),
+                    int((min(y_values) + max(y_values)) / 2)
+                )
+                return {
+                    "success": True,
+                    "expected": expected_text,
+                    "text": text,
+                    "confidence": confidence,
+                    "coordinates": center,
+                    "message": "Expected state verified (partial match)."
                 }
 
         print(

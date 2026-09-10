@@ -49,12 +49,16 @@ class AutonomousDevLoop:
         dispatcher: Optional[ActionDispatcher] = None,
         memory: Optional[ProjectContextMemory] = None,
         audit_logger: Optional[AuditLogger] = None,
+        provider: Optional[Any] = None,
+        router: Optional[Any] = None,
     ):
         self.planner = planner or TaskPlanner()
         self.dispatcher = dispatcher or ActionDispatcher()
         self.memory = memory or ProjectContextMemory()
         self.audit = audit_logger or AuditLogger()
-        self.code_agent = CodeAgent()
+        self.provider = provider
+        self.router = router
+        self.code_agent = CodeAgent(provider=provider, router=router)
         self.writer = CodeWriter()
 
     def run_lifecycle(

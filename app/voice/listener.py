@@ -1,7 +1,8 @@
 import enum
 import re
 import sys
-from typing import Any, Callable, Dict, Optional
+import time
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import speech_recognition as sr
 from app.config.voice_config import VoiceConfig
@@ -30,6 +31,8 @@ def safe_print(msg: str) -> None:
 
 class ListeningState(enum.Enum):
     IDLE = "idle"
+    WAITING_FOR_WAKE_WORD = "waiting_for_wake_word"
+    WAKE_WORD_DETECTED = "wake_word_detected"
     CALIBRATING = "calibrating"
     LISTENING = "listening"
     PROCESSING = "processing"
@@ -38,6 +41,7 @@ class ListeningState(enum.Enum):
     UNRECOGNIZED = "unrecognized"
     ERROR = "error"
     STOPPED = "stopped"
+    MUTED = "muted"
 
 
 class BaseSpeechRecognizer:
@@ -110,6 +114,10 @@ class VoiceListener:
         self.state = ListeningState.IDLE
         self._is_active = True
         self._microphone: Optional[sr.Microphone] = None
+        self._is_muted = False
+        self._cooldown_until = 0.0
+        self.last_recognized_phrase: Optional[str] = None
+        self.last_raw_speech: Optional[str] = None
 
     def _get_microphone(self) -> Optional[sr.Microphone]:
         if self._microphone is None:
@@ -119,6 +127,24 @@ class VoiceListener:
                 safe_print(f"⚠️ Microphone initialization warning: {e}")
                 self._microphone = None
         return self._microphone
+
+    def pause(self) -> None:
+        """Mutes microphone capture during TTS output to prevent self-triggering."""
+        self._is_muted = True
+        self.state = ListeningState.MUTED
+
+    def resume(self, cooldown: float = 0.6) -> None:
+        """Resumes microphone capture after TTS with an acoustic cooldown delay."""
+        self._is_muted = False
+        self._cooldown_until = time.time() + cooldown
+        self.state = ListeningState.IDLE
+
+    def is_muted(self) -> bool:
+        if self._is_muted:
+            return True
+        if time.time() < self._cooldown_until:
+            return True
+        return False
 
     def start(self) -> None:
         """Start or enable the listener."""
@@ -175,6 +201,9 @@ class VoiceListener:
         """
         if not self._is_active:
             self.state = ListeningState.STOPPED
+            return None
+
+        if self.is_muted():
             return None
 
         # Check if using Mock recognizer with pre-queued inputs
@@ -243,6 +272,128 @@ class VoiceListener:
                 ListeningState.STOPPED,
             ):
                 self.state = ListeningState.IDLE
+
+    def probe_microphone(self) -> Dict[str, Any]:
+        """
+        Inspect physical microphone availability and return hardware diagnosis.
+        """
+        try:
+            mics = sr.Microphone.list_microphone_names()
+            if not mics:
+                return {
+                    "available": False,
+                    "device_count": 0,
+                    "active_device": None,
+                    "status": "NO_DEVICES_FOUND",
+                    "details": "No microphone audio input devices detected by operating system.",
+                    "push_to_talk_fallback": True,
+                }
+            active_name = mics[0]
+            for m in mics:
+                if "microphone" in m.lower():
+                    active_name = m
+                    break
+            return {
+                "available": True,
+                "device_count": len(mics),
+                "active_device": active_name,
+                "status": "MICROPHONE_READY",
+                "details": f"Detected {len(mics)} audio input device(s). Primary: {active_name}",
+                "push_to_talk_fallback": True,
+            }
+        except Exception as e:
+            return {
+                "available": False,
+                "device_count": 0,
+                "active_device": None,
+                "status": "ERROR",
+                "details": f"Microphone inspection failed: {e}",
+                "push_to_talk_fallback": True,
+            }
+
+    def detect_wake_word(self, text: Optional[str]) -> Tuple[bool, Optional[str]]:
+        """
+        Check if recognized phrase begins with or contains a wake word:
+        'Hey NR', 'Hello NR', 'OK NR', 'Hey NR AI', etc.
+        Also handles phonetic/imperfect STT variants: 'hey and are', 'hello and are',
+        'hey in our', 'a and r', 'a n r', 'hey enter', 'hello n r', 'hey n r'.
+        Returns (is_wake_word, remaining_command).
+        """
+        if not text:
+            return False, None
+
+        self.last_raw_speech = text
+        cleaned = text.strip()
+
+        # Normalize common acoustic STT transcription errors for "NR"
+        normalized = cleaned.lower()
+        normalized = re.sub(r"\b(?:and\s+are|in\s+our|in\s+are|an\s+r|and\s+r|enter)\b", "nr", normalized)
+        normalized = re.sub(r"\bn\s+r\b", "nr", normalized)
+
+        wake_prefixes = [
+            r"^(?:hey|hello|hi|ok|ay|a)\s+nr(?:\s+ai)?(?:[,\s]+(.*))?$",
+            r"^nr(?:\s+ai)?(?:[,\s]+(.*))?$",
+        ]
+        for pat in wake_prefixes:
+            m = re.match(pat, normalized, flags=re.IGNORECASE)
+            if m:
+                remainder = m.group(1) if m.lastindex and m.lastindex >= 1 else ""
+                cmd = self.normalize_command(remainder) if remainder else ""
+                self.last_recognized_phrase = "Hey NR" if "hey" in cleaned.lower() else "Hello NR"
+                safe_print(f"⚡ Wake Word Recognized: '{cleaned}' (Normalized: '{normalized}')")
+                return True, cmd
+
+        for ww in self.config.wake_words:
+            ww_norm = ww.lower().replace(" ", "")
+            norm_no_spaces = normalized.replace(" ", "")
+            if norm_no_spaces == ww_norm or norm_no_spaces.startswith(ww_norm) or normalized.startswith(ww):
+                rem = cleaned[len(ww):].lstrip(" ,:.-") if len(cleaned) > len(ww) else ""
+                cmd = self.normalize_command(rem) if rem else ""
+                self.last_recognized_phrase = ww.title()
+                safe_print(f"⚡ Wake Word Recognized: '{cleaned}' (Matched Word: '{ww}')")
+                return True, cmd
+
+        return False, None
+
+    def listen_for_wake_word(
+        self, timeout: Optional[float] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Listens for audio and verifies if a wake word was spoken.
+        Sets state to WAITING_FOR_WAKE_WORD.
+        """
+        if self.is_muted():
+            return False, None
+
+        self.state = ListeningState.WAITING_FOR_WAKE_WORD
+        actual_timeout = timeout or 3.0
+        raw_text = self.listen(timeout=actual_timeout)
+        if not raw_text:
+            return False, None
+
+        if not self.config.wake_word_enabled:
+            return True, raw_text
+
+        is_wake, command = self.detect_wake_word(raw_text)
+        if is_wake:
+            self.state = ListeningState.WAKE_WORD_DETECTED
+            return True, command
+
+        return False, None
+
+    def listen_for_command(
+        self, timeout: float = 8.0, phrase_time_limit: float = 10.0
+    ) -> Optional[str]:
+        """
+        Dedicated second-stage listener to capture user command following wake activation.
+        """
+        if self.is_muted():
+            return None
+
+        self.state = ListeningState.LISTENING
+        safe_print("🎙️ Listening for command...")
+        return self.listen(timeout=timeout)
+
 
 
 if __name__ == "__main__":
