@@ -45,6 +45,15 @@ class AndroidErrorCode(str, Enum):
     LAUNCH_FAILED = "LAUNCH_FAILED"
     DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED"
     APK_NOT_FOUND = "APK_NOT_FOUND"
+    FILE_NOT_AUTHORIZED = "FILE_NOT_AUTHORIZED"
+    PROTECTED_FILE_REJECTED = "PROTECTED_FILE_REJECTED"
+    FILE_TOO_LARGE = "FILE_TOO_LARGE"
+    PATCH_TOO_LARGE = "PATCH_TOO_LARGE"
+    TOO_MANY_FILES_CHANGED = "TOO_MANY_FILES_CHANGED"
+    STALE_TARGET = "STALE_TARGET"
+    EDIT_VALIDATION_FAILED = "EDIT_VALIDATION_FAILED"
+    REPAIR_FAILED = "REPAIR_FAILED"
+    ROLLBACK_FAILED = "ROLLBACK_FAILED"
 
 
 # -----------------------------------------------------------------------------
@@ -56,6 +65,7 @@ class AndroidSafetyError(Exception):
     def __init__(self, code: AndroidErrorCode, message: str):
         super().__init__(message)
         self.code = code
+        self.error_code = code
         self.message = message
 
 
@@ -120,6 +130,49 @@ DEFAULT_JDK_PATH = Path(r"C:\Program Files\Android\Android Studio1\jbr")
 DEFAULT_SDK_PATH = Path(os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk"))
 DEFAULT_ADB_PATH = Path(os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe"))
 DEFAULT_EMULATOR_PATH = Path(os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk\emulator\emulator.exe"))
+
+# -----------------------------------------------------------------------------
+# File Policy & Code Modification Constants (Step 6 Phase 3)
+# -----------------------------------------------------------------------------
+
+ALLOWED_ANDROID_EXTENSIONS: Set[str] = {
+    ".java",
+    ".kt",
+    ".xml",
+    ".gradle",
+    ".gradle.kts",
+    ".properties",
+    ".json",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".md",
+}
+
+FORBIDDEN_ANDROID_EXTENSIONS: Set[str] = {
+    ".exe",
+    ".bat",
+    ".cmd",
+    ".ps1",
+    ".py",
+    ".dll",
+    ".so",
+    ".apk",
+    ".aab",
+    ".class",
+    ".jar",
+}
+
+PROTECTED_ANDROID_FILES: Set[str] = {
+    "local.properties",
+    "google-services.json",
+}
+
+MAX_EDITABLE_FILE_SIZE_BYTES: int = 1024 * 1024  # 1 MB
+MAX_PATCH_SIZE_BYTES: int = 100 * 1024  # 100 KB
+MAX_FILES_PER_REPAIR: int = 5
+MAX_LINES_PER_EDIT: int = 500
+MAX_REPAIR_ATTEMPTS: int = 2
 
 
 class RiskLevel(str, Enum):
@@ -383,3 +436,161 @@ class AndroidSafetyGate:
         risk = TOOL_RISK_MAP.get(tool_name, RiskLevel.MEDIUM)
         requires_confirmation = (risk == RiskLevel.HIGH)
         return risk, requires_confirmation
+
+    # -------------------------------------------------------------------------
+    # Code Editing & File Boundary Methods (Step 6 Phase 3)
+    # -------------------------------------------------------------------------
+
+    def validate_editable_file(
+        self,
+        file_path: Union[str, Path],
+        is_creation: bool = False,
+    ) -> Path:
+        """
+        Validates that a file is authorized for code inspection or editing:
+        - Resolves canonical path strictly inside C:\\NR-AI\\nr_android_test
+        - Rejects path traversal (.., \\\\, UNC, drive switching)
+        - Rejects protected files (local.properties, *.jks, *.keystore, google-services.json)
+        - Rejects unauthorized or dangerous extensions
+        - Verifies existence (or non-existence if is_creation=True)
+        - Verifies file size <= 1 MB
+        """
+        self.check_emergency_stop()
+        raw_str = str(file_path or "").strip()
+        if not raw_str:
+            raise AndroidSafetyError(
+                AndroidErrorCode.FILE_NOT_AUTHORIZED,
+                "File path cannot be empty.",
+            )
+
+        # 1. Traversal and UNC checks
+        if ".." in raw_str or raw_str.startswith(r"\\") or raw_str.startswith("//"):
+            raise AndroidSafetyError(
+                AndroidErrorCode.FILE_NOT_AUTHORIZED,
+                f"Path traversal or UNC path rejected: '{raw_str}'.",
+            )
+
+        try:
+            target = Path(raw_str)
+            if not target.is_absolute():
+                resolved = (self.authorized_project / target).resolve()
+            else:
+                resolved = target.resolve()
+        except Exception as e:
+            raise AndroidSafetyError(
+                AndroidErrorCode.FILE_NOT_AUTHORIZED,
+                f"Invalid file path resolution '{raw_str}': {e}",
+            )
+
+        # 2. Strict Project Boundary Check
+        try:
+            resolved.relative_to(self.authorized_project)
+        except ValueError:
+            raise AndroidSafetyError(
+                AndroidErrorCode.FILE_NOT_AUTHORIZED,
+                f"Path '{resolved}' is outside authorized project '{self.authorized_project}'.",
+            )
+
+        # 3. Protected Android Files Check
+        name_lower = resolved.name.lower()
+        if (
+            name_lower in PROTECTED_ANDROID_FILES
+            or name_lower == ".env"
+            or name_lower.startswith(".env")
+            or name_lower.endswith(".jks")
+            or name_lower.endswith(".keystore")
+        ):
+            raise AndroidSafetyError(
+                AndroidErrorCode.PROTECTED_FILE_REJECTED,
+                f"File '{resolved.name}' is a protected configuration or credential file and cannot be modified.",
+            )
+
+        # Additional sensitive keyword check in non-source files
+        ext = resolved.suffix.lower()
+        if resolved.name.lower().endswith(".gradle.kts"):
+            ext = ".gradle.kts"
+
+        for sensitive in ("keystore", "credential", "secret", "token", "password", "env"):
+            if sensitive in name_lower and ext not in (".kt", ".java"):
+                raise AndroidSafetyError(
+                    AndroidErrorCode.PROTECTED_FILE_REJECTED,
+                    f"File '{resolved.name}' contains protected sensitive keyword '{sensitive}'.",
+                )
+
+        # 4. File Extension Allowlist Check
+        if ext in FORBIDDEN_ANDROID_EXTENSIONS or ext not in ALLOWED_ANDROID_EXTENSIONS:
+            raise AndroidSafetyError(
+                AndroidErrorCode.FILE_NOT_AUTHORIZED,
+                f"File extension '{ext}' for '{resolved.name}' is not authorized. Allowed: {sorted(ALLOWED_ANDROID_EXTENSIONS)}.",
+            )
+
+        # 5. Existence Check
+        if not is_creation and not resolved.exists():
+            raise AndroidSafetyError(
+                AndroidErrorCode.FILE_NOT_AUTHORIZED,
+                f"Target file '{resolved}' does not exist inside authorized project.",
+            )
+
+        if is_creation and resolved.exists():
+            raise AndroidSafetyError(
+                AndroidErrorCode.EDIT_VALIDATION_FAILED,
+                f"Target file '{resolved}' already exists; cannot recreate existing file.",
+            )
+
+        # 6. File Size Limit Check (<= 1 MB)
+        if resolved.exists():
+            size = resolved.stat().st_size
+            if size > MAX_EDITABLE_FILE_SIZE_BYTES:
+                raise AndroidSafetyError(
+                    AndroidErrorCode.FILE_TOO_LARGE,
+                    f"File '{resolved.name}' size ({size} bytes) exceeds limit ({MAX_EDITABLE_FILE_SIZE_BYTES} bytes).",
+                )
+
+        return resolved
+
+    def validate_patch_size(self, patch_data: Union[int, str, bytes]) -> bool:
+        """Ensures proposed patch does not exceed maximum patch size (100 KB)."""
+        self.check_emergency_stop()
+        if isinstance(patch_data, str):
+            num_bytes = len(patch_data.encode("utf-8"))
+        elif isinstance(patch_data, (bytes, bytearray)):
+            num_bytes = len(patch_data)
+        else:
+            num_bytes = int(patch_data)
+
+        if num_bytes > MAX_PATCH_SIZE_BYTES:
+            raise AndroidSafetyError(
+                AndroidErrorCode.PATCH_TOO_LARGE,
+                f"Proposed patch size ({num_bytes} bytes) exceeds limit ({MAX_PATCH_SIZE_BYTES} bytes).",
+            )
+        return True
+
+    @property
+    def authorized_devices(self) -> Set[str]:
+        return AUTHORIZED_DEVICE_SERIALS
+
+    def validate_prohibited_content(self, content: str) -> None:
+        """Validates that replacement text does not contain prohibited shell execution or plain credentials."""
+        self.check_emergency_stop()
+        prohibited_patterns = [
+            (r"Runtime\.getRuntime\(\)\.exec", "Runtime.getRuntime().exec"),
+            (r"ProcessBuilder", "ProcessBuilder"),
+            (r"System\.exit", "System.exit"),
+            (r"subprocess", "subprocess"),
+            (r"os\.system", "os.system"),
+            (r"os\.popen", "os.popen"),
+            (r"powershell", "powershell"),
+            (r"cmd\.exe", "cmd.exe"),
+            (r"adb\s+shell", "adb shell"),
+            (r"shell\s*=\s*True", "shell=True"),
+            (r"eval\(", "eval()"),
+            (r"exec\(", "exec()"),
+            (r"AIzaSy[A-Za-z0-9_\-]{20,}", "Plain Google API Key"),
+            (r"sk-proj-[A-Za-z0-9_\-]{20,}", "Plain OpenAI API Key"),
+        ]
+        for pat, desc in prohibited_patterns:
+            if re.search(pat, content, re.IGNORECASE):
+                raise AndroidSafetyError(
+                    AndroidErrorCode.EDIT_VALIDATION_FAILED,
+                    f"Proposed change contains prohibited construct: '{desc}'.",
+                )

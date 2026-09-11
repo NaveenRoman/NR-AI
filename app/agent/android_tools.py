@@ -270,8 +270,16 @@ class SafeGradleRunner:
             redacted = re.sub(pat, repl, redacted)
         return redacted
 
-    def run_action(self, action_tasks: List[str], timeout: float = 180.0) -> Dict[str, Any]:
+    def run_action(self, action_tasks: Union[List[str], str], timeout: float = 180.0) -> Dict[str, Any]:
         """Runs an authorized Gradle action task list."""
+        if isinstance(action_tasks, str):
+            from app.agent.android_safety import AUTHORIZED_BUILD_ACTIONS
+            clean = action_tasks.strip().upper()
+            if clean in AUTHORIZED_BUILD_ACTIONS:
+                action_tasks = AUTHORIZED_BUILD_ACTIONS[clean]
+            else:
+                action_tasks = [action_tasks]
+
         gradle_cmd = self._get_gradle_cmd()
         full_cmd = [str(gradle_cmd)] + action_tasks + ["--console=plain"]
 
@@ -322,6 +330,31 @@ class SafeGradleRunner:
                 "output_sample": str(e),
                 "diagnosis": {"category": "execution_error", "diagnosis": str(e)},
             }
+
+    def run_gradle_task(self, action_name: str, safety_gate: Optional[Any] = None) -> AndroidToolResult:
+        """Executes an authorized Gradle task, returning an AndroidToolResult."""
+        from app.agent.android_safety import AndroidSafetyGate, AndroidErrorCode, AndroidSafetyError
+        gate = safety_gate or AndroidSafetyGate()
+        try:
+            tasks = gate.validate_build_action(action_name)
+            res = self.run_action(tasks)
+            success = res.get("success", False)
+            return AndroidToolResult(
+                success=success,
+                tool="android.build_project",
+                data=res,
+                message=f"Gradle build '{action_name}' {'succeeded' if success else 'failed'}.",
+                error=None if success else f"Build task failed: {res.get('output_sample', '')[:200]}",
+                error_code=None if success else AndroidErrorCode.BUILD_FAILED.value,
+                verified=success,
+            )
+        except AndroidSafetyError as se:
+            return AndroidToolResult(
+                success=False,
+                tool="android.build_project",
+                error=se.message,
+                error_code=se.code.value,
+            )
 
 
 class SafeEmulatorManager:

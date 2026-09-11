@@ -32,6 +32,7 @@ class AuditLogger:
             "timestamp": time.time(),
             "formatted_time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "event_type": event_type,
+            "action": event_type,
             "status": status,
             "details": details,
         }
@@ -91,3 +92,6 @@ class AuditLogger:
 
     def get_entries(self) -> List[Dict[str, Any]]:
         return list(self.entries)
+
+    def get_recent_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
+        return list(self.entries)[-limit:]

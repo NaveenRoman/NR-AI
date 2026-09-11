@@ -38,6 +38,7 @@ from app.agent.android_safety import (
     AndroidSafetyError,
     AndroidSafetyGate,
     EmergencyStopActiveError,
+    MAX_REPAIR_ATTEMPTS,
     RiskLevel,
 )
 from app.agent.android_tools import (
@@ -141,6 +142,15 @@ class AndroidStudioAgent:
         self.router = model_router or ModelRouter()
         self.audit = audit_logger or AuditLogger()
         self.memory = memory or ProjectContextMemory()
+
+        from app.agent.android_code_repair import AndroidCodeRepairEngine
+        self.code_repair = AndroidCodeRepairEngine(
+            project_path=self.safety.authorized_project,
+            safety_gate=self.safety,
+            gradle_runner=self.tools.gradle,
+            audit_logger=self.audit,
+            router=self.router,
+        )
 
     # -------------------------------------------------------------------------
     # Goal Parsing & Deterministic Planning
@@ -414,6 +424,32 @@ class AndroidStudioAgent:
         if any(kw in g_lower for kw in pipeline_keywords):
             serial = "15930545720012G" if ("15930545720012g" in g_lower or "vivo" in g_lower) else ("emulator-5554" if "emulator" in g_lower else None)
             return self.execute_pipeline(serial=serial, user_confirmed=user_confirmed, workflow_id=workflow_id, goal=user_goal)
+
+        # Check for vague / unrestricted modification requests
+        if any(w in g_lower for w in ("edit anything", "modify the project however you want", "arbitrary edit")):
+            return AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=0,
+                steps_executed=0,
+                summary="Unrestricted or vague code modification is strictly forbidden.",
+                error="Vague or unrestricted code modification requests rejected.",
+                error_code=AndroidErrorCode.ACTION_NOT_ALLOWED.value,
+                duration_s=time.time() - start_time,
+            )
+
+        # Check for build repair / self-healing requests
+        if any(kw in g_lower for kw in ("fix build", "repair build", "heal build")):
+            return self.execute_build_repair(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
+
+        # Check for code inspection requests
+        if "inspect code" in g_lower:
+            return self._execute_code_inspection_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
+
+        # Check for explain build error requests
+        if "explain build error" in g_lower or "explain error" in g_lower:
+            return self._execute_explain_error_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
 
         # Plan actions
         intents = self.plan_goal(user_goal)
@@ -953,3 +989,120 @@ class AndroidStudioAgent:
             )
         except Exception as e:
             logger.warning(f"Failed to log workflow audit: {e}")
+
+    # -------------------------------------------------------------------------
+    # Code Editing, Inspection & Build Repair (Step 6 Phase 3)
+    # -------------------------------------------------------------------------
+
+    def execute_code_edit(self, proposal: Any) -> Any:
+        """Applies a validated code edit proposal via AndroidCodeRepairEngine."""
+        return self.code_repair.apply_edit(proposal)
+
+    def inspect_code(self, file_path: Optional[str] = None) -> Dict[str, Any]:
+        """Inspects bounded code context within authorized project."""
+        return self.code_repair.inspect_code_context(file_path)
+
+    def execute_build_repair(
+        self,
+        user_goal: str = "Fix build errors",
+        workflow_id: Optional[str] = None,
+        start_time: Optional[float] = None,
+        deterministic_patch_provider: Optional[Callable] = None,
+        max_attempts: int = MAX_REPAIR_ATTEMPTS,
+    ) -> AndroidWorkflowReport:
+        """
+        Executes bounded, self-healing build error repair loop:
+        Build -> Parse Error -> Propose Repair -> Validate -> Apply -> Rebuild -> Verify/Rollback.
+        """
+        wf_id = workflow_id or f"android_repair_{uuid.uuid4().hex[:8]}"
+        t0 = start_time or time.time()
+
+        repair_res = self.code_repair.repair_build(
+            user_goal=user_goal,
+            max_attempts=max_attempts,
+            deterministic_patch_provider=deterministic_patch_provider,
+        )
+
+        steps = []
+        for edit in repair_res.applied_edits:
+            steps.append({
+                "stage": "CODE_EDIT",
+                "file": edit.file_path,
+                "success": edit.success,
+                "diff": edit.diff,
+                "lines_changed": edit.lines_changed,
+            })
+
+        report = AndroidWorkflowReport(
+            workflow_id=wf_id,
+            goal=user_goal,
+            success=repair_res.success,
+            total_steps=repair_res.attempts + 1,
+            steps_executed=repair_res.attempts,
+            steps=steps,
+            summary=repair_res.summary,
+            error=repair_res.summary if not repair_res.success else None,
+            error_code=repair_res.error_code,
+            duration_s=time.time() - t0,
+        )
+        self._audit_workflow(report)
+        return report
+
+    def _execute_code_inspection_workflow(
+        self,
+        user_goal: str,
+        workflow_id: str,
+        start_time: float,
+    ) -> AndroidWorkflowReport:
+        """Executes bounded code inspection and returns structured workflow report."""
+        res = self.inspect_code()
+        steps = [{
+            "stage": "INSPECT_CODE",
+            "success": True,
+            "data": res,
+        }]
+        report = AndroidWorkflowReport(
+            workflow_id=workflow_id,
+            goal=user_goal,
+            success=True,
+            total_steps=1,
+            steps_executed=1,
+            steps=steps,
+            summary=f"Project code inspected: {res.get('total_allowed_files', 0)} allowed files identified.",
+            duration_s=time.time() - start_time,
+        )
+        self._audit_workflow(report)
+        return report
+
+    def _execute_explain_error_workflow(
+        self,
+        user_goal: str,
+        workflow_id: str,
+        start_time: float,
+    ) -> AndroidWorkflowReport:
+        """Builds project, parses compiler error, and returns structured explanation."""
+        build_res = self.tools.gradle.run_action("DEBUG_ASSEMBLE")
+        raw_out = build_res.get("output_sample", "") or str(build_res.get("diagnosis", ""))
+        parsed_err = self.code_repair.analyzer.analyze_build_output(raw_out, self.safety.authorized_project)
+
+        advice = self.consult_model(f"Explain build error: {parsed_err.diagnosis}")
+        steps = [{
+            "stage": "EXPLAIN_ERROR",
+            "success": True,
+            "data": {
+                "error": parsed_err.to_dict(),
+                "advice": advice,
+            },
+        }]
+        report = AndroidWorkflowReport(
+            workflow_id=workflow_id,
+            goal=user_goal,
+            success=True,
+            total_steps=1,
+            steps_executed=1,
+            steps=steps,
+            summary=f"Build error explained: {parsed_err.category.value} - {parsed_err.diagnosis}",
+            duration_s=time.time() - start_time,
+        )
+        self._audit_workflow(report)
+        return report

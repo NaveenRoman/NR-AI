@@ -348,7 +348,7 @@ class NRCompanion:
         if any(c_candidate.lower().startswith(pfx) for pfx in explicit_android_prefixes):
             return CommandCategory.ANDROID_STUDIO
 
-        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run")):
+        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run", "inspect code", "fix build", "repair build", "explain build error", "explain error", "code repair", "inspect android code")):
             return CommandCategory.ANDROID_STUDIO
 
         # 0B.4. Browser Agent Workflows (Safe web automation & verification)
