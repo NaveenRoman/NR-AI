@@ -348,7 +348,7 @@ class NRCompanion:
         if any(c_candidate.lower().startswith(pfx) for pfx in explicit_android_prefixes):
             return CommandCategory.ANDROID_STUDIO
 
-        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android")):
+        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run")):
             return CommandCategory.ANDROID_STUDIO
 
         # 0B.4. Browser Agent Workflows (Safe web automation & verification)
@@ -1697,8 +1697,12 @@ class NRCompanion:
 
         self.avatar.set_idle("Android workflow completed." if report.success else "Android workflow halted.")
 
+        summary_text = report.summary
+        if report.requires_confirmation and not summary_text.startswith("INSTALL_CONFIRMATION_REQUIRED"):
+            summary_text = f"INSTALL_CONFIRMATION_REQUIRED: {summary_text}"
+
         return CompanionResponse(
-            text=report.summary,
+            text=summary_text,
             category=CommandCategory.ANDROID_STUDIO,
             routed_to="AndroidStudioAgent",
             avatar_mode=AvatarMode.SPEAKING if report.success else (AvatarMode.ATTENTIVE if report.requires_confirmation else AvatarMode.ERROR),

@@ -385,3 +385,176 @@ class AndroidVerifier:
             summary=f"Android Verification: {passed}/{len(checks)} checks passed.",
         )
         return report
+
+    # -------------------------------------------------------------------------
+    # Pipeline Ground-Truth Verification (Step 6 Phase 2)
+    # -------------------------------------------------------------------------
+    def run_pipeline_verification(
+        self,
+        build_result: Optional[Dict[str, Any]] = None,
+        apk_path: Optional[Path] = None,
+        serial: Optional[str] = None,
+        install_result: Optional[Dict[str, Any]] = None,
+        launch_result: Optional[Dict[str, Any]] = None,
+        app_state: Optional[Dict[str, Any]] = None,
+        package_name: str = AUTHORIZED_PACKAGE_NAME,
+        safety_violation: bool = False,
+    ) -> AndroidVerificationReport:
+        """
+        Executes Step 6 Phase 2 Ground-Truth Pipeline Verification (Checks A through J):
+        A. Build Succeeded
+        B. APK Exists
+        C. APK Inside Authorized Build Directory
+        D. Package is com.nrai.test
+        E. Target Device is Authorized
+        F. Installation Succeeded
+        G. Package is Installed
+        H. Application Launch Succeeded
+        I. Process/Application State is Correct
+        J. No Safety Violation Occurred
+        """
+        checks: List[CheckResult] = []
+
+        # Check A: Build succeeded
+        build_ok = bool(build_result and build_result.get("success", False))
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_A",
+            name="Build Succeeded",
+            passed=build_ok,
+            details=build_result or {},
+            message="Build completed with return code 0." if build_ok else "Build failed or was not executed.",
+            error=None if build_ok else "Build task did not succeed.",
+        ))
+
+        # Check B: APK exists
+        apk_exists = bool(apk_path and Path(apk_path).exists() and Path(apk_path).is_file())
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_B",
+            name="APK Exists",
+            passed=apk_exists,
+            details={"apk_path": str(apk_path) if apk_path else None},
+            message=f"APK file exists at '{apk_path}'." if apk_exists else "Target APK file does not exist.",
+            error=None if apk_exists else "APK file not found on disk.",
+        ))
+
+        # Check C: APK inside authorized build directory
+        in_build_dir = False
+        if apk_path:
+            try:
+                expected_dir = (self.safety.authorized_project / "app" / "build").resolve()
+                Path(apk_path).resolve().relative_to(expected_dir)
+                in_build_dir = True
+            except (ValueError, Exception):
+                in_build_dir = False
+
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_C",
+            name="APK Inside Authorized Build Directory",
+            passed=in_build_dir,
+            details={"apk_path": str(apk_path) if apk_path else None},
+            message="APK resides within authorized build output directory." if in_build_dir else "APK is outside authorized build directory.",
+            error=None if in_build_dir else "APK boundary violation.",
+        ))
+
+        # Check D: Package is com.nrai.test
+        pkg_ok = (package_name == AUTHORIZED_PACKAGE_NAME)
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_D",
+            name="Package Identity is com.nrai.test",
+            passed=pkg_ok,
+            details={"package_name": package_name, "expected": AUTHORIZED_PACKAGE_NAME},
+            message=f"Package identity verified: '{package_name}'." if pkg_ok else f"Package mismatch: '{package_name}'.",
+            error=None if pkg_ok else "Package name does not match authorized package.",
+        ))
+
+        # Check E: Target device is authorized
+        dev_ok = bool(serial and serial in AUTHORIZED_DEVICE_SERIALS)
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_E",
+            name="Target Device Authorized",
+            passed=dev_ok,
+            details={"serial": serial, "authorized": list(AUTHORIZED_DEVICE_SERIALS)},
+            message=f"Device '{serial}' is authorized." if dev_ok else f"Device '{serial}' is not authorized.",
+            error=None if dev_ok else "Target device not in authorized device allowlist.",
+        ))
+
+        # Check F: Installation succeeded
+        inst_ok = bool(install_result and install_result.get("success", False))
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_F",
+            name="Installation Succeeded",
+            passed=inst_ok,
+            details=install_result or {},
+            message="APK installation reported success." if inst_ok else "APK installation failed or was skipped.",
+            error=None if inst_ok else "Installation did not report success.",
+        ))
+
+        # Check G: Package is installed on device
+        pkg_installed = False
+        if serial and dev_ok:
+            if app_state and "installed" in app_state:
+                pkg_installed = bool(app_state["installed"])
+            else:
+                pkg_installed = self.adb.is_package_installed(serial, package_name)
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_G",
+            name="Package Installed on Device",
+            passed=pkg_installed,
+            details={"serial": serial, "package": package_name, "installed": pkg_installed},
+            message=f"Package '{package_name}' is verified installed on '{serial}'." if pkg_installed else f"Package '{package_name}' is not installed.",
+            error=None if pkg_installed else "Package not found in package manager on device.",
+        ))
+
+        # Check H: Application launch succeeded
+        launch_ok = bool(launch_result and launch_result.get("success", False))
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_H",
+            name="Application Launch Succeeded",
+            passed=launch_ok,
+            details=launch_result or {},
+            message="Application launch command succeeded." if launch_ok else "Application launch failed or was skipped.",
+            error=None if launch_ok else "Application launch did not succeed.",
+        ))
+
+        # Check I: Process/Application state is correct
+        proc_ok = False
+        pid = None
+        if app_state and "is_running" in app_state:
+            proc_ok = bool(app_state["is_running"])
+            pid = app_state.get("pid")
+        elif serial and dev_ok:
+            pid = self.adb.get_process_pid(serial, package_name)
+            proc_ok = (pid is not None)
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_I",
+            name="Process Running State Correct",
+            passed=proc_ok,
+            details={"serial": serial, "package": package_name, "is_running": proc_ok, "pid": pid},
+            message=f"Process for '{package_name}' is active with PID {pid}." if proc_ok else f"Process for '{package_name}' is not running.",
+            error=None if proc_ok else "Target application process is not active.",
+        ))
+
+        # Check J: No safety violation occurred
+        safety_ok = (not safety_violation) and (not self.safety.is_emergency_stop_active())
+        checks.append(CheckResult(
+            check_id="PIPE_CHECK_J",
+            name="No Safety Violation Occurred",
+            passed=safety_ok,
+            details={"safety_violation": safety_violation, "emergency_stop_active": self.safety.is_emergency_stop_active()},
+            message="All safety boundaries respected; emergency stop inactive." if safety_ok else "Safety violation or emergency stop detected.",
+            error=None if safety_ok else "Safety policy violation detected.",
+        ))
+
+        passed_count = sum(1 for c in checks if c.passed)
+        failed_count = len(checks) - passed_count
+        all_passed = (failed_count == 0)
+
+        report = AndroidVerificationReport(
+            total_checks=len(checks),
+            passed_checks=passed_count,
+            failed_checks=failed_count,
+            checks=checks,
+            all_passed=all_passed,
+            summary=f"Android Pipeline Verification: {passed_count}/{len(checks)} checks passed.",
+        )
+        return report

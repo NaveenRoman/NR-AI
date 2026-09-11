@@ -191,11 +191,28 @@ class SafeAdbClient:
         message = out if success else (err or out or "APK installation failed.")
         return success, message
 
-    def capture_logcat(self, serial: str, lines: int = 100) -> str:
-        """Captures bounded recent logcat messages."""
+    def capture_logcat(self, serial: str, lines: int = 100, filter_package: Optional[str] = None) -> str:
+        """Captures bounded recent logcat messages, optionally filtered to package."""
         bounded_lines = max(1, min(lines, 500))
         code, out, _ = self._run_adb(["-s", serial, "logcat", "-d", "-t", str(bounded_lines)])
+        if filter_package:
+            filtered = [line for line in out.splitlines() if filter_package in line]
+            return "\n".join(filtered)
         return out
+
+    def get_app_state(self, serial: str, package_name: str = AUTHORIZED_PACKAGE_NAME) -> Dict[str, Any]:
+        """Captures bounded deterministic state for package on target device."""
+        installed = self.is_package_installed(serial, package_name)
+        pid = self.get_process_pid(serial, package_name) if installed else None
+        dev_status = self.get_device_state(serial)
+        return {
+            "serial": serial,
+            "package_name": package_name,
+            "installed": installed,
+            "is_running": (pid is not None),
+            "pid": pid,
+            "device_status": dev_status,
+        }
 
     def stop_emulator(self, serial: str) -> bool:
         """Kills an emulator safely using emu kill."""
@@ -239,6 +256,20 @@ class SafeGradleRunner:
             env["ANDROID_SDK_ROOT"] = str(self.sdk_path)
         return env
 
+    @staticmethod
+    def _redact_output(text: str) -> str:
+        """Redacts sensitive values from output."""
+        patterns = [
+            (r'(?i)(password\s*[:=]\s*)["\']?[^\s"\']+["\']?', r'\1[REDACTED]'),
+            (r'(?i)(secret\s*[:=]\s*)["\']?[^\s"\']+["\']?', r'\1[REDACTED]'),
+            (r'(?i)(token\s*[:=]\s*)["\']?[^\s"\']+["\']?', r'\1[REDACTED]'),
+            (r'(?i)(api[_-]?key\s*[:=]\s*)["\']?[^\s"\']+["\']?', r'\1[REDACTED]'),
+        ]
+        redacted = text
+        for pat, repl in patterns:
+            redacted = re.sub(pat, repl, redacted)
+        return redacted
+
     def run_action(self, action_tasks: List[str], timeout: float = 180.0) -> Dict[str, Any]:
         """Runs an authorized Gradle action task list."""
         gradle_cmd = self._get_gradle_cmd()
@@ -258,7 +289,8 @@ class SafeGradleRunner:
             )
             duration = time.time() - start_time
             success = (res.returncode == 0)
-            combined_output = res.stdout + ("\n" + res.stderr if res.stderr else "")
+            raw_output = res.stdout + ("\n" + res.stderr if res.stderr else "")
+            combined_output = self._redact_output(raw_output)
 
             diagnosis = None
             if not success:
@@ -843,12 +875,18 @@ class AndroidToolRegistry:
     def _tool_capture_log(self, params: Dict[str, Any]) -> AndroidToolResult:
         serial = self.safety.validate_device_serial(params.get("serial", ""))
         lines = int(params.get("lines", 100))
-        logs = self.adb.capture_logcat(serial, lines=lines)
+        package_filter = params.get("package_name")
+        logs = self.adb.capture_logcat(serial, lines=lines, filter_package=package_filter)
 
         return AndroidToolResult(
             success=True,
             tool="android.capture_log",
-            data={"serial": serial, "lines_requested": lines, "log_sample": logs[-2000:] if len(logs) > 2000 else logs},
+            data={
+                "serial": serial,
+                "lines_requested": lines,
+                "package_filter": package_filter,
+                "log_sample": logs[-2000:] if len(logs) > 2000 else logs,
+            },
             message=f"Captured {len(logs.splitlines())} log lines from '{serial}'.",
             verified=True,
         )

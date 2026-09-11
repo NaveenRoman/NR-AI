@@ -39,6 +39,12 @@ class AndroidErrorCode(str, Enum):
     ACTION_NOT_ALLOWED = "ACTION_NOT_ALLOWED"
     EMERGENCY_STOPPED = "EMERGENCY_STOPPED"
     VERIFICATION_FAILED = "VERIFICATION_FAILED"
+    INSTALL_CONFIRMATION_REQUIRED = "INSTALL_CONFIRMATION_REQUIRED"
+    BUILD_FAILED = "BUILD_FAILED"
+    INSTALL_FAILED = "INSTALL_FAILED"
+    LAUNCH_FAILED = "LAUNCH_FAILED"
+    DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED"
+    APK_NOT_FOUND = "APK_NOT_FOUND"
 
 
 # -----------------------------------------------------------------------------
@@ -324,6 +330,38 @@ class AndroidSafetyGate:
                 f"Target APK '{resolved}' does not exist on disk.",
             )
 
+        return resolved
+
+    def revalidate_apk_integrity(
+        self,
+        apk_path: Union[str, Path],
+        expected_mtime: Optional[float] = None,
+        expected_size: Optional[int] = None,
+    ) -> Path:
+        """
+        Revalidates APK immediately prior to deployment:
+        - Confirms path validity and existence
+        - Verifies APK size > 0
+        - Optionally verifies mtime / size have not unexpectedly changed
+        """
+        self.check_emergency_stop()
+        resolved = self.validate_apk_path(apk_path)
+        stat = resolved.stat()
+        if stat.st_size <= 0:
+            raise AndroidSafetyError(
+                AndroidErrorCode.APK_NOT_AUTHORIZED,
+                f"APK '{resolved.name}' has invalid zero byte size.",
+            )
+        if expected_size is not None and stat.st_size != expected_size:
+            raise AndroidSafetyError(
+                AndroidErrorCode.APK_NOT_AUTHORIZED,
+                f"APK '{resolved.name}' size mismatch: expected {expected_size}, got {stat.st_size}.",
+            )
+        if expected_mtime is not None and abs(stat.st_mtime - expected_mtime) > 1.0:
+            raise AndroidSafetyError(
+                AndroidErrorCode.APK_NOT_AUTHORIZED,
+                f"APK '{resolved.name}' timestamp changed unexpectedly.",
+            )
         return resolved
 
     def validate_package_name(self, package_name: str) -> str:
