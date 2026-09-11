@@ -25,6 +25,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.agent.agent_slot import SlotManager
+from app.agent.browser_agent import BrowserAgent, BrowserWorkflowReport
 from app.agent.computer_agent import UnifiedComputerAgent, WorkflowReport
 from app.agent.input_controller import InputController
 from app.agent.model_provider import UnifiedModelProvider
@@ -73,6 +74,7 @@ class CommandCategory(str, Enum):
     VISION = "VISION"
     CONTROL_INPUT = "CONTROL_INPUT"
     COMPUTER_AGENT = "COMPUTER_AGENT"
+    BROWSER_AGENT = "BROWSER_AGENT"
 
 
 @dataclass
@@ -154,6 +156,10 @@ class NRCompanion:
             input_controller=self.input_controller,
             audit_logger=self.audit,
             memory=self.memory,
+        )
+        self.browser_agent = BrowserAgent(
+            audit_logger=self.audit,
+            model_router=self.router,
         )
 
         # Real-time state tracking
@@ -327,11 +333,19 @@ class NRCompanion:
                     continue
                 return CommandCategory.COMMAND_EXECUTION
 
-        # 0B.5. Unified Computer Agent Workflows (Multi-step perception & control)
-        # e.g., "open notepad and type hello", "open chrome and search for android", "find text Save and click it"
+        # 0B.4. Browser Agent Workflows (Safe web automation & verification)
         c_candidate = re.sub(r"^(?:please\s+|can you\s+|could you\s+)", "", c).strip()
         c_candidate = re.sub(r"[.?!]+$", "", c_candidate).strip()
 
+        explicit_browser_prefixes = ("browser:", "web:", "browser workflow:", "browser agent:", "run browser workflow:")
+        if any(c_candidate.lower().startswith(pfx) for pfx in explicit_browser_prefixes):
+            return CommandCategory.BROWSER_AGENT
+
+        if "browser" in c_candidate.lower() and any(w in c_candidate.lower() for w in ("open", "test page", "fixture", "submit", "verify", "click")):
+            return CommandCategory.BROWSER_AGENT
+
+        # 0B.5. Unified Computer Agent Workflows (Multi-step perception & control)
+        # e.g., "open notepad and type hello", "open chrome and search for android", "find text Save and click it"
         explicit_workflow_prefixes = ("computer:", "workflow:", "computer workflow:", "computer agent:", "run workflow:")
         if any(c_candidate.startswith(pfx) for pfx in explicit_workflow_prefixes):
             return CommandCategory.COMPUTER_AGENT
@@ -556,6 +570,8 @@ class NRCompanion:
             response = self._handle_command_execution(clean_input)
         elif category == CommandCategory.COMPUTER_AGENT:
             response = self._handle_computer_agent(clean_input)
+        elif category == CommandCategory.BROWSER_AGENT:
+            response = self._handle_browser_agent(clean_input)
         elif category == CommandCategory.APPLICATION_LAUNCH:
             response = self._handle_application_launch(clean_input)
         elif category == CommandCategory.WINDOW_MANAGEMENT:
@@ -1601,6 +1617,39 @@ class NRCompanion:
             text=report.summary,
             category=CommandCategory.COMPUTER_AGENT,
             routed_to="UnifiedComputerAgent",
+            avatar_mode=AvatarMode.SPEAKING if report.success else (AvatarMode.ATTENTIVE if report.requires_confirmation else AvatarMode.ERROR),
+            avatar_emotion=AvatarEmotion.HAPPY if report.success else (AvatarEmotion.ATTENTIVE if report.requires_confirmation else AvatarEmotion.CONCERNED),
+            data=report.to_dict(),
+        )
+
+    def _handle_browser_agent(self, command: str) -> CompanionResponse:
+        """
+        Executes goal-driven safe browser workflows using BrowserAgent and deterministic tools.
+        """
+        self.avatar.set_thinking("Executing browser workflow...")
+        self.current_route = "BrowserAgent"
+        self.current_agent = "Agent-5-Browser"
+        self.current_task_status = "Executing Browser Workflow"
+
+        clean_goal = command.strip()
+        clean_goal = re.sub(r"^(?:browser|web|browser\s+workflow|browser\s+agent)\s*:\s*", "", clean_goal, flags=re.IGNORECASE).strip()
+
+        user_confirmed = False
+        if clean_goal.lower().startswith(("confirm ", "yes confirm ", "force ")):
+            user_confirmed = True
+            clean_goal = re.sub(r"^(?:confirm|yes\s+confirm|force)\s+", "", clean_goal, flags=re.IGNORECASE).strip()
+
+        report: BrowserWorkflowReport = self.browser_agent.execute_workflow(
+            user_goal=clean_goal,
+            user_confirmed=user_confirmed,
+        )
+
+        self.avatar.set_idle("Browser workflow completed." if report.success else "Browser workflow halted.")
+
+        return CompanionResponse(
+            text=report.summary,
+            category=CommandCategory.BROWSER_AGENT,
+            routed_to="BrowserAgent",
             avatar_mode=AvatarMode.SPEAKING if report.success else (AvatarMode.ATTENTIVE if report.requires_confirmation else AvatarMode.ERROR),
             avatar_emotion=AvatarEmotion.HAPPY if report.success else (AvatarEmotion.ATTENTIVE if report.requires_confirmation else AvatarEmotion.CONCERNED),
             data=report.to_dict(),

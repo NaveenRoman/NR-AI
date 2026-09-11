@@ -1,0 +1,2 @@
+NR-AI Safe Download Test File.
+This is a harmless text file for quarantine download verification.

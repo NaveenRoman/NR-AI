@@ -638,25 +638,53 @@ class UnifiedModelProvider:
     ) -> Dict[str, Any]:
         """Route to appropriate provider and generate response."""
         target_model = model or self.config.default_model
+        allow_fallback = kwargs.get("allow_fallback", True)
 
         if provider == PROVIDER_GOOGLE or "gemini" in target_model.lower():
             res = self.gemini.generate(prompt=prompt, model=target_model, **kwargs)
             res.setdefault("provider", "Google Gemini")
             if res.get("success") and "status_code" not in res:
                 res["status_code"] = 200
+
+            # If Gemini fails and OpenAI is available, execute seamless cross-provider fallback
+            if not res.get("success") and allow_fallback and self.openai.is_available():
+                status_code = res.get("status_code")
+                err = str(res.get("error", ""))
+                if status_code in {429, 500, 502, 503, 504} or any(
+                    k in err.lower() for k in ["quota", "credits", "timeout", "connection", "rate limit", "no_credentials"]
+                ):
+                    openai_model = self.config.default_model
+                    oai_res = self.openai.generate(
+                        prompt=prompt,
+                        model=openai_model,
+                        system_prompt=kwargs.get("system_prompt"),
+                        messages=kwargs.get("messages"),
+                        max_tokens=kwargs.get("max_tokens"),
+                        temperature=kwargs.get("temperature"),
+                        timeout=kwargs.get("timeout"),
+                        allow_fallback=True,
+                    )
+                    if oai_res.get("success"):
+                        oai_res["fallback_used"] = True
+                        oai_res["original_requested_model"] = target_model
+                        oai_res["provider"] = "OpenAI"
+                        oai_res["status_code"] = 200
+                        oai_res["gemini_error"] = err
+                        return oai_res
             return res
 
         # Attempt OpenAI
         res = self.openai.generate(prompt=prompt, model=target_model, **kwargs)
         res.setdefault("provider", "OpenAI")
 
-        # If OpenAI fails due to quota exhausted (429), auth error, or unavailable,
+        # If OpenAI fails due to quota exhausted (429), timeout, connection, or auth error,
         # and Gemini is available, execute seamless cross-provider fallback
-        allow_fallback = kwargs.get("allow_fallback", True)
         if not res.get("success") and allow_fallback and self.gemini.is_available():
             status_code = res.get("status_code")
             err = str(res.get("error", ""))
-            if status_code == 429 or "quota" in err.lower() or "credits" in err.lower() or "no_credentials" in err.lower():
+            if status_code in {429, 500, 502, 503, 504} or any(
+                k in err.lower() for k in ["quota", "credits", "timeout", "connection", "rate limit", "no_credentials"]
+            ):
                 gemini_model = self.config.gemini_default_model
                 gem_res = self.gemini.generate(
                     prompt=prompt,

@@ -9,8 +9,36 @@ Defines the supported OpenAI model architecture:
 """
 
 from dataclasses import dataclass, field
+from enum import Enum
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Union
+
+
+# =============================================================================
+# MODEL CAPABILITIES
+# =============================================================================
+class ModelCapability(str, Enum):
+    """Supported model capabilities in NR-AI."""
+    GENERAL = "GENERAL"
+    CODING = "CODING"
+    REASONING = "REASONING"
+    VISION = "VISION"
+    WEB = "WEB"
+    RESEARCH = "RESEARCH"
+    MATH = "MATH"
+    DEFENSIVE_SECURITY = "DEFENSIVE_SECURITY"
+    VERIFICATION = "VERIFICATION"
+
+
+CAPABILITY_GENERAL = ModelCapability.GENERAL.value
+CAPABILITY_CODING = ModelCapability.CODING.value
+CAPABILITY_REASONING = ModelCapability.REASONING.value
+CAPABILITY_VISION = ModelCapability.VISION.value
+CAPABILITY_WEB = ModelCapability.WEB.value
+CAPABILITY_RESEARCH = ModelCapability.RESEARCH.value
+CAPABILITY_MATH = ModelCapability.MATH.value
+CAPABILITY_DEFENSIVE_SECURITY = ModelCapability.DEFENSIVE_SECURITY.value
+CAPABILITY_VERIFICATION = ModelCapability.VERIFICATION.value
 
 
 # =============================================================================
@@ -31,8 +59,17 @@ GEMINI_2_5_FLASH = "gemini-2.5-flash"
 GEMINI_1_5_FLASH = "gemini-1.5-flash"
 GEMINI_1_5_PRO = "gemini-1.5-pro"
 
+# Local Open-Weight Model Placeholders (Disabled until configured)
+QWEN_2_5_CODER_7B = "qwen2.5-coder-7b"
+DEEPSEEK_CODER_V2_LITE = "deepseek-coder-v2-lite"
+GEMMA_2_9B = "gemma-2-9b"
+QWEN2_VL_7B = "qwen2-vl-7b"
+
 PROVIDER_OPENAI = "openai"
 PROVIDER_GOOGLE = "google"
+PROVIDER_OLLAMA = "ollama"
+PROVIDER_LLAMACPP = "llamacpp"
+PROVIDER_VLLM = "vllm"
 
 ALL_OPENAI_MODELS = [
     GPT_6_ASTRA,
@@ -52,7 +89,14 @@ ALL_GEMINI_MODELS = [
     GEMINI_1_5_PRO,
 ]
 
-ALL_MODELS = ALL_OPENAI_MODELS + ALL_GEMINI_MODELS
+ALL_LOCAL_MODELS = [
+    QWEN_2_5_CODER_7B,
+    DEEPSEEK_CODER_V2_LITE,
+    GEMMA_2_9B,
+    QWEN2_VL_7B,
+]
+
+ALL_MODELS = ALL_OPENAI_MODELS + ALL_GEMINI_MODELS + ALL_LOCAL_MODELS
 
 
 # =============================================================================
@@ -78,6 +122,12 @@ class ModelSpec:
     supports_function_calling: bool = True
     supports_reasoning: bool = True
     cost_tier: str = "medium"  # low, balanced, high, premium
+    capabilities: Set[ModelCapability] = field(default_factory=set)
+    latency_tier: str = "normal"  # fast, normal, slow
+    enabled: bool = True
+    reliability_score: float = 1.0
+    local_or_cloud: str = "cloud"  # "cloud", "local"
+    local_hardware_req: Optional[str] = None
 
 
 # Central Model Registry
@@ -93,6 +143,21 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=True,
         cost_tier="premium",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.REASONING,
+            ModelCapability.VISION,
+            ModelCapability.WEB,
+            ModelCapability.RESEARCH,
+            ModelCapability.MATH,
+            ModelCapability.DEFENSIVE_SECURITY,
+            ModelCapability.VERIFICATION,
+        },
+        latency_tier="normal",
+        enabled=True,
+        reliability_score=0.98,
+        local_or_cloud="cloud",
     ),
     GPT_5_6_SOL: ModelSpec(
         model_id=GPT_5_6_SOL,
@@ -105,6 +170,20 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=True,
         cost_tier="high",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.REASONING,
+            ModelCapability.VISION,
+            ModelCapability.WEB,
+            ModelCapability.RESEARCH,
+            ModelCapability.MATH,
+            ModelCapability.VERIFICATION,
+        },
+        latency_tier="normal",
+        enabled=True,
+        reliability_score=0.95,
+        local_or_cloud="cloud",
     ),
     GPT_5_6_TERRA: ModelSpec(
         model_id=GPT_5_6_TERRA,
@@ -117,6 +196,17 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=True,
         cost_tier="balanced",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.REASONING,
+            ModelCapability.VISION,
+            ModelCapability.RESEARCH,
+        },
+        latency_tier="normal",
+        enabled=True,
+        reliability_score=0.92,
+        local_or_cloud="cloud",
     ),
     GPT_5_6_LUNA: ModelSpec(
         model_id=GPT_5_6_LUNA,
@@ -129,6 +219,15 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=False,
         cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.VISION,
+        },
+        latency_tier="fast",
+        enabled=True,
+        reliability_score=0.90,
+        local_or_cloud="cloud",
     ),
     GEMINI_FLASH_LATEST: ModelSpec(
         model_id=GEMINI_FLASH_LATEST,
@@ -141,6 +240,19 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=True,
         cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.REASONING,
+            ModelCapability.VISION,
+            ModelCapability.WEB,
+            ModelCapability.RESEARCH,
+            ModelCapability.VERIFICATION,
+        },
+        latency_tier="fast",
+        enabled=True,
+        reliability_score=0.95,
+        local_or_cloud="cloud",
     ),
     GEMINI_3_7_FLASH: ModelSpec(
         model_id=GEMINI_3_7_FLASH,
@@ -153,6 +265,20 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=True,
         cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.REASONING,
+            ModelCapability.VISION,
+            ModelCapability.WEB,
+            ModelCapability.RESEARCH,
+            ModelCapability.MATH,
+            ModelCapability.VERIFICATION,
+        },
+        latency_tier="fast",
+        enabled=True,
+        reliability_score=0.96,
+        local_or_cloud="cloud",
     ),
     GEMINI_3_6_FLASH: ModelSpec(
         model_id=GEMINI_3_6_FLASH,
@@ -165,6 +291,19 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=True,
         cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.REASONING,
+            ModelCapability.VISION,
+            ModelCapability.WEB,
+            ModelCapability.RESEARCH,
+            ModelCapability.VERIFICATION,
+        },
+        latency_tier="fast",
+        enabled=True,
+        reliability_score=0.95,
+        local_or_cloud="cloud",
     ),
     GEMINI_3_5_FLASH: ModelSpec(
         model_id=GEMINI_3_5_FLASH,
@@ -177,6 +316,18 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=True,
         cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.REASONING,
+            ModelCapability.VISION,
+            ModelCapability.WEB,
+            ModelCapability.VERIFICATION,
+        },
+        latency_tier="fast",
+        enabled=True,
+        reliability_score=0.93,
+        local_or_cloud="cloud",
     ),
     GEMINI_2_5_FLASH: ModelSpec(
         model_id=GEMINI_2_5_FLASH,
@@ -189,6 +340,16 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=True,
         cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.VISION,
+            ModelCapability.VERIFICATION,
+        },
+        latency_tier="fast",
+        enabled=True,
+        reliability_score=0.90,
+        local_or_cloud="cloud",
     ),
     GEMINI_1_5_FLASH: ModelSpec(
         model_id=GEMINI_1_5_FLASH,
@@ -201,6 +362,102 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         supports_function_calling=True,
         supports_reasoning=False,
         cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.VISION,
+            ModelCapability.VERIFICATION,
+        },
+        latency_tier="fast",
+        enabled=True,
+        reliability_score=0.88,
+        local_or_cloud="cloud",
+    ),
+    # Local open-weight placeholders (Disabled until configured)
+    QWEN_2_5_CODER_7B: ModelSpec(
+        model_id=QWEN_2_5_CODER_7B,
+        display_name="Qwen 2.5 Coder 7B (Local Placeholder)",
+        role="local specialized coding model",
+        tier=TIER_COMPLEX,
+        provider=PROVIDER_OLLAMA,
+        context_window=32768,
+        supports_vision=False,
+        supports_function_calling=True,
+        supports_reasoning=True,
+        cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.MATH,
+        },
+        latency_tier="normal",
+        enabled=False,
+        reliability_score=0.85,
+        local_or_cloud="local",
+        local_hardware_req="8GB RAM / 6GB VRAM",
+    ),
+    DEEPSEEK_CODER_V2_LITE: ModelSpec(
+        model_id=DEEPSEEK_CODER_V2_LITE,
+        display_name="DeepSeek Coder V2 Lite (Local Placeholder)",
+        role="local code and reasoning specialist",
+        tier=TIER_COMPLEX,
+        provider=PROVIDER_OLLAMA,
+        context_window=65536,
+        supports_vision=False,
+        supports_function_calling=True,
+        supports_reasoning=True,
+        cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.CODING,
+            ModelCapability.REASONING,
+        },
+        latency_tier="normal",
+        enabled=False,
+        reliability_score=0.85,
+        local_or_cloud="local",
+        local_hardware_req="16GB RAM / 10GB VRAM",
+    ),
+    GEMMA_2_9B: ModelSpec(
+        model_id=GEMMA_2_9B,
+        display_name="Gemma 2 9B (Local Placeholder)",
+        role="local reasoning model",
+        tier=TIER_NORMAL,
+        provider=PROVIDER_LLAMACPP,
+        context_window=8192,
+        supports_vision=False,
+        supports_function_calling=False,
+        supports_reasoning=True,
+        cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.REASONING,
+        },
+        latency_tier="normal",
+        enabled=False,
+        reliability_score=0.85,
+        local_or_cloud="local",
+        local_hardware_req="12GB RAM / 8GB VRAM",
+    ),
+    QWEN2_VL_7B: ModelSpec(
+        model_id=QWEN2_VL_7B,
+        display_name="Qwen2-VL 7B (Local Placeholder)",
+        role="local vision and multimodal model",
+        tier=TIER_NORMAL,
+        provider=PROVIDER_VLLM,
+        context_window=16384,
+        supports_vision=True,
+        supports_function_calling=False,
+        supports_reasoning=False,
+        cost_tier="low",
+        capabilities={
+            ModelCapability.GENERAL,
+            ModelCapability.VISION,
+        },
+        latency_tier="normal",
+        enabled=False,
+        reliability_score=0.85,
+        local_or_cloud="local",
+        local_hardware_req="16GB RAM / 12GB VRAM",
     ),
 }
 
