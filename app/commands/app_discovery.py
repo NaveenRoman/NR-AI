@@ -277,6 +277,14 @@ class AppDiscovery:
                 ),
             ],
 
+            "android studio": [
+                r"C:\Program Files\Android\Android Studio1\bin\studio64.exe",
+                r"C:\Program Files\Android\Android Studio\bin\studio64.exe",
+                os.path.expandvars(
+                    r"%LOCALAPPDATA%\Programs\Android Studio\bin\studio64.exe"
+                ),
+            ],
+
             "unity": [
                 r"C:\Program Files\Unity 2022.3.35f1\Editor\Unity.exe",
                 r"C:\Program Files\Unity\Editor\Unity.exe",

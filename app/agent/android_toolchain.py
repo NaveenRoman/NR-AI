@@ -135,7 +135,9 @@ class AndroidProjectInspector:
 
         if build_file.exists():
             text = build_file.read_text(encoding="utf-8", errors="ignore")
-            ns_match = re.search(r'namespace\s*=\s*["\']([^"\']+)["\']', text)
+            ns_match = re.search(r'namespace\s*=?\s*["\']([^"\']+)["\']', text)
+            if not ns_match:
+                ns_match = re.search(r'applicationId\s*=?\s*["\']([^"\']+)["\']', text)
             if ns_match:
                 namespace = ns_match.group(1)
 

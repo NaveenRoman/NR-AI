@@ -25,6 +25,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.agent.agent_slot import SlotManager
+from app.agent.android_studio_agent import AndroidStudioAgent, AndroidWorkflowReport
 from app.agent.browser_agent import BrowserAgent, BrowserWorkflowReport
 from app.agent.computer_agent import UnifiedComputerAgent, WorkflowReport
 from app.agent.input_controller import InputController
@@ -75,6 +76,7 @@ class CommandCategory(str, Enum):
     CONTROL_INPUT = "CONTROL_INPUT"
     COMPUTER_AGENT = "COMPUTER_AGENT"
     BROWSER_AGENT = "BROWSER_AGENT"
+    ANDROID_STUDIO = "ANDROID_STUDIO"
 
 
 @dataclass
@@ -160,6 +162,11 @@ class NRCompanion:
         self.browser_agent = BrowserAgent(
             audit_logger=self.audit,
             model_router=self.router,
+        )
+        self.android_agent = AndroidStudioAgent(
+            model_router=self.router,
+            audit_logger=self.audit,
+            memory=self.memory,
         )
 
         # Real-time state tracking
@@ -333,9 +340,18 @@ class NRCompanion:
                     continue
                 return CommandCategory.COMMAND_EXECUTION
 
-        # 0B.4. Browser Agent Workflows (Safe web automation & verification)
+        # 0B.3. Android Studio Agent Workflows (Safe Android toolchain & verification)
         c_candidate = re.sub(r"^(?:please\s+|can you\s+|could you\s+)", "", c).strip()
         c_candidate = re.sub(r"[.?!]+$", "", c_candidate).strip()
+
+        explicit_android_prefixes = ("android:", "studio:", "android workflow:", "android agent:", "run android workflow:")
+        if any(c_candidate.lower().startswith(pfx) for pfx in explicit_android_prefixes):
+            return CommandCategory.ANDROID_STUDIO
+
+        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android")):
+            return CommandCategory.ANDROID_STUDIO
+
+        # 0B.4. Browser Agent Workflows (Safe web automation & verification)
 
         explicit_browser_prefixes = ("browser:", "web:", "browser workflow:", "browser agent:", "run browser workflow:")
         if any(c_candidate.lower().startswith(pfx) for pfx in explicit_browser_prefixes):
@@ -572,6 +588,8 @@ class NRCompanion:
             response = self._handle_computer_agent(clean_input)
         elif category == CommandCategory.BROWSER_AGENT:
             response = self._handle_browser_agent(clean_input)
+        elif category == CommandCategory.ANDROID_STUDIO:
+            response = self._handle_android_studio(clean_input)
         elif category == CommandCategory.APPLICATION_LAUNCH:
             response = self._handle_application_launch(clean_input)
         elif category == CommandCategory.WINDOW_MANAGEMENT:
@@ -1650,6 +1668,39 @@ class NRCompanion:
             text=report.summary,
             category=CommandCategory.BROWSER_AGENT,
             routed_to="BrowserAgent",
+            avatar_mode=AvatarMode.SPEAKING if report.success else (AvatarMode.ATTENTIVE if report.requires_confirmation else AvatarMode.ERROR),
+            avatar_emotion=AvatarEmotion.HAPPY if report.success else (AvatarEmotion.ATTENTIVE if report.requires_confirmation else AvatarEmotion.CONCERNED),
+            data=report.to_dict(),
+        )
+
+    def _handle_android_studio(self, command: str) -> CompanionResponse:
+        """
+        Executes goal-driven safe Android Studio & toolchain workflows using AndroidStudioAgent.
+        """
+        self.avatar.set_thinking("Executing Android Studio workflow...")
+        self.current_route = "AndroidStudioAgent"
+        self.current_agent = "Agent-6-AndroidStudio"
+        self.current_task_status = "Executing Android Workflow"
+
+        clean_goal = command.strip()
+        clean_goal = re.sub(r"^(?:android|studio|android\s+workflow|android\s+agent)\s*:\s*", "", clean_goal, flags=re.IGNORECASE).strip()
+
+        user_confirmed = False
+        if clean_goal.lower().startswith(("confirm ", "yes confirm ", "force ")):
+            user_confirmed = True
+            clean_goal = re.sub(r"^(?:confirm|yes\s+confirm|force)\s+", "", clean_goal, flags=re.IGNORECASE).strip()
+
+        report: AndroidWorkflowReport = self.android_agent.execute_workflow(
+            user_goal=clean_goal,
+            user_confirmed=user_confirmed,
+        )
+
+        self.avatar.set_idle("Android workflow completed." if report.success else "Android workflow halted.")
+
+        return CompanionResponse(
+            text=report.summary,
+            category=CommandCategory.ANDROID_STUDIO,
+            routed_to="AndroidStudioAgent",
             avatar_mode=AvatarMode.SPEAKING if report.success else (AvatarMode.ATTENTIVE if report.requires_confirmation else AvatarMode.ERROR),
             avatar_emotion=AvatarEmotion.HAPPY if report.success else (AvatarEmotion.ATTENTIVE if report.requires_confirmation else AvatarEmotion.CONCERNED),
             data=report.to_dict(),
