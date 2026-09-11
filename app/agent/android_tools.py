@@ -304,12 +304,21 @@ class SafeGradleRunner:
             if not success:
                 diagnosis = AndroidErrorAnalyzer.analyze(combined_output)
 
+            output_sample = combined_output
+            if not success and len(combined_output) > 4000:
+                m = re.search(r"(?:e:\s*|error:\s*|> Task :[^\n]*FAILED)[\s\S]*", combined_output)
+                if m:
+                    output_sample = m.group(0)[:4000]
+                else:
+                    output_sample = combined_output[-4000:]
+
             return {
                 "success": success,
                 "returncode": res.returncode,
                 "tasks": action_tasks,
                 "duration_s": round(duration, 2),
-                "output_sample": combined_output[-1000:] if len(combined_output) > 1000 else combined_output,
+                "output_sample": output_sample,
+                "full_output": combined_output,
                 "diagnosis": diagnosis,
             }
         except subprocess.TimeoutExpired:

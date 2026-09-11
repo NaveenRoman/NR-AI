@@ -250,6 +250,284 @@ class RepairResult:
 
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Phase 4 Autonomous Repair Helpers: Redaction, Bounded Context & Prompting
+# -----------------------------------------------------------------------------
+
+def redact_sensitive_content(text: str) -> str:
+    """
+    Redacts secrets, API keys, passwords, and tokens from text.
+    Ensures credentials never leak to models or external logs.
+    """
+    if not text:
+        return text
+
+    # Redact Google / Gemini API keys
+    text = re.sub(r"AIzaSy[A-Za-z0-9_-]{33}", "[REDACTED_GEMINI_KEY]", text)
+    # Redact OpenAI API keys
+    text = re.sub(r"sk-proj-[A-Za-z0-9_-]+", "[REDACTED_OPENAI_KEY]", text)
+    # Redact GitHub tokens
+    text = re.sub(r"ghp_[A-Za-z0-9_]{36,}", "[REDACTED_GITHUB_TOKEN]", text)
+
+    # Redact passwords, secrets, tokens in key=val or JSON-like forms
+    patterns = [
+        (r'''(?i)(["']?(?:password|passwd|secret|api[_-]?key|token|keystorepassword|keypassword|storepassword)["']?\s*[:=]\s*["'])([^"']+)(["'])''', r'\g<1>[REDACTED]\g<3>'),
+        (r'''(?i)(storePassword\s+["'])([^"']+)(["'])''', r'\g<1>[REDACTED]\g<3>'),
+        (r'''(?i)(keyPassword\s+["'])([^"']+)(["'])''', r'\g<1>[REDACTED]\g<3>'),
+    ]
+    for pattern, repl in patterns:
+        text = re.sub(pattern, repl, text)
+    return text
+
+
+def extract_bounded_context(
+    error: AndroidBuildError,
+    project_root: Optional[Path] = None,
+    max_lines_context: int = 30,
+) -> Dict[str, Any]:
+    """
+    Extracts bounded source code context surrounding an error location (+- 30 lines).
+    Redacts sensitive content and computes current file SHA-256 hash.
+    Never exposes whole project or unnecessary files.
+    """
+    root = Path(project_root or AUTHORIZED_PROJECT_PATH).resolve()
+    if not error.file_path:
+        return {
+            "file_path": None,
+            "relative_path": None,
+            "error_line": None,
+            "start_line": 1,
+            "end_line": 1,
+            "context_code": "",
+            "file_sha256": "",
+            "total_lines": 0,
+        }
+
+    target_path = Path(error.file_path)
+    if not target_path.is_absolute():
+        target_path = (root / target_path).resolve()
+
+    if not target_path.exists() or not target_path.is_file():
+        return {
+            "file_path": str(target_path),
+            "relative_path": str(target_path.relative_to(root)) if root in target_path.parents else target_path.name,
+            "error_line": error.line,
+            "start_line": 1,
+            "end_line": 1,
+            "context_code": "",
+            "file_sha256": "",
+            "total_lines": 0,
+        }
+
+    content = target_path.read_text(encoding="utf-8", errors="replace")
+    file_sha256 = AndroidCodeRepairEngine.calculate_file_hash(target_path)
+    lines = content.splitlines()
+    total_lines = len(lines)
+
+    err_line = error.line if error.line and error.line >= 1 else 1
+    start_line = max(1, err_line - max_lines_context)
+    end_line = min(total_lines, err_line + max_lines_context)
+
+    # 1-indexed line extraction
+    context_slice = lines[start_line - 1: end_line]
+    numbered_lines = [f"{start_line + i:4d} | {line}" for i, line in enumerate(context_slice)]
+    raw_context = "\n".join(numbered_lines)
+
+    sanitized_context = redact_sensitive_content(raw_context)
+
+    try:
+        rel_path = str(target_path.relative_to(root)).replace("\\", "/")
+    except ValueError:
+        rel_path = target_path.name
+
+    return {
+        "file_path": str(target_path),
+        "relative_path": rel_path,
+        "error_line": err_line,
+        "start_line": start_line,
+        "end_line": end_line,
+        "context_code": sanitized_context,
+        "raw_snippet": "\n".join(context_slice),
+        "file_sha256": file_sha256,
+        "total_lines": total_lines,
+    }
+
+
+def build_model_repair_prompt(error: AndroidBuildError, context: Dict[str, Any]) -> Tuple[str, str]:
+    """
+    Constructs strict JSON system and user prompts for advisory repair proposal.
+    Enforces strict output JSON schema:
+    {
+      "proposal_version": "1.0",
+      "summary": "...",
+      "edits": [
+        {
+          "path": "...",
+          "expected_sha256": "...",
+          "start_line": 1,
+          "end_line": 2,
+          "replacement": "..."
+        }
+      ],
+      "confidence": 0.95,
+      "reasoning_summary": "..."
+    }
+    """
+    system_prompt = (
+        "You are an expert Android build-repair advisor for NR-AI.\n"
+        "Your role is STRICTLY ADVISORY. You do NOT have shell, filesystem, or tool execution privileges.\n"
+        "You must analyze the compiler diagnostic and propose a minimal, deterministic code fix.\n\n"
+        "RULES:\n"
+        "1. Output ONLY a single valid JSON object. Do not include explanatory markdown outside the JSON.\n"
+        "2. The JSON MUST follow this exact schema:\n"
+        "{\n"
+        '  "proposal_version": "1.0",\n'
+        '  "summary": "Concise description of the fix",\n'
+        '  "edits": [\n'
+        "    {\n"
+        '      "path": "relative/path/to/file.kt",\n'
+        '      "expected_sha256": "<current file SHA-256>",\n'
+        '      "start_line": <1-based start line of code to replace>,\n'
+        '      "end_line": <1-based end line of code to replace>,\n'
+        '      "replacement": "<exact replacement code string>"\n'
+        "    }\n"
+        "  ],\n"
+        '  "confidence": 0.95,\n'
+        '  "reasoning_summary": "Why this fixes the compilation error"\n'
+        "}\n"
+        "3. Replace ONLY the minimal necessary lines. Do NOT rewrite entire files.\n"
+        "4. The expected_sha256 MUST match the file SHA-256 provided in the context.\n"
+        "5. Never include secrets, API keys, credentials, or dangerous operations.\n"
+    )
+
+    user_prompt = (
+        f"Android Build Error Classification: {error.category.value}\n"
+        f"Diagnostic Message: {redact_sensitive_content(error.message)}\n"
+        f"Target File: {context.get('relative_path')}\n"
+        f"File SHA-256: {context.get('file_sha256')}\n"
+        f"Error Line: {context.get('error_line')}\n\n"
+        f"Surrounding Code Context (Lines {context.get('start_line')} to {context.get('end_line')}):\n"
+        f"```\n{context.get('context_code')}\n```\n\n"
+        "Please provide a JSON repair proposal to resolve this compiler error."
+    )
+
+    return system_prompt, user_prompt
+
+
+def parse_model_repair_response(raw_text: str) -> Dict[str, Any]:
+    """
+    Parses and strictly validates the model repair JSON response.
+    Raises AndroidSafetyError(AndroidErrorCode.MALFORMED_PROPOSAL, ...) on failure.
+    """
+    if not raw_text or not raw_text.strip():
+        raise AndroidSafetyError(
+            AndroidErrorCode.MALFORMED_PROPOSAL,
+            "Model returned empty response for repair proposal.",
+        )
+
+    text = raw_text.strip()
+    if "```" in text:
+        m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+        if m:
+            text = m.group(1).strip()
+
+    try:
+        data = json.loads(text)
+    except Exception as e:
+        raise AndroidSafetyError(
+            AndroidErrorCode.MALFORMED_PROPOSAL,
+            f"Failed to parse model response as JSON: {e}",
+        )
+
+    if not isinstance(data, dict):
+        raise AndroidSafetyError(
+            AndroidErrorCode.MALFORMED_PROPOSAL,
+            "Model proposal root must be a JSON object.",
+        )
+
+    # 1. Version check
+    version = data.get("proposal_version")
+    if not version or not isinstance(version, str) or version != "1.0":
+        raise AndroidSafetyError(
+            AndroidErrorCode.MALFORMED_PROPOSAL,
+            f"Invalid or missing 'proposal_version' (expected '1.0', got '{version}').",
+        )
+
+    # 2. Summary check
+    summary = data.get("summary")
+    if not summary or not isinstance(summary, str) or not summary.strip():
+        raise AndroidSafetyError(
+            AndroidErrorCode.MALFORMED_PROPOSAL,
+            "Missing or empty 'summary' in repair proposal.",
+        )
+
+    # 3. Edits check
+    edits = data.get("edits")
+    if not isinstance(edits, list) or len(edits) == 0:
+        raise AndroidSafetyError(
+            AndroidErrorCode.MALFORMED_PROPOSAL,
+            "Missing or empty 'edits' list in repair proposal.",
+        )
+
+    if len(edits) > MAX_FILES_PER_REPAIR:
+        raise AndroidSafetyError(
+            AndroidErrorCode.TOO_MANY_FILES_CHANGED,
+            f"Proposal contains {len(edits)} edits, exceeding limit of {MAX_FILES_PER_REPAIR}.",
+        )
+
+    for idx, edit in enumerate(edits):
+        if not isinstance(edit, dict):
+            raise AndroidSafetyError(
+                AndroidErrorCode.MALFORMED_PROPOSAL,
+                f"Edit item {idx} is not a valid JSON object.",
+            )
+
+        edit_path = edit.get("path") or edit.get("file_path")
+        if not edit_path or not isinstance(edit_path, str) or not edit_path.strip():
+            raise AndroidSafetyError(
+                AndroidErrorCode.MALFORMED_PROPOSAL,
+                f"Edit item {idx} missing valid 'path'.",
+            )
+
+        start_line = edit.get("start_line")
+        end_line = edit.get("end_line")
+        if start_line is None or not isinstance(start_line, int) or start_line < 1:
+            raise AndroidSafetyError(
+                AndroidErrorCode.MALFORMED_PROPOSAL,
+                f"Edit item {idx} invalid 'start_line' ({start_line}). Must be integer >= 1.",
+            )
+
+        if end_line is None or not isinstance(end_line, int) or end_line < start_line:
+            raise AndroidSafetyError(
+                AndroidErrorCode.MALFORMED_PROPOSAL,
+                f"Edit item {idx} invalid 'end_line' ({end_line}). Must be integer >= start_line ({start_line}).",
+            )
+
+        if (end_line - start_line + 1) > MAX_LINES_PER_EDIT:
+            raise AndroidSafetyError(
+                AndroidErrorCode.PATCH_TOO_LARGE,
+                f"Edit item {idx} replaces {end_line - start_line + 1} lines, exceeding limit of {MAX_LINES_PER_EDIT}.",
+            )
+
+        replacement = edit.get("replacement")
+        if replacement is None or not isinstance(replacement, str):
+            replacement = edit.get("replacement_text")
+        if replacement is None or not isinstance(replacement, str):
+            raise AndroidSafetyError(
+                AndroidErrorCode.MALFORMED_PROPOSAL,
+                f"Edit item {idx} missing valid 'replacement' string.",
+            )
+
+        if len(replacement.encode("utf-8")) > MAX_PATCH_SIZE_BYTES:
+            raise AndroidSafetyError(
+                AndroidErrorCode.PATCH_TOO_LARGE,
+                f"Edit item {idx} replacement size exceeds limit of {MAX_PATCH_SIZE_BYTES} bytes.",
+            )
+
+    return data
+
+
+# -----------------------------------------------------------------------------
 # Android Error Analyzer
 # -----------------------------------------------------------------------------
 
@@ -279,9 +557,9 @@ class AndroidErrorAnalyzer:
         root = project_root or AUTHORIZED_PROJECT_PATH
 
         # 1. Check for Kotlin Compile Errors
-        kt_match = re.search(r"e:\s*(?:file:///)?([^\r\n:]+\.kt)[:\s]+\(?(\d+)[,:]\s*(\d+)\)?[:\s]+(.*)", output)
+        kt_match = re.search(r"e:\s*(?:file:///)?([a-zA-Z]:[^\r\n:]+?\.kt|[^\r\n:]+?\.kt)[:\s]+\(?(\d+)[,:]\s*(\d+)\)?[:\s]+(.*)", output)
         if not kt_match:
-            kt_match = re.search(r"([A-Za-z0-9_\-\\/]+\.kt):\((\d+),\s*(\d+)\):\s*(.*)", output)
+            kt_match = re.search(r"([a-zA-Z]:[^\r\n:]+?\.kt|[^\r\n:]+?\.kt):\((\d+),\s*(\d+)\):\s*(.*)", output)
 
         if kt_match:
             fpath = kt_match.group(1).strip().replace("/", os.sep)
@@ -306,9 +584,9 @@ class AndroidErrorAnalyzer:
             )
 
         # 2. Check for Java Compile Errors
-        java_match = re.search(r"([^\r\n:]+\.java):(\d+):\s*error:\s*(.*)", output)
+        java_match = re.search(r"([a-zA-Z]:[^\r\n:]+?\.java|[^\r\n:]+?\.java):(\d+):\s*error:\s*(.*)", output)
         if not java_match:
-            java_match = re.search(r"([A-Za-z0-9_\-\\/]+\.java):(\d+):\s*error:\s*(.*)", output)
+            java_match = re.search(r"([a-zA-Z]:[^\r\n:]+?\.java|[^\r\n:]+?\.java):\((\d+),\s*(\d+)\):\s*(.*)", output)
 
         if java_match:
             fpath = java_match.group(1).strip().replace("/", os.sep)
@@ -331,7 +609,7 @@ class AndroidErrorAnalyzer:
             )
 
         # 3. Check for Manifest Merger Errors
-        if "manifest merger failed" in output.lower() or ("manifest" in output.lower() and "processdebugmainmanifest" in output.lower()):
+        if "manifest merger failed" in output.lower() or ("manifest" in output.lower() and "processdebugmainmanifest" in output.lower()) or "androidmanifest.xml:" in output.lower():
             man_match = re.search(r"AndroidManifest\.xml:(\d+):\s*(?:error:\s*)?(.*)", output)
             line = int(man_match.group(1)) if man_match else None
             msg = man_match.group(2).strip() if man_match else "Manifest merger failed with multiple errors."
@@ -522,9 +800,46 @@ class AndroidCodeRepairEngine:
 
         try:
             data = json.loads(text)
-        except Exception:
+        except Exception as e:
+            if "proposal_version" in text or "{" in text:
+                raise AndroidSafetyError(
+                    AndroidErrorCode.MALFORMED_PROPOSAL,
+                    f"Invalid JSON proposal: {e}",
+                )
             return None
 
+        if not isinstance(data, dict):
+            raise AndroidSafetyError(
+                AndroidErrorCode.MALFORMED_PROPOSAL,
+                "Model proposal must be a JSON object.",
+            )
+
+        # If it has proposal_version, validate strictly
+        if "proposal_version" in data:
+            validated_data = parse_model_repair_response(raw_text)
+            edits = validated_data.get("edits", [])
+            proposals = []
+            for e in edits:
+                p_path = e.get("path") or e.get("file_path", "")
+                exp_h = e.get("expected_sha256") or e.get("expected_hash", "")
+                ep = EditProposal(
+                    file_path=p_path,
+                    expected_old_hash=exp_h,
+                    operation=EditOperation.REPLACE_RANGE,
+                    start_line=e.get("start_line"),
+                    end_line=e.get("end_line"),
+                    replacement_text=e.get("replacement") or e.get("replacement_text", ""),
+                    reason=validated_data.get("summary", "Model repair proposal"),
+                )
+                proposals.append(ep)
+
+            if not proposals:
+                return None
+            root_prop = proposals[0]
+            root_prop.edits = proposals
+            return root_prop
+
+        # Fallback to legacy format
         edits = data.get("edits")
         edit_dict = edits[0] if isinstance(edits, list) and edits else data
 
@@ -542,8 +857,8 @@ class AndroidCodeRepairEngine:
             end_line=edit_dict.get("end_line"),
             target_snippet=edit_dict.get("old_str") or edit_dict.get("target_snippet"),
             replacement_text=edit_dict.get("new_str") or edit_dict.get("replacement_text") or "",
-            reason=edit_dict.get("reason") or data.get("description", "Model proposed edit"),
         )
+
 
     # -------------------------------------------------------------------------
     # Proposal Validation
@@ -567,7 +882,8 @@ class AndroidCodeRepairEngine:
         # Stale Target Protection (Hash Check)
         if not is_create:
             current_hash = self.calculate_file_hash(resolved)
-            if proposal.expected_old_hash and proposal.expected_old_hash != current_hash:
+            text_hash = self.calculate_hash(resolved.read_text(encoding="utf-8", errors="replace"))
+            if proposal.expected_old_hash and proposal.expected_old_hash not in (current_hash, text_hash):
                 raise AndroidSafetyError(
                     AndroidErrorCode.STALE_TARGET,
                     f"Stale target for '{resolved.name}': expected hash {proposal.expected_old_hash[:8]}..., current {current_hash[:8]}... File was modified externally.",
@@ -941,9 +1257,22 @@ class AndroidCodeRepairEngine:
             )
 
         # 2. Parse Initial Error
-        raw_output = initial_build.get("output_sample", "") or str(initial_build.get("diagnosis", ""))
+        raw_output = initial_build.get("full_output") or initial_build.get("output_sample", "") or str(initial_build.get("diagnosis", ""))
         initial_error = self.analyzer.analyze_build_output(raw_output, self.project_path)
         logger.info(f"Initial build error detected: {initial_error.category.value} - {initial_error.message}")
+
+        # Check for unsupported error domains (keystores, credentials, dangerous permissions, etc.)
+        if self.safety.is_unsupported_error(initial_error.category, initial_error.message, initial_error.file_path):
+            logger.warning(f"Initial error '{initial_error.category.value}' is unsupported for autonomous repair.")
+            return RepairResult(
+                success=False,
+                attempts=0,
+                initial_error=initial_error,
+                final_error=initial_error,
+                summary=f"Build error in category '{initial_error.category.value}' is unsupported for autonomous repair (high-risk or security boundary).",
+                error_code=AndroidErrorCode.REPAIR_UNSUPPORTED.value,
+                rolled_back=False,
+            )
 
         applied_edits: List[EditResult] = []
         current_error = initial_error
@@ -956,13 +1285,31 @@ class AndroidCodeRepairEngine:
             self.safety.check_emergency_stop()
             logger.info(f"[Repair Attempt {attempts_run}/{bounded_max}] Addressing {current_error.category.value}")
 
+            # Check if current error is unsupported
+            if self.safety.is_unsupported_error(current_error.category, current_error.message, current_error.file_path):
+                logger.warning(f"Error '{current_error.category.value}' is unsupported for autonomous repair.")
+                return RepairResult(
+                    success=False,
+                    attempts=attempts_run,
+                    initial_error=initial_error,
+                    final_error=current_error,
+                    applied_edits=applied_edits,
+                    summary=f"Build error in category '{current_error.category.value}' is unsupported for autonomous repair.",
+                    error_code=AndroidErrorCode.REPAIR_UNSUPPORTED.value,
+                    rolled_back=False,
+                )
+
             if not current_error.file_path:
                 logger.warning(f"Repair attempt {attempts_run} aborted: No specific source file identified in error.")
                 break
 
-            err_file = Path(current_error.file_path)
-            if not err_file.is_absolute():
-                err_file = (self.project_path / err_file).resolve()
+            raw_fp = str(current_error.file_path)
+            if raw_fp.startswith(("/", "\\")):
+                err_file = (self.project_path / raw_fp.lstrip("/\\")).resolve()
+            elif not Path(current_error.file_path).is_absolute():
+                err_file = (self.project_path / Path(current_error.file_path)).resolve()
+            else:
+                err_file = Path(current_error.file_path).resolve()
 
             try:
                 self.safety.validate_editable_file(err_file)
@@ -980,7 +1327,22 @@ class AndroidCodeRepairEngine:
                     proposal = deterministic_patch_provider(current_error, source_text)
 
             if not proposal:
-                proposal = self._consult_model_for_repair(current_error, err_file)
+                try:
+                    proposal = self._consult_model_for_repair(current_error, err_file)
+                except AndroidSafetyError as se:
+                    logger.warning(f"Model repair proposal rejected: {se.message}")
+                    if applied_edits:
+                        self.rollback(applied_edits)
+                    return RepairResult(
+                        success=False,
+                        attempts=attempts_run,
+                        initial_error=initial_error,
+                        final_error=current_error,
+                        applied_edits=applied_edits,
+                        summary=f"Model repair proposal rejected: {se.message}",
+                        error_code=se.code.value,
+                        rolled_back=bool(applied_edits),
+                    )
 
             if not proposal:
                 logger.warning(f"No repair proposal generated for {current_error.category.value}.")
@@ -988,14 +1350,29 @@ class AndroidCodeRepairEngine:
 
             # 4. Apply Proposed Edit with Backup
             try:
-                edit_res = self.apply_edit(proposal)
+                if isinstance(proposal, list) or (isinstance(proposal, EditProposal) and proposal.edits):
+                    edit_res = self.apply_edits(proposal)
+                else:
+                    edit_res = self.apply_edit(proposal)
+
                 if not edit_res.success:
                     logger.warning(f"Repair proposal failed: {edit_res.error}")
                     break
                 applied_edits.append(edit_res)
             except AndroidSafetyError as se:
                 logger.warning(f"Repair proposal rejected by safety gate: {se.message}")
-                break
+                if applied_edits:
+                    self.rollback(applied_edits)
+                return RepairResult(
+                    success=False,
+                    attempts=attempts_run,
+                    initial_error=initial_error,
+                    final_error=current_error,
+                    applied_edits=applied_edits,
+                    summary=f"Repair proposal rejected by safety gate: {se.message}",
+                    error_code=se.code.value,
+                    rolled_back=bool(applied_edits),
+                )
 
             # 5. Rebuild
             rebuild_res = self.gradle.run_action("DEBUG_ASSEMBLE")
@@ -1012,7 +1389,7 @@ class AndroidCodeRepairEngine:
                 )
 
             # If rebuild failed, re-analyze
-            raw_output = rebuild_res.get("output_sample", "") or str(rebuild_res.get("diagnosis", ""))
+            raw_output = rebuild_res.get("full_output") or rebuild_res.get("output_sample", "") or str(rebuild_res.get("diagnosis", ""))
             current_error = self.analyzer.analyze_build_output(raw_output, self.project_path)
 
         # 6. Repair Failed -> Automatic Rollback of All Applied Edits
@@ -1037,13 +1414,39 @@ class AndroidCodeRepairEngine:
         Consults advisory model for repair patch proposal.
         The model provides structured proposal data only; never touches disk.
         """
+        self.safety.check_emergency_stop()
+
+        # Step 1: Bounded context extraction
+        context = extract_bounded_context(error, self.project_path)
+
+        # Step 2: Build prompts
+        sys_prompt, user_prompt = build_model_repair_prompt(error, context)
+
         try:
-            route = self.router.get_model_for_task(
-                task_description=f"Fix Android {error.category.value} in {file_path.name}",
+            # Step 3: Route and execute through ModelRouter
+            logger.info(f"Consulting advisory model for {error.category.value} in {file_path.name}")
+            response = self.router.execute(
+                prompt=user_prompt,
+                system_prompt=sys_prompt,
+                task_type="highest",
                 required_capabilities={ModelCapability.CODING, ModelCapability.REASONING},
             )
-            logger.info(f"Advisory model '{route.model_id}' consulted for error {error.category.value}")
-            return None
+
+            if not response.get("success"):
+                err_msg = response.get("error", "Unknown model execution error")
+                logger.warning(f"Advisory model repair request failed: {err_msg}")
+                return None
+
+            content = response.get("content", "")
+            if not content:
+                logger.warning("Advisory model returned empty content.")
+                return None
+
+            # Step 4: Parse and validate response
+            return self.parse_model_proposal(content)
+
+        except AndroidSafetyError:
+            raise
         except Exception as e:
-            logger.info(f"Advisory model consultation skipped for repair: {e}")
+            logger.warning(f"Error during advisory model consultation: {e}")
             return None

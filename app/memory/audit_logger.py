@@ -21,6 +21,33 @@ class AuditLogger:
         self.log_file = self.log_dir / f"{self.session_id}.json"
         self.entries: List[Dict[str, Any]] = []
 
+    def _sanitize_details(self, obj: Any) -> Any:
+        import re
+        if isinstance(obj, dict):
+            res = {}
+            for k, v in obj.items():
+                k_lower = str(k).lower()
+                if any(sec in k_lower for sec in ("password", "passwd", "secret", "token", "api_key", "apikey")):
+                    res[k] = "[REDACTED]"
+                else:
+                    res[k] = self._sanitize_details(v)
+            return res
+        elif isinstance(obj, list):
+            return [self._sanitize_details(item) for item in obj]
+        elif isinstance(obj, str):
+            redacted = obj
+            patterns = [
+                (r'(?i)(password\s*[:=]\s*)["\']?[^\s"\']+["\']?', r'\1[REDACTED]'),
+                (r'(?i)(secret\s*[:=]\s*)["\']?[^\s"\']+["\']?', r'\1[REDACTED]'),
+                (r'(?i)(token\s*[:=]\s*)["\']?[^\s"\']+["\']?', r'\1[REDACTED]'),
+                (r'AIzaSy[A-Za-z0-9_\-]{20,}', '[REDACTED_API_KEY]'),
+                (r'sk-proj-[A-Za-z0-9_\-]{20,}', '[REDACTED_API_KEY]'),
+            ]
+            for pat, repl in patterns:
+                redacted = re.sub(pat, repl, redacted)
+            return redacted
+        return obj
+
     def log_event(
         self,
         event_type: str,
@@ -34,7 +61,7 @@ class AuditLogger:
             "event_type": event_type,
             "action": event_type,
             "status": status,
-            "details": details,
+            "details": self._sanitize_details(details),
         }
         self.entries.append(entry)
         self._flush_to_disk()

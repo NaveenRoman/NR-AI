@@ -54,6 +54,8 @@ class AndroidErrorCode(str, Enum):
     EDIT_VALIDATION_FAILED = "EDIT_VALIDATION_FAILED"
     REPAIR_FAILED = "REPAIR_FAILED"
     ROLLBACK_FAILED = "ROLLBACK_FAILED"
+    REPAIR_UNSUPPORTED = "REPAIR_UNSUPPORTED"
+    MALFORMED_PROPOSAL = "MALFORMED_PROPOSAL"
 
 
 # -----------------------------------------------------------------------------
@@ -260,6 +262,12 @@ class AndroidSafetyGate:
     @classmethod
     def is_emergency_stop_active(cls) -> bool:
         return cls._emergency_stop
+
+    def trigger_emergency_stop(self, reason: str = "") -> None:
+        self.activate_emergency_stop()
+
+    def clear_emergency_stop(self) -> None:
+        self.deactivate_emergency_stop()
 
     def check_emergency_stop(self) -> None:
         if self.is_emergency_stop_active():
@@ -594,3 +602,61 @@ class AndroidSafetyGate:
                     AndroidErrorCode.EDIT_VALIDATION_FAILED,
                     f"Proposed change contains prohibited construct: '{desc}'.",
                 )
+
+    def is_unsupported_error(
+        self,
+        error_category: Any,
+        message: str = "",
+        file_path: Optional[Union[str, Path]] = None,
+    ) -> bool:
+        """
+        Determines if a build error involves unsupported or high-risk domains:
+        - keystores, signing material, release keys, certificates
+        - google-services, local.properties, credentials, secrets
+        - arbitrary repositories, remote dependencies
+        - security sensitive configurations or dangerous permissions
+        """
+        if file_path:
+            fp_str = str(file_path).lower()
+            for protected in ("local.properties", "google-services.json", ".env", "keystore", ".jks", "credentials"):
+                if protected in fp_str:
+                    return True
+
+        combined = f"{error_category} {message}".lower()
+        unsupported_tokens = [
+            "keystore",
+            "signingconfig",
+            "signing_config",
+            "release.keystore",
+            ".jks",
+            "google-services.json",
+            "google-services",
+            "dangerous permission",
+            "security permission",
+            "untrusted repository",
+            "arbitrary repository",
+            "maven { url",
+            "credentials",
+            "secret_key",
+            "private key",
+            "ssl handshake",
+            "certificate exception",
+        ]
+        for token in unsupported_tokens:
+            if token in combined:
+                return True
+        return False
+
+    def validate_repairable_error(
+        self,
+        error_category: Any,
+        message: str = "",
+        file_path: Optional[Union[str, Path]] = None,
+    ) -> None:
+        """Raises AndroidSafetyError(REPAIR_UNSUPPORTED) if error is in a high-risk or unsupported domain."""
+        self.check_emergency_stop()
+        if self.is_unsupported_error(error_category, message, file_path):
+            raise AndroidSafetyError(
+                AndroidErrorCode.REPAIR_UNSUPPORTED,
+                f"Build error in category '{error_category}' is unsupported for autonomous repair (high-risk or security boundary).",
+            )

@@ -440,7 +440,7 @@ class AndroidStudioAgent:
             )
 
         # Check for build repair / self-healing requests
-        if any(kw in g_lower for kw in ("fix build", "repair build", "heal build")):
+        if any(kw in g_lower for kw in ("fix build", "repair build", "heal build", "fix android build", "repair android build", "repair compilation error")):
             return self.execute_build_repair(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
 
         # Check for code inspection requests
@@ -448,7 +448,7 @@ class AndroidStudioAgent:
             return self._execute_code_inspection_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
 
         # Check for explain build error requests
-        if "explain build error" in g_lower or "explain error" in g_lower:
+        if any(kw in g_lower for kw in ("explain build error", "explain error", "why is android build failing", "why is the android build failing", "why is build failing", "diagnose build error")):
             return self._execute_explain_error_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
 
         # Plan actions
@@ -1017,6 +1017,21 @@ class AndroidStudioAgent:
         wf_id = workflow_id or f"android_repair_{uuid.uuid4().hex[:8]}"
         t0 = start_time or time.time()
 
+        if self.safety.is_emergency_stop_active():
+            report = AndroidWorkflowReport(
+                workflow_id=wf_id,
+                goal=user_goal,
+                success=False,
+                total_steps=0,
+                steps_executed=0,
+                summary="Workflow halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Android operations are frozen.",
+                error_code=AndroidErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - t0,
+            )
+            self._audit_workflow(report)
+            return report
+
         repair_res = self.code_repair.repair_build(
             user_goal=user_goal,
             max_attempts=max_attempts,
@@ -1024,6 +1039,15 @@ class AndroidStudioAgent:
         )
 
         steps = []
+        if repair_res.initial_error:
+            steps.append({
+                "stage": "DIAGNOSE_BUILD",
+                "category": repair_res.initial_error.category.value,
+                "message": repair_res.initial_error.message,
+                "file": repair_res.initial_error.file_path,
+                "line": repair_res.initial_error.line,
+            })
+
         for edit in repair_res.applied_edits:
             steps.append({
                 "stage": "CODE_EDIT",
@@ -1033,12 +1057,19 @@ class AndroidStudioAgent:
                 "lines_changed": edit.lines_changed,
             })
 
+        if repair_res.rolled_back:
+            steps.append({
+                "stage": "ROLLBACK",
+                "success": True,
+                "files": [e.file_path for e in repair_res.applied_edits],
+            })
+
         report = AndroidWorkflowReport(
             workflow_id=wf_id,
             goal=user_goal,
             success=repair_res.success,
-            total_steps=repair_res.attempts + 1,
-            steps_executed=repair_res.attempts,
+            total_steps=max(1, len(steps)),
+            steps_executed=len(steps),
             steps=steps,
             summary=repair_res.summary,
             error=repair_res.summary if not repair_res.success else None,
