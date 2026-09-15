@@ -20,7 +20,7 @@ import logging
 import os
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.agent.vs_safety import redact_sensitive_data, GLOBAL_WORKSPACE_ROOT
 
@@ -152,18 +152,21 @@ class VSErrorAnalyzer:
                 relevant_files=[fpath] if fpath else [],
             ))
 
-        # 2. Parse NuGet standalone errors:
-        # e.g.: error NU1101: Unable to find package Newtonsoft.Json
+        # 2. Parse standalone compiler / MSBuild / NuGet errors without file path:
+        # e.g.: error MSB4236: The SDK 'Microsoft.NET.Sdk' specified could not be found.
+        # or: error NU1101: Unable to find package Newtonsoft.Json
         if not errors:
-            nu_pattern = re.compile(r'(?i)error\s+(NU\d+)\s*:\s*(.+)', re.MULTILINE)
-            for m in nu_pattern.finditer(clean_output):
+            standalone_pattern = re.compile(r'(?i)(?:error|fatal error)\s+([A-Za-z]+[0-9]+)\s*:\s*([^\r\n]+)', re.MULTILINE)
+            for m in standalone_pattern.finditer(clean_output):
                 code = m.group(1).upper()
                 msg = m.group(2).strip()
+                cat = self._categorize_code(code, msg)
+                diag = self._generate_diagnosis(cat, code, msg)
                 errors.append(VSBuildError(
-                    category=VSErrorCategory.NUGET_ERROR,
+                    category=cat,
                     error_code=code,
                     message=msg,
-                    diagnosis=f"NuGet package error {code}: check package source or version constraint.",
+                    diagnosis=diag,
                 ))
 
         # 3. Parse Test Failures:
@@ -219,7 +222,7 @@ class VSErrorAnalyzer:
 
         # Pattern for dotnet test: "Failed TestName [12 ms]" or "[FAIL] TestName"
         fail_re = re.compile(r'(?:Failed|\[FAIL\])\s+([A-Za-z0-9_\.]+)\s*(?:\[\d+\s*ms\])?', re.MULTILINE)
-        msg_re = re.compile(r'Error Message:\s*\r?\n\s*(.+)', re.MULTILINE)
+        msg_re = re.compile(r'Error Message:\s*(?:\r?\n\s*)?(.+)', re.MULTILINE)
         stack_re = re.compile(r'Stack Trace:\s*\r?\n\s*(?:at\s+.*in\s+(.+):line\s+(\d+))?', re.MULTILINE)
 
         for m in fail_re.finditer(output):
@@ -374,27 +377,114 @@ class VSErrorAnalyzer:
     def _generate_diagnosis(self, cat: VSErrorCategory, code: str, msg: str) -> str:
         """Generates actionable explanation for common errors."""
         if code == "CS0103":
-            return f"C# Name Resolution: Identifier is missing or not declared in the current scope. Check spelling or imports."
+            return f"[{code}] C# Name Resolution: Identifier is missing or not declared in the current scope. Check spelling or imports."
         elif code == "CS0246":
-            return f"C# Type Missing: Type or namespace was not found. Verify using directives or project references."
+            return f"[{code}] C# Type Missing: Type or namespace was not found. Verify using directives or project references."
         elif code == "CS1002":
-            return f"C# Syntax: Semicolon ';' expected."
+            return f"[{code}] C# Syntax: Semicolon ';' expected."
         elif code == "CS1503":
-            return f"C# Type Mismatch: Argument cannot convert to parameter type."
+            return f"[{code}] C# Type Mismatch: Argument cannot convert to parameter type."
         elif code == "BC30451":
-            return f"VB.NET Name Resolution: Identifier is not declared. Check spelling or imports."
+            return f"[{code}] VB.NET Name Resolution: Identifier is not declared. Check spelling or imports."
         elif code == "FS0001":
-            return f"F# Type Mismatch: This expression was expected to have a different type."
+            return f"[{code}] F# Type Mismatch: This expression was expected to have a different type."
         elif code == "MSB4019":
-            return f"MSBuild Import Failure: Imported props/targets file was not found."
+            return f"[{code}] MSBuild Import Failure: Imported props/targets file was not found."
         elif code == "MSB4236":
-            return f"MSBuild SDK Failure: The specified SDK could not be found."
+            return f"[{code}] MSBuild SDK Failure: The specified SDK could not be found."
         elif code == "NU1101":
-            return f"NuGet Dependency Failure: Unable to locate package in configured feeds."
+            return f"[{code}] NuGet Dependency Failure: Unable to locate package in configured feeds."
         elif code == "NU1605":
-            return f"NuGet Version Conflict: Package downgrade or conflict detected."
+            return f"[{code}] NuGet Version Conflict: Package downgrade or conflict detected."
         elif cat == VSErrorCategory.TEST_FAILURE:
-            return f"Test Assertion Failure: Unit test failed assertion condition."
+            return f"[{code or 'TEST'}] Test Assertion Failure: Unit test failed assertion condition."
         elif cat == VSErrorCategory.MISSING_TARGET_FRAMEWORK:
-            return f"Missing Target Framework: Installed .NET SDK does not support requested TargetFramework."
+            return f"[{code or 'NETSDK'}] Missing Target Framework: Installed .NET SDK does not support requested TargetFramework."
         return f"{cat.value} ({code}): {msg}"
+
+    def is_repairable_error(self, error: VSBuildError) -> Tuple[bool, str]:
+        """
+        Deterministically evaluates whether an error is safely repairable by autonomous code editing.
+        Returns:
+            (True, "Rationale for repairability") if repairable.
+            (False, "Explanation of why error cannot safely be repaired automatically") if not.
+        """
+        if not error:
+            return False, "No error diagnostic provided."
+
+        cat = error.category
+        code = (error.error_code or "").upper()
+        msg = (error.message or "").lower()
+        file_p = error.file_path or ""
+
+        # 1. Check for protected files
+        file_lower = Path(file_p).name.lower()
+        if file_lower in ("secrets.json", ".env", "appsettings.production.json") or file_lower.endswith((".snk", ".pfx", ".key")):
+            return False, f"Target file '{file_lower}' is a protected security asset and cannot be modified automatically."
+
+        # 2. Check explicitly non-repairable categories
+        unrepairable_categories = {
+            VSErrorCategory.MISSING_SDK,
+            VSErrorCategory.MISSING_RUNTIME,
+            VSErrorCategory.MISSING_TARGET_FRAMEWORK,
+            VSErrorCategory.PERMISSION_FAILURE,
+            VSErrorCategory.BUILD_TIMEOUT,
+            VSErrorCategory.TIMEOUT,
+            VSErrorCategory.PROCESS_LAUNCH_FAILURE,
+        }
+        if cat in unrepairable_categories:
+            return False, f"Error category '{cat.value}' represents an environment or host SDK failure outside project code boundary."
+
+        # 3. Check for external/environment tokens in message or code
+        unrepairable_tokens = [
+            "missing sdk",
+            "the sdk '",
+            "msb4236",
+            "netsdk1045",
+            "authentication failed",
+            "credentials",
+            "secret",
+            "unauthorized",
+            "permission denied",
+            "access denied",
+            "nuget feed",
+            "401 unauthorized",
+            "403 forbidden",
+            "debugger",
+            "status_access_violation",
+        ]
+        for tok in unrepairable_tokens:
+            if tok in msg or tok in code.lower():
+                return False, f"Diagnostic indicates external or security constraint ('{tok}') that cannot be repaired safely."
+
+        # 4. Check for arbitrary package installation requirements
+        if cat == VSErrorCategory.NUGET_ERROR and any(k in msg for k in ("unable to find package", "package source")):
+            return False, "Missing external NuGet package requires network/feed installation outside autonomous code repair boundary."
+
+        # 5. Check repairable categories
+        repairable_categories = {
+            VSErrorCategory.CS_COMPILER_ERROR,
+            VSErrorCategory.VB_COMPILER_ERROR,
+            VSErrorCategory.FS_COMPILER_ERROR,
+            VSErrorCategory.MISSING_REFERENCE,
+            VSErrorCategory.ANALYZER_CODE_QUALITY,
+            VSErrorCategory.TEST_RUNNER_ERROR,
+            VSErrorCategory.PROJECT_CONFIGURATION_ERROR,
+            VSErrorCategory.CONFIGURATION_FAILURE,
+        }
+
+        if cat in repairable_categories:
+            # Source file check: must have a target file path
+            if not file_p and cat not in (VSErrorCategory.PROJECT_CONFIGURATION_ERROR, VSErrorCategory.CONFIGURATION_FAILURE):
+                return False, f"Error '{code}' lacks an identifiable target source file for editing."
+            return True, f"Eligible for autonomous repair: {cat.value} ({code}) in '{Path(file_p).name if file_p else 'configuration'}'."
+
+        if code.startswith(("CS", "BC", "FS")):
+            return True, f"Compiler error '{code}' is eligible for autonomous source code repair."
+
+        return False, f"Error '{code}' in category '{cat.value}' is not within authorized autonomous repair patterns."
+
+    def is_repairable(self, error: VSBuildError) -> bool:
+        """Boolean convenience wrapper for is_repairable_error."""
+        repairable, _ = self.is_repairable_error(error)
+        return repairable

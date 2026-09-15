@@ -268,8 +268,11 @@ class VSSafetyGate:
             return cls._emergency_stop
 
     @classmethod
-    def trigger_emergency_stop(cls) -> None:
-        cls.activate_emergency_stop()
+    def trigger_emergency_stop(cls, reason: Optional[str] = None) -> None:
+        with cls._emergency_lock:
+            cls._emergency_stop = True
+            msg = f" [Reason: {reason}]" if reason else ""
+            logger.critical(f"[VSSafety] EMERGENCY STOP ACTIVATED.{msg} All Visual Studio operations frozen.")
 
     @classmethod
     def is_emergency_stopped(cls) -> bool:
@@ -302,13 +305,25 @@ class VSSafetyGate:
         except Exception as e:
             raise VSSafetyError(VSErrorCode.PROJECT_NOT_AUTHORIZED, f"Invalid project path: {e}")
 
-        # Check containment within global workspace root
+        # Check containment within authorized project or global workspace root
+        in_boundary = False
         try:
-            resolved.relative_to(GLOBAL_WORKSPACE_ROOT)
+            resolved.relative_to(self.authorized_project)
+            in_boundary = True
         except ValueError:
+            pass
+
+        if not in_boundary:
+            try:
+                resolved.relative_to(GLOBAL_WORKSPACE_ROOT)
+                in_boundary = True
+            except ValueError:
+                pass
+
+        if not in_boundary:
             raise VSSafetyError(
                 VSErrorCode.PROJECT_NOT_AUTHORIZED,
-                f"Project path '{resolved}' is outside authorized workspace root '{GLOBAL_WORKSPACE_ROOT}'.",
+                f"Project path '{resolved}' is outside authorized boundary '{self.authorized_project}'.",
             )
 
         return resolved
@@ -330,13 +345,25 @@ class VSSafetyGate:
         except Exception as e:
             raise VSSafetyError(VSErrorCode.FILE_NOT_AUTHORIZED, f"Invalid file path: {e}")
 
-        # Must be inside global workspace root
+        # Must be inside authorized project or global workspace root
+        in_boundary = False
         try:
-            resolved.relative_to(GLOBAL_WORKSPACE_ROOT)
+            resolved.relative_to(self.authorized_project)
+            in_boundary = True
         except ValueError:
+            pass
+
+        if not in_boundary:
+            try:
+                resolved.relative_to(GLOBAL_WORKSPACE_ROOT)
+                in_boundary = True
+            except ValueError:
+                pass
+
+        if not in_boundary:
             raise VSSafetyError(
                 VSErrorCode.FILE_NOT_AUTHORIZED,
-                f"File path '{resolved}' is outside authorized workspace root '{GLOBAL_WORKSPACE_ROOT}'.",
+                f"File path '{resolved}' is outside authorized boundary '{self.authorized_project}'.",
             )
 
         # Check protected directory names in path parts
@@ -436,7 +463,7 @@ class VSSafetyGate:
             )
 
     def validate_patch_content(self, content: str) -> None:
-        """Enforces patch size and line count bounds."""
+        """Enforces patch size, line count bounds, and prohibited token constraints."""
         if not content:
             return
         b_len = len(content.encode("utf-8"))
@@ -444,15 +471,98 @@ class VSSafetyGate:
         lines = len(content.splitlines())
         self.validate_lines_changed(lines)
 
+        # Prohibited token and dangerous construct validation
+        prohibited_patterns = [
+            (r'(?i)(AIza[0-9A-Za-z\-_]{20,40})', "Google API key"),
+            (r'(?i)(sk-[A-Za-z0-9\-_]{10,})', "OpenAI / API key"),
+            (r'(?i)(ghp_[0-9A-Za-z]{36}|gho_[0-9A-Za-z]{36})', "GitHub token"),
+            (r'(?i)(password\s*[:=]\s*["\']?[^\s",;]+)', "hardcoded password"),
+            (r'(?i)(client_secret\s*[:=]\s*["\']?[^\s",;]+)', "client secret"),
+            (r'(?i)-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----', "private key"),
+            (r'(?i)(?:cmd\.exe|powershell\.exe|/bin/sh|/bin/bash)', "system shell invocation"),
+        ]
+        for pat, desc in prohibited_patterns:
+            if re.search(pat, content):
+                raise VSSafetyError(
+                    VSErrorCode.EDIT_VALIDATION_FAILED,
+                    f"Proposed change contains prohibited construct: '{desc}'.",
+                )
+
+    def is_unsupported_error(
+        self,
+        error_category: Any,
+        message: str = "",
+        file_path: Optional[Union[str, Path]] = None,
+    ) -> bool:
+        """
+        Determines if a build error involves unsupported or high-risk domains:
+        - missing SDK, targeting packs, or external runtime installations
+        - signing materials, certificates, keys (.snk, .pfx)
+        - credentials, secrets, tokens, passwords
+        - external package repository authentication failures
+        - arbitrary system shell or debugger commands
+        """
+        if file_path:
+            fp_str = str(file_path).lower()
+            for protected in ("secrets.json", ".env", ".snk", ".pfx", ".key", "appsettings.production.json"):
+                if protected in fp_str:
+                    return True
+
+        cat_str = str(getattr(error_category, "value", error_category)).lower()
+        combined = f"{cat_str} {message}".lower()
+
+        unsupported_tokens = [
+            "missing_sdk",
+            "missing sdk",
+            "the sdk '",
+            "msb4236",
+            "netsdk1045",
+            "certificate",
+            "signing key",
+            ".pfx",
+            ".snk",
+            "private key",
+            "secret_key",
+            "client_secret",
+            "credentials",
+            "authentication failed",
+            "unauthorized",
+            "access denied",
+            "permission denied",
+            "debugger",
+            "arbitrary package",
+            "nuget feed authorization",
+            "401 unauthorized",
+            "403 forbidden",
+        ]
+        for token in unsupported_tokens:
+            if token in combined:
+                return True
+        return False
+
+    def validate_repairable_error(
+        self,
+        error_category: Any,
+        message: str = "",
+        file_path: Optional[Union[str, Path]] = None,
+    ) -> None:
+        """Raises VSSafetyError(REPAIR_UNSUPPORTED) if error is in an unsupported or high-risk domain."""
+        self.check_emergency_stop()
+        if self.is_unsupported_error(error_category, message, file_path):
+            raise VSSafetyError(
+                VSErrorCode.REPAIR_UNSUPPORTED,
+                f"Error in category '{error_category}' is unsupported for autonomous repair (high-risk or external boundary).",
+            )
+
     def validate_edit_batch(self, batch: Any) -> None:
         """Validates an edit batch against file count and individual patch limits."""
         proposals = getattr(batch, "proposals", None) or getattr(batch, "files", None) or []
         self.validate_batch_file_count(len(proposals))
         for p in proposals:
-            f_path = getattr(p, "file_path", None)
+            f_path = getattr(p, "file_path", None) or getattr(p, "target_file", None)
             if f_path:
                 self.validate_file_path(f_path, check_writable=True)
-            p_content = getattr(p, "new_content", None) or getattr(p, "patch", None) or ""
+            p_content = getattr(p, "new_content", None) or getattr(p, "replacement_text", None) or getattr(p, "patch", None) or ""
             if p_content:
                 self.validate_patch_content(p_content)
 
