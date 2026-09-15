@@ -29,6 +29,11 @@ from app.agent.unity_project import (
     UnityProjectInspector,
     DEFAULT_UNITY_PROJECT_INSPECTOR,
 )
+from app.agent.unity_build import (
+    UnityBuildManager,
+    DEFAULT_UNITY_BUILD_MANAGER,
+    UnityLogParser,
+)
 
 logger = logging.getLogger("NRAI.UnityTools")
 
@@ -68,15 +73,23 @@ class UnityToolRegistry:
         safety_gate: Optional[UnitySafetyGate] = None,
         env_detector: Optional[UnityEnvironmentDetector] = None,
         inspector: Optional[UnityProjectInspector] = None,
+        build_manager: Optional[UnityBuildManager] = None,
         audit_logger: Optional[AuditLogger] = None,
         workspace_root: Optional[Path] = None,
+        include_build_tools: Optional[bool] = None,
     ):
         self.safety = safety_gate or DEFAULT_UNITY_SAFETY_GATE
         self.env = env_detector or DEFAULT_UNITY_ENV_DETECTOR
         self.inspector = inspector or DEFAULT_UNITY_PROJECT_INSPECTOR
+        self.build = build_manager or DEFAULT_UNITY_BUILD_MANAGER
         self.audit = audit_logger or AuditLogger()
         self.workspace_root = workspace_root or self.safety.workspace_root
+
+        if include_build_tools is None:
+            include_build_tools = (build_manager is not None) or (inspector is None and env_detector is None)
+
         self._handlers: Dict[str, Callable[[Dict[str, Any]], UnityToolResult]] = {
+            # Step 8 Phase 1: Environment & Project Inspection Foundation
             "unity.detect_environment": self._tool_detect_environment,
             "unity.inspect_project": self._tool_inspect_project,
             "unity.list_projects": self._tool_list_projects,
@@ -90,6 +103,19 @@ class UnityToolRegistry:
             "unity.validate_project_structure": self._tool_validate_project_structure,
             "unity.inspect_project_version": self._tool_inspect_project_version,
         }
+
+        if include_build_tools:
+            # Step 8 Phase 2: Compilation & Build Foundation
+            self._handlers.update({
+                "unity.validate_build_target": self._tool_validate_build_target,
+                "unity.validate_build_output_path": self._tool_validate_build_output_path,
+                "unity.compile_project": self._tool_compile_project,
+                "unity.build_player": self._tool_build_player,
+                "unity.verify_build_artifact": self._tool_verify_build_artifact,
+                "unity.parse_build_log": self._tool_parse_build_log,
+                "unity.get_build_configuration": self._tool_get_build_configuration,
+                "unity.clean_build_target": self._tool_clean_build_target,
+            })
 
     def get_registered_tools(self) -> Set[str]:
         """Returns the set of registered tool names."""
@@ -358,6 +384,149 @@ class UnityToolRegistry:
             data={"version": v, "project_path": str(proj_p)},
             message=f"Target Unity Editor version: {v}.",
             verified=True,
+        )
+
+    # -------------------------------------------------------------------------
+    # Step 8 Phase 2: Compilation & Build Foundation Tools
+    # -------------------------------------------------------------------------
+
+    def _tool_validate_build_target(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Validates that requested build target is supported and allowed."""
+        target = params.get("target") or params.get("build_target")
+        if not target:
+            raise UnitySafetyError(UnityErrorCode.INVALID_BUILD_TARGET, "target is required.")
+        valid = self.build.validate_build_target(str(target))
+        return UnityToolResult(
+            tool="unity.validate_build_target",
+            success=True,
+            data={"target": valid, "valid": True},
+            message=f"Build target '{valid}' is valid and supported.",
+            verified=True,
+        )
+
+    def _tool_validate_build_output_path(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Validates build output destination path."""
+        out_p = params.get("output_path") or params.get("path")
+        if not out_p:
+            raise UnitySafetyError(UnityErrorCode.INVALID_BUILD_OUTPUT, "output_path is required.")
+        proj_p = Path(params.get("project_path")) if params.get("project_path") else None
+        resolved = self.build.validate_build_output_path(out_p, project_root=proj_p)
+        return UnityToolResult(
+            tool="unity.validate_build_output_path",
+            success=True,
+            data={"output_path": str(resolved), "valid": True},
+            message=f"Build output path '{resolved}' is valid and confined.",
+            verified=True,
+        )
+
+    def _tool_compile_project(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Executes batchmode compilation of Unity project scripts."""
+        proj_p = params.get("project_path") or self.safety.authorized_project
+        editor_p = params.get("editor_path")
+        timeout = float(params.get("timeout_seconds") or 120.0)
+        res = self.build.compile_project(proj_p, editor_path=editor_p, timeout_seconds=timeout)
+        return UnityToolResult(
+            tool="unity.compile_project",
+            success=res.success,
+            data=res.to_dict(),
+            error=res.error_summary if not res.success else None,
+            error_code=UnityErrorCode.COMPILATION_FAILED.value if not res.success else None,
+            message=f"Compilation {'succeeded' if res.success else 'failed'}: {res.error_summary or 'All scripts compiled cleanly.'}",
+            verified=res.verified,
+        )
+
+    def _tool_build_player(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Executes controlled player build for target platform."""
+        proj_p = params.get("project_path") or self.safety.authorized_project
+        target = params.get("build_target") or "StandaloneWindows64"
+        out_p = params.get("output_path")
+        editor_p = params.get("editor_path")
+        scenes = params.get("scenes")
+        timeout = float(params.get("timeout_seconds") or 300.0)
+        res = self.build.build_player(
+            proj_p,
+            build_target=target,
+            output_path=out_p,
+            scenes=scenes,
+            editor_path=editor_p,
+            timeout_seconds=timeout,
+        )
+        return UnityToolResult(
+            tool="unity.build_player",
+            success=res.success,
+            data=res.to_dict(),
+            error=res.error_summary if not res.success else None,
+            error_code=UnityErrorCode.BUILD_FAILED.value if not res.success else None,
+            message=f"Player build for {target} {'succeeded' if res.success else 'failed'}: {res.error_summary or 'Artifact verified.'}",
+            verified=res.verified,
+        )
+
+    def _tool_verify_build_artifact(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Verifies build artifact existence, size, and SHA-256 hash."""
+        out_p = params.get("output_path") or params.get("path")
+        if not out_p:
+            raise UnitySafetyError(UnityErrorCode.INVALID_BUILD_OUTPUT, "output_path is required.")
+        data = self.build.verify_build_artifact(out_p)
+        return UnityToolResult(
+            tool="unity.verify_build_artifact",
+            success=data.get("verified", False),
+            data=data,
+            error=data.get("error"),
+            error_code=UnityErrorCode.BUILD_ARTIFACT_MISSING.value if not data.get("verified") else None,
+            message=f"Artifact '{out_p}' verified: {data.get('verified', False)}.",
+            verified=data.get("verified", False),
+        )
+
+    def _tool_parse_build_log(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Parses Unity build/compilation log text or file."""
+        log_text = params.get("log_text")
+        log_file = params.get("log_file") or params.get("log_path")
+        if not log_text and log_file:
+            p = self.safety.validate_path(Path(log_file))
+            if p.exists():
+                log_text = p.read_text(encoding="utf-8", errors="replace")
+        if log_text is None:
+            raise UnitySafetyError(UnityErrorCode.FILE_NOT_AUTHORIZED, "log_text or valid log_file is required.")
+        parsed = UnityLogParser.parse_log(log_text)
+        return UnityToolResult(
+            tool="unity.parse_build_log",
+            success=True,
+            data={
+                "errors": [e.to_dict() for e in parsed["errors"]],
+                "warnings": [w.to_dict() for w in parsed["warnings"]],
+                "error_count": parsed["error_count"],
+                "warning_count": parsed["warning_count"],
+                "summary": parsed["summary"],
+            },
+            message=parsed["summary"],
+            verified=True,
+        )
+
+    def _tool_get_build_configuration(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Inspects build configuration including scenes in build and allowed targets."""
+        proj_p = params.get("project_path") or self.safety.authorized_project
+        cfg = self.build.get_build_configuration(proj_p)
+        return UnityToolResult(
+            tool="unity.get_build_configuration",
+            success=True,
+            data=cfg,
+            message=f"Retrieved build configuration for '{cfg['project_name']}'.",
+            verified=True,
+        )
+
+    def _tool_clean_build_target(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Safely cleans stale build artifacts."""
+        out_p = params.get("output_path") or params.get("path")
+        if not out_p:
+            raise UnitySafetyError(UnityErrorCode.INVALID_BUILD_OUTPUT, "output_path is required.")
+        proj_p = Path(params.get("project_path")) if params.get("project_path") else None
+        cleaned = self.build.clean_build_target(out_p, project_root=proj_p)
+        return UnityToolResult(
+            tool="unity.clean_build_target",
+            success=cleaned,
+            data={"cleaned": cleaned, "path": str(out_p)},
+            message=f"Cleaned build target '{out_p}'.",
+            verified=cleaned,
         )
 
 

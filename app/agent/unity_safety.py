@@ -53,6 +53,9 @@ class UnityErrorCode(str, Enum):
     BUILD_TIMEOUT = "BUILD_TIMEOUT"
     TEST_TIMEOUT = "TEST_TIMEOUT"
     STALE_TARGET = "STALE_TARGET"
+    INVALID_BUILD_TARGET = "INVALID_BUILD_TARGET"
+    INVALID_BUILD_OUTPUT = "INVALID_BUILD_OUTPUT"
+    BUILD_ARTIFACT_MISSING = "BUILD_ARTIFACT_MISSING"
     EDIT_VALIDATION_FAILED = "EDIT_VALIDATION_FAILED"
     REPAIR_FAILED = "REPAIR_FAILED"
     ROLLBACK_FAILED = "ROLLBACK_FAILED"
@@ -135,7 +138,7 @@ PROTECTED_UNITY_DIRECTORIES: Set[str] = {
     ".git",
 }
 
-ALLOWED_UNITY_TOOLS: Set[str] = {
+ALLOWED_UNITY_PHASE1_TOOLS: Set[str] = {
     # Step 8 Phase 1: Environment & Project Inspection Foundation
     "unity.detect_environment",
     "unity.inspect_project",
@@ -149,6 +152,55 @@ ALLOWED_UNITY_TOOLS: Set[str] = {
     "unity.inspect_editor_state",
     "unity.validate_project_structure",
     "unity.inspect_project_version",
+}
+
+ALLOWED_UNITY_TOOLS: Set[str] = ALLOWED_UNITY_PHASE1_TOOLS
+
+ALLOWED_UNITY_BUILD_TOOLS: Set[str] = {
+    # Step 8 Phase 2: Compilation & Build Foundation
+    "unity.validate_build_target",
+    "unity.validate_build_output_path",
+    "unity.compile_project",
+    "unity.build_player",
+    "unity.verify_build_artifact",
+    "unity.parse_build_log",
+    "unity.get_build_configuration",
+    "unity.clean_build_target",
+}
+
+ALL_ALLOWED_UNITY_TOOLS: Set[str] = ALLOWED_UNITY_TOOLS | ALLOWED_UNITY_BUILD_TOOLS
+
+ALLOWED_BUILD_TARGETS: Set[str] = {
+    "StandaloneWindows64",
+    "StandaloneWindows",
+    "Android",
+    "WebGL",
+    "Linux64",
+    "StandaloneOSX",
+}
+
+PROTECTED_BUILD_OUTPUT_DIRS: Set[str] = {
+    "Assets",
+    "ProjectSettings",
+    "Packages",
+    "Library",
+    "Temp",
+    "obj",
+    "Logs",
+    ".git",
+    ".vs",
+}
+
+DISALLOWED_BUILD_OUTPUT_EXTENSIONS: Set[str] = {
+    ".bat",
+    ".cmd",
+    ".ps1",
+    ".sh",
+    ".bash",
+    ".vbs",
+    ".js",
+    ".py",
+    ".cs",
 }
 
 # Operational limits
@@ -256,12 +308,12 @@ class UnitySafetyGate:
                 )
 
     def validate_tool_allowed(self, tool_name: str) -> None:
-        """Verifies tool_name is present in ALLOWED_UNITY_TOOLS."""
+        """Verifies tool_name is present in approved Unity tool allowlists."""
         self.assert_not_stopped()
-        if tool_name not in ALLOWED_UNITY_TOOLS:
+        if tool_name not in ALL_ALLOWED_UNITY_TOOLS:
             raise UnitySafetyError(
                 UnityErrorCode.TOOL_NOT_ALLOWED,
-                f"Tool '{tool_name}' is not in ALLOWED_UNITY_TOOLS allowlist.",
+                f"Tool '{tool_name}' is not in approved Unity tools allowlist.",
                 {"tool": tool_name},
             )
 
@@ -365,6 +417,93 @@ class UnitySafetyGate:
                     {"tool": tool_name, "count": len(ts_list)},
                 )
             ts_list.append(now)
+
+    def validate_build_target(self, target: str) -> str:
+        """Validates that target is one of the allowed build targets."""
+        self.assert_not_stopped()
+        if not target or target not in ALLOWED_BUILD_TARGETS:
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_BUILD_TARGET,
+                f"Build target '{target}' is not in ALLOWED_BUILD_TARGETS: {sorted(list(ALLOWED_BUILD_TARGETS))}.",
+                {"target": target, "allowed": sorted(list(ALLOWED_BUILD_TARGETS))},
+            )
+        return target
+
+    def validate_build_output_path(self, target_path: Path | str, project_root: Optional[Path] = None) -> Path:
+        """
+        Validates build output destination path.
+        Must be confined within project directory (e.g. Builds/) or workspace build folder.
+        Rejects traversal, system roots, and writing directly into Assets/ProjectSettings.
+        """
+        self.assert_not_stopped()
+        raw_str = str(target_path)
+        if ".." in raw_str.replace("\\", "/").split("/"):
+            raise UnitySafetyError(
+                UnityErrorCode.PATH_TRAVERSAL_DETECTED,
+                f"Path traversal sequence '..' detected in build output path: '{target_path}'.",
+                {"path": str(target_path)},
+            )
+
+        try:
+            resolved = Path(target_path).resolve()
+        except Exception as e:
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_BUILD_OUTPUT,
+                f"Invalid build output filesystem path '{target_path}': {e}",
+            )
+
+        # Check confinement to workspace or authorized project
+        in_project = False
+        target_project = (project_root or self.authorized_project).resolve()
+        for auth_p in self.authorized_projects + [target_project]:
+            try:
+                resolved.relative_to(auth_p)
+                in_project = True
+                break
+            except ValueError:
+                pass
+
+        in_workspace = False
+        try:
+            resolved.relative_to(self.workspace_root)
+            in_workspace = True
+        except ValueError:
+            pass
+
+        if not (in_project or in_workspace):
+            raise UnitySafetyError(
+                UnityErrorCode.FILE_NOT_AUTHORIZED,
+                f"Build output path '{resolved}' is outside authorized project/workspace boundaries.",
+                {"path": str(resolved)},
+            )
+
+        # Check that output path does not target protected project directories (like Assets, ProjectSettings, Library)
+        rel_to_proj = None
+        if in_project:
+            try:
+                rel_to_proj = resolved.relative_to(target_project)
+            except ValueError:
+                pass
+        if rel_to_proj:
+            parts = rel_to_proj.parts
+            if parts:
+                top_part = parts[0]
+                if top_part in PROTECTED_BUILD_OUTPUT_DIRS:
+                    raise UnitySafetyError(
+                        UnityErrorCode.PROTECTED_DIRECTORY_REJECTED,
+                        f"Build output cannot be written directly into protected directory '{top_part}'. Use 'Builds/' instead.",
+                        {"path": str(resolved), "directory": top_part},
+                    )
+
+        suffix = resolved.suffix.lower()
+        if suffix in DISALLOWED_BUILD_OUTPUT_EXTENSIONS:
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_BUILD_OUTPUT,
+                f"Disallowed script/executable extension '{suffix}' for build output.",
+                {"path": str(resolved), "suffix": suffix},
+            )
+
+        return resolved
 
 
 # Global default instance
