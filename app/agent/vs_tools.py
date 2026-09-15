@@ -33,6 +33,17 @@ from app.agent.vs_safety import (
 from app.agent.vs_environment import VSEnvironmentDetector, VSEnvironmentInfo
 from app.agent.vs_project import VSProjectInspector, VSProjectMetadata, VSSolutionMetadata
 from app.agent.vs_error_analyzer import VSErrorAnalyzer, VSBuildError, VSErrorCategory
+from app.agent.vs_debugger import (
+    VSIdeInspector,
+    SafeVSDebugger,
+    VSDebuggerState,
+    VSIdeState,
+    VSBreakpoint,
+    VSDebugEvidence,
+    VSDebugLocation,
+    VSDebugVariable,
+    VSDebugStackFrame,
+)
 from app.memory.audit_logger import AuditLogger
 
 logger = logging.getLogger("NRAI.VSTools")
@@ -467,6 +478,8 @@ class VSToolRegistry:
         msbuild_runner: Optional[SafeMSBuildRunner] = None,
         workspace_root: Optional[Union[str, Path]] = None,
         audit_logger: Optional[AuditLogger] = None,
+        ide_inspector: Optional[VSIdeInspector] = None,
+        debugger: Optional[SafeVSDebugger] = None,
     ):
         if safety_gate is None and workspace_root is not None:
             self.safety = VSSafetyGate(authorized_project=Path(workspace_root).resolve())
@@ -478,6 +491,8 @@ class VSToolRegistry:
         self.analyzer = VSErrorAnalyzer(project_root=self.safety.authorized_project)
         self.runtime_runner = SafeRuntimeRunner(safety_gate=self.safety, env_detector=self.env)
         self.audit = audit_logger
+        self.ide = ide_inspector or VSIdeInspector(safety_gate=self.safety, env_detector=self.env, project_inspector=self.inspector)
+        self.debugger = debugger or SafeVSDebugger(safety_gate=self.safety, ide_inspector=self.ide, audit_logger=self.audit)
         self.workspace_root = Path(workspace_root).resolve() if workspace_root else None
         self.last_build_output: Dict[str, Any] = {}
         self.last_test_output: Dict[str, Any] = {}
@@ -561,6 +576,18 @@ class VSToolRegistry:
             "vs.inspect_launch_configuration": self._tool_inspect_launch_configuration,
             "vs.capture_runtime_output": self._tool_capture_runtime_output,
             "vs.verify_runtime_result": self._tool_verify_runtime_result,
+            # Step 7 Phase 4: IDE State & Controlled Debugging
+            "vs.inspect_ide_state": self._tool_inspect_ide_state,
+            "vs.inspect_active_document": self._tool_inspect_active_document,
+            "vs.inspect_debugger_state": self._tool_inspect_debugger_state,
+            "vs.set_breakpoint": self._tool_set_breakpoint,
+            "vs.remove_breakpoint": self._tool_remove_breakpoint,
+            "vs.start_debug_session": self._tool_start_debug_session,
+            "vs.stop_debug_session": self._tool_stop_debug_session,
+            "vs.continue_debug": self._tool_continue_debug,
+            "vs.pause_debug": self._tool_pause_debug,
+            "vs.inspect_debug_location": self._tool_inspect_debug_location,
+            "vs.inspect_debug_locals": self._tool_inspect_debug_locals,
         }
         handler = handlers.get(tool_name)
         if not handler:
@@ -1008,3 +1035,202 @@ class VSToolRegistry:
                 elif f_lower.endswith(".dll") and not f_lower.endswith(".views.dll") and dll_cand is None:
                     dll_cand = Path(r) / f
         return dll_cand
+
+    # -------------------------------------------------------------------------
+    # Step 7 Phase 4: IDE State & Controlled Debugging Tool Handlers
+    # -------------------------------------------------------------------------
+
+    def _tool_inspect_ide_state(self, params: Dict[str, Any]) -> VSToolResult:
+        """Inspects current Visual Studio IDE execution and active solution/project state."""
+        ide_state = self.ide.inspect_ide()
+        return VSToolResult(
+            tool="vs.inspect_ide_state",
+            success=True,
+            data=ide_state.to_dict(),
+            message=f"IDE State: {'Running' if ide_state.is_running else 'Not Running'}.",
+            verified=True,
+        )
+
+    def _tool_inspect_active_document(self, params: Dict[str, Any]) -> VSToolResult:
+        """Inspects active or requested document within authorized workspace."""
+        path = params.get("path") or params.get("file_path") or params.get("document_path")
+        cursor_line = params.get("cursor_line")
+        if cursor_line is not None:
+            try:
+                cursor_line = int(cursor_line)
+            except (ValueError, TypeError):
+                cursor_line = None
+        doc_info = self.ide.inspect_active_document(file_path=path, cursor_line=cursor_line)
+        return VSToolResult(
+            tool="vs.inspect_active_document",
+            success=True,
+            data=doc_info,
+            message=f"Active document: '{doc_info.get('file_name', '')}' ({doc_info.get('total_lines', 0)} lines).",
+            verified=True,
+        )
+
+    def _tool_inspect_debugger_state(self, params: Dict[str, Any]) -> VSToolResult:
+        """Inspects current debugger state and active breakpoints."""
+        bps = [bp.to_dict() for bp in self.debugger.list_breakpoints()]
+        data = {
+            "state": self.debugger.state.value,
+            "session_id": self.debugger.session_id,
+            "breakpoint_count": len(bps),
+            "breakpoints": bps,
+        }
+        return VSToolResult(
+            tool="vs.inspect_debugger_state",
+            success=True,
+            data=data,
+            message=f"Debugger state: {self.debugger.state.value} ({len(bps)} breakpoints).",
+            verified=True,
+        )
+
+    def _tool_set_breakpoint(self, params: Dict[str, Any]) -> VSToolResult:
+        """Sets a validated breakpoint in an authorized source file."""
+        file_path = params.get("file_path") or params.get("target_file") or params.get("path")
+        line = params.get("line_number") or params.get("line")
+        if not file_path or line is None:
+            return VSToolResult(
+                tool="vs.set_breakpoint",
+                success=False,
+                error="Parameters 'file_path' and 'line_number' are required.",
+                error_code=VSErrorCode.BREAKPOINT_INVALID.value,
+            )
+        try:
+            line_num = int(line)
+        except (ValueError, TypeError):
+            return VSToolResult(
+                tool="vs.set_breakpoint",
+                success=False,
+                error=f"Invalid line number: {line}",
+                error_code=VSErrorCode.BREAKPOINT_INVALID.value,
+            )
+
+        condition = params.get("condition")
+        expected_hash = params.get("expected_hash") or params.get("expected_file_hash")
+
+        bp = self.debugger.set_breakpoint(
+            file_path=file_path,
+            line_number=line_num,
+            condition=condition,
+            expected_hash=expected_hash,
+        )
+        return VSToolResult(
+            tool="vs.set_breakpoint",
+            success=True,
+            data=bp.to_dict(),
+            message=f"Breakpoint '{bp.id}' set at {Path(bp.file_path).name}:{bp.line_number}.",
+            verified=True,
+        )
+
+    def _tool_remove_breakpoint(self, params: Dict[str, Any]) -> VSToolResult:
+        """Removes an active breakpoint by identifier."""
+        bp_id = params.get("breakpoint_id") or params.get("id")
+        if not bp_id:
+            return VSToolResult(
+                tool="vs.remove_breakpoint",
+                success=False,
+                error="Parameter 'breakpoint_id' is required.",
+                error_code=VSErrorCode.BREAKPOINT_NOT_FOUND.value,
+            )
+
+        self.debugger.remove_breakpoint(str(bp_id))
+        return VSToolResult(
+            tool="vs.remove_breakpoint",
+            success=True,
+            data={"breakpoint_id": bp_id, "removed": True},
+            message=f"Breakpoint '{bp_id}' removed.",
+            verified=True,
+        )
+
+    def _tool_start_debug_session(self, params: Dict[str, Any]) -> VSToolResult:
+        """Starts a controlled debug session on an authorized target."""
+        target = params.get("target_path") or params.get("path") or params.get("project_path")
+        if not target:
+            # Fallback to authorized project
+            projs = self.inspector.list_projects(self.safety.authorized_project)
+            csproj = next((p["path"] for p in projs if p["type"] == "csharp"), None)
+            target = csproj or str(self.safety.authorized_project)
+
+        configuration = params.get("configuration", "Debug")
+        platform = params.get("platform", "Any CPU")
+        timeout = float(params.get("timeout", 30.0))
+
+        evidence = self.debugger.start_session(
+            target_path=target,
+            configuration=configuration,
+            platform=platform,
+            timeout=timeout,
+        )
+        return VSToolResult(
+            tool="vs.start_debug_session",
+            success=True,
+            data=evidence.to_dict(),
+            message=f"Debug session '{evidence.session_id}' started in state '{evidence.state}'.",
+            verified=True,
+        )
+
+    def _tool_stop_debug_session(self, params: Dict[str, Any]) -> VSToolResult:
+        """Stops the active debugging session."""
+        evidence = self.debugger.stop_session()
+        return VSToolResult(
+            tool="vs.stop_debug_session",
+            success=True,
+            data=evidence.to_dict(),
+            message="Debug session stopped.",
+            verified=True,
+        )
+
+    def _tool_continue_debug(self, params: Dict[str, Any]) -> VSToolResult:
+        """Resumes execution from paused state."""
+        until_bp = bool(params.get("until_breakpoint", True))
+        evidence = self.debugger.continue_session(until_breakpoint=until_bp)
+        return VSToolResult(
+            tool="vs.continue_debug",
+            success=True,
+            data=evidence.to_dict(),
+            message=f"Debug execution resumed (state: {evidence.state}).",
+            verified=True,
+        )
+
+    def _tool_pause_debug(self, params: Dict[str, Any]) -> VSToolResult:
+        """Pauses a running debug session."""
+        evidence = self.debugger.pause_session()
+        return VSToolResult(
+            tool="vs.pause_debug",
+            success=True,
+            data=evidence.to_dict(),
+            message=f"Debug session paused at location: {evidence.location.file_path if evidence.location else 'unknown'}.",
+            verified=True,
+        )
+
+    def _tool_inspect_debug_location(self, params: Dict[str, Any]) -> VSToolResult:
+        """Inspects current source execution location during a paused debug session."""
+        loc = self.debugger.get_current_location()
+        loc_dict = loc.to_dict() if loc else {}
+        data = {"location": loc_dict if loc else None, **loc_dict}
+        return VSToolResult(
+            tool="vs.inspect_debug_location",
+            success=True,
+            data=data,
+            message=f"Debug location: {Path(loc.file_path).name}:{loc.line_number}" if loc else "Debugger not paused at source line.",
+            verified=True,
+        )
+
+    def _tool_inspect_debug_locals(self, params: Dict[str, Any]) -> VSToolResult:
+        """Inspects bounded local variables with sensitive data redacted."""
+        max_c = int(params.get("max_count", 50))
+        vars_list = self.debugger.inspect_locals(max_count=max_c)
+        serialized = [v.to_dict() for v in vars_list]
+        return VSToolResult(
+            tool="vs.inspect_debug_locals",
+            success=True,
+            data={
+                "locals": serialized,
+                "variables": serialized,
+                "count": len(vars_list),
+            },
+            message=f"Inspected {len(vars_list)} local variables (sanitized).",
+            verified=True,
+        )

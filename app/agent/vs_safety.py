@@ -63,6 +63,16 @@ class VSErrorCode(str, Enum):
     RUNTIME_TIMEOUT = "RUNTIME_TIMEOUT"
     UNAUTHORIZED_EXECUTABLE = "UNAUTHORIZED_EXECUTABLE"
     OUTPUT_TOO_LARGE = "OUTPUT_TOO_LARGE"
+    DEBUGGER_NOT_INITIALIZED = "DEBUGGER_NOT_INITIALIZED"
+    DEBUG_SESSION_ACTIVE = "DEBUG_SESSION_ACTIVE"
+    NO_ACTIVE_DEBUG_SESSION = "NO_ACTIVE_DEBUG_SESSION"
+    BREAKPOINT_NOT_FOUND = "BREAKPOINT_NOT_FOUND"
+    BREAKPOINT_INVALID = "BREAKPOINT_INVALID"
+    TOO_MANY_BREAKPOINTS = "TOO_MANY_BREAKPOINTS"
+    DEBUG_TARGET_UNAUTHORIZED = "DEBUG_TARGET_UNAUTHORIZED"
+    DEBUG_EXECUTION_FAILED = "DEBUG_EXECUTION_FAILED"
+    DEBUG_TIMEOUT = "DEBUG_TIMEOUT"
+    IDE_NOT_RUNNING = "IDE_NOT_RUNNING"
 
 
 class VSSafetyError(Exception):
@@ -168,6 +178,18 @@ ALLOWED_VS_TOOLS: Set[str] = {
     "vs.inspect_launch_configuration",
     "vs.capture_runtime_output",
     "vs.verify_runtime_result",
+    # Step 7 Phase 4: Visual Studio IDE Intelligence & Controlled Debugging
+    "vs.inspect_ide_state",
+    "vs.inspect_active_document",
+    "vs.inspect_debugger_state",
+    "vs.set_breakpoint",
+    "vs.remove_breakpoint",
+    "vs.start_debug_session",
+    "vs.stop_debug_session",
+    "vs.continue_debug",
+    "vs.pause_debug",
+    "vs.inspect_debug_location",
+    "vs.inspect_debug_locals",
 }
 
 ALLOWED_BUILD_ACTIONS: Set[str] = {
@@ -187,6 +209,9 @@ MAX_REPAIR_ATTEMPTS: int = 2
 BUILD_TIMEOUT_SECONDS: float = 180.0
 TEST_TIMEOUT_SECONDS: float = 180.0
 RUNTIME_TIMEOUT_SECONDS: float = 10.0
+DEBUG_TIMEOUT_SECONDS: float = 30.0
+MAX_BREAKPOINTS: int = 50
+MAX_DEBUG_LOCALS: int = 50
 MAX_BUILD_OUTPUT_BYTES: int = 524_288   # 512 KB
 MAX_BUILD_OUTPUT_LINES: int = 2000
 MAX_RUNTIME_OUTPUT_BYTES: int = 131_072 # 128 KB
@@ -251,10 +276,11 @@ class VSSafetyGate:
     # -------------------------------------------------------------------------
 
     @classmethod
-    def activate_emergency_stop(cls) -> None:
+    def activate_emergency_stop(cls, reason: Optional[str] = None) -> None:
         with cls._emergency_lock:
             cls._emergency_stop = True
-            logger.critical("[VSSafety] EMERGENCY STOP ACTIVATED. All Visual Studio operations frozen.")
+            msg = f" [Reason: {reason}]" if reason else ""
+            logger.critical(f"[VSSafety] EMERGENCY STOP ACTIVATED.{msg} All Visual Studio operations frozen.")
 
     @classmethod
     def deactivate_emergency_stop(cls) -> None:
@@ -669,3 +695,105 @@ class VSSafetyGate:
                 VSErrorCode.OUTPUT_TOO_LARGE,
                 f"Output line count ({output_lines} lines) exceeds maximum allowable {context} limit of {max_lines} lines.",
             )
+
+    def validate_breakpoint(
+        self,
+        file_path: Union[str, Path],
+        line_number: int,
+        condition: Optional[str] = None,
+        expected_hash: Optional[str] = None,
+    ) -> Tuple[Path, int]:
+        """Validates that a breakpoint targets an authorized source file at a valid line within line count."""
+        self.check_emergency_stop()
+        validated_path = self.validate_file_path(file_path, check_writable=False)
+
+        # Verify it's a source file
+        source_exts = {".cs", ".vb", ".fs"}
+        if validated_path.suffix.lower() not in source_exts:
+            raise VSSafetyError(
+                VSErrorCode.BREAKPOINT_INVALID,
+                f"Breakpoints can only be set on source files ({', '.join(sorted(source_exts))}), got '{validated_path.name}'.",
+            )
+
+        if line_number < 1:
+            raise VSSafetyError(
+                VSErrorCode.BREAKPOINT_INVALID,
+                f"Breakpoint line number must be positive, got {line_number}.",
+            )
+
+        # Verify file exists and line is within bounds
+        if validated_path.exists():
+            try:
+                content = validated_path.read_text(encoding="utf-8", errors="replace")
+                total_lines = len(content.splitlines())
+                if line_number > max(1, total_lines):
+                    raise VSSafetyError(
+                        VSErrorCode.BREAKPOINT_INVALID,
+                        f"Breakpoint line {line_number} exceeds total file lines ({total_lines}) in '{validated_path.name}'.",
+                    )
+                if expected_hash:
+                    actual_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                    if actual_hash != expected_hash:
+                        raise VSSafetyError(
+                            VSErrorCode.STALE_TARGET,
+                            f"Target file hash mismatch for '{validated_path.name}': expected {expected_hash[:8]}..., actual {actual_hash[:8]}...",
+                        )
+            except Exception as e:
+                if isinstance(e, VSSafetyError):
+                    raise
+                pass
+
+        if condition:
+            self.validate_patch_content(condition)
+
+        return validated_path, line_number
+
+    def validate_replacement_text(self, text: str) -> None:
+        """Alias for validating patch content or replacement text."""
+        self.validate_patch_content(text)
+
+    def validate_debug_target(self, target_path: Union[str, Path]) -> Path:
+        """Validates that a debug target is an authorized project or executable within the workspace."""
+        self.check_emergency_stop()
+        p = Path(target_path)
+        if not p.is_absolute():
+            p = (self.authorized_project / p).resolve()
+        else:
+            p = p.resolve()
+
+        # Must be within authorized project or workspace
+        in_boundary = False
+        try:
+            p.relative_to(self.authorized_project)
+            in_boundary = True
+        except ValueError:
+            pass
+
+        if not in_boundary:
+            try:
+                p.relative_to(GLOBAL_WORKSPACE_ROOT)
+                in_boundary = True
+            except ValueError:
+                pass
+
+        if not in_boundary:
+            raise VSSafetyError(
+                VSErrorCode.DEBUG_TARGET_UNAUTHORIZED,
+                f"Debug target '{p}' must be within authorized project '{self.authorized_project}' or workspace '{GLOBAL_WORKSPACE_ROOT}'.",
+            )
+
+        if not p.exists():
+            raise VSSafetyError(
+                VSErrorCode.DEBUG_TARGET_UNAUTHORIZED,
+                f"Debug target '{p}' does not exist.",
+            )
+
+        # Must be .csproj, .sln, .slnx, .dll, or .exe
+        allowed_target_exts = {".csproj", ".sln", ".slnx", ".dll", ".exe"}
+        if p.suffix.lower() not in allowed_target_exts:
+            raise VSSafetyError(
+                VSErrorCode.DEBUG_TARGET_UNAUTHORIZED,
+                f"Debug target extension '{p.suffix}' is not authorized. Must be one of: {sorted(allowed_target_exts)}",
+            )
+
+        return p

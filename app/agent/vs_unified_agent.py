@@ -37,6 +37,16 @@ from app.agent.vs_project import VSProjectInspector, VSProjectMetadata, VSSoluti
 from app.agent.vs_tools import VSToolRegistry, SafeMSBuildRunner, VSToolResult
 from app.agent.vs_error_analyzer import VSErrorAnalyzer, VSBuildError, VSErrorCategory
 from app.agent.vs_code_repair import VSCodeRepairEngine, VSRepairResult, VSEditProposal
+from app.agent.vs_debugger import (
+    VSIdeInspector,
+    SafeVSDebugger,
+    VSDebuggerState,
+    VSIdeState,
+    VSBreakpoint,
+    VSDebugEvidence,
+    VSDebugLocation,
+    VSDebugVariable,
+)
 from app.agent.model_router import ModelRouter, ModelCapability
 from app.memory.audit_logger import AuditLogger
 
@@ -62,6 +72,11 @@ class UnifiedVSState(str, Enum):
     REPAIRING = "REPAIRING"
     REBUILDING = "REBUILDING"
     TESTING = "TESTING"
+    DEBUG_PREPARING = "DEBUG_PREPARING"
+    DEBUG_RUNNING = "DEBUG_RUNNING"
+    DEBUG_PAUSED = "DEBUG_PAUSED"
+    DEBUG_INSPECTING = "DEBUG_INSPECTING"
+    DEBUG_STOPPING = "DEBUG_STOPPING"
     VERIFYING = "VERIFYING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
@@ -81,6 +96,8 @@ class UnifiedVSErrorDomain(str, Enum):
     REPAIR_FAILURE = "REPAIR_FAILURE"
     RUNTIME_FAILURE = "RUNTIME_FAILURE"
     CONFIGURATION_FAILURE = "CONFIGURATION_FAILURE"
+    DEBUGGER_FAILURE = "DEBUGGER_FAILURE"
+    IDE_FAILURE = "IDE_FAILURE"
     ROLLED_BACK = "ROLLED_BACK"
 
 
@@ -94,6 +111,8 @@ class UnifiedVSWorkflowType(str, Enum):
     AUTONOMOUS_REPAIR = "AUTONOMOUS_REPAIR"
     RUN_PROJECT = "RUN_PROJECT"
     RUNTIME_DIAGNOSTICS = "RUNTIME_DIAGNOSTICS"
+    CONTROLLED_DEBUG = "CONTROLLED_DEBUG"
+    INSPECT_IDE = "INSPECT_IDE"
     END_TO_END = "END_TO_END"
 
 
@@ -147,6 +166,10 @@ class UnifiedVSResult:
     def error(self) -> Optional[str]:
         return self.error_message
 
+    @property
+    def artifacts(self) -> Dict[str, Any]:
+        return self.evidence
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "request_id": self.request_id,
@@ -190,12 +213,14 @@ class VSStateMachine:
             UnifiedVSState.PLANNING,
             UnifiedVSState.EXECUTING,
             UnifiedVSState.BUILDING,
+            UnifiedVSState.DEBUG_PREPARING,
             UnifiedVSState.STOPPED,
         },
         UnifiedVSState.PLANNING: {
             UnifiedVSState.INSPECTING,
             UnifiedVSState.EXECUTING,
             UnifiedVSState.BUILDING,
+            UnifiedVSState.DEBUG_PREPARING,
             UnifiedVSState.DIAGNOSING,
             UnifiedVSState.FAILED,
             UnifiedVSState.STOPPED,
@@ -204,8 +229,10 @@ class VSStateMachine:
             UnifiedVSState.PLANNING,
             UnifiedVSState.EXECUTING,
             UnifiedVSState.BUILDING,
+            UnifiedVSState.DEBUG_PREPARING,
             UnifiedVSState.DIAGNOSING,
             UnifiedVSState.VERIFYING,
+            UnifiedVSState.COMPLETED,
             UnifiedVSState.FAILED,
             UnifiedVSState.STOPPED,
         },
@@ -308,6 +335,42 @@ class VSStateMachine:
             UnifiedVSState.STOPPED,
         },
         UnifiedVSState.ROLLED_BACK: {
+            UnifiedVSState.FAILED,
+            UnifiedVSState.STOPPED,
+        },
+        UnifiedVSState.DEBUG_PREPARING: {
+            UnifiedVSState.DEBUG_RUNNING,
+            UnifiedVSState.DEBUG_STOPPING,
+            UnifiedVSState.FAILED,
+            UnifiedVSState.STOPPED,
+        },
+        UnifiedVSState.DEBUG_RUNNING: {
+            UnifiedVSState.DEBUG_PAUSED,
+            UnifiedVSState.DEBUG_INSPECTING,
+            UnifiedVSState.DEBUG_STOPPING,
+            UnifiedVSState.COMPLETED,
+            UnifiedVSState.FAILED,
+            UnifiedVSState.STOPPED,
+        },
+        UnifiedVSState.DEBUG_PAUSED: {
+            UnifiedVSState.DEBUG_INSPECTING,
+            UnifiedVSState.DEBUG_RUNNING,
+            UnifiedVSState.DEBUG_STOPPING,
+            UnifiedVSState.FAILED,
+            UnifiedVSState.STOPPED,
+        },
+        UnifiedVSState.DEBUG_INSPECTING: {
+            UnifiedVSState.DEBUG_PAUSED,
+            UnifiedVSState.DEBUG_RUNNING,
+            UnifiedVSState.DEBUG_STOPPING,
+            UnifiedVSState.DIAGNOSING,
+            UnifiedVSState.VERIFYING,
+            UnifiedVSState.COMPLETED,
+            UnifiedVSState.FAILED,
+            UnifiedVSState.STOPPED,
+        },
+        UnifiedVSState.DEBUG_STOPPING: {
+            UnifiedVSState.COMPLETED,
             UnifiedVSState.FAILED,
             UnifiedVSState.STOPPED,
         },
@@ -418,7 +481,17 @@ def classify_vs_error(
     if any(k in code_str for k in ("CONFIGURATION_NOT_FOUND", "CONFIGURATION_FAILURE")):
         return UnifiedVSErrorDomain.CONFIGURATION_FAILURE
 
-    # 9. Build Error
+    # 9. Debugger Failure
+    if any(k in code_str for k in ("DEBUGGER_NOT_INITIALIZED", "DEBUG_SESSION_ACTIVE", "NO_ACTIVE_DEBUG_SESSION", "BREAKPOINT_NOT_FOUND", "BREAKPOINT_INVALID", "TOO_MANY_BREAKPOINTS", "DEBUG_TARGET_UNAUTHORIZED", "DEBUG_EXECUTION_FAILED", "DEBUG_TIMEOUT")):
+        return UnifiedVSErrorDomain.DEBUGGER_FAILURE
+    if any(k in err_str for k in ("debugger", "breakpoint", "debug session")):
+        return UnifiedVSErrorDomain.DEBUGGER_FAILURE
+
+    # 10. IDE Failure
+    if code_str == "IDE_NOT_RUNNING" or "ide not running" in err_str:
+        return UnifiedVSErrorDomain.IDE_FAILURE
+
+    # 11. Build Error
     if code_str == "BUILD_FAILED" or "cs0" in err_str or "compilation error" in err_str or "build failed" in err_str:
         return UnifiedVSErrorDomain.BUILD_ERROR
 
@@ -525,6 +598,8 @@ class UnifiedVisualStudioAgent:
         audit_logger: Optional[AuditLogger] = None,
         workspace_root: Optional[Union[str, Path]] = None,
         memory: Optional[Any] = None,
+        ide_inspector: Optional[VSIdeInspector] = None,
+        debugger: Optional[SafeVSDebugger] = None,
     ):
         if safety_gate is None and workspace_root is not None:
             self.safety = VSSafetyGate(authorized_project=Path(workspace_root).resolve())
@@ -539,6 +614,8 @@ class UnifiedVisualStudioAgent:
             msbuild_runner=msbuild_runner,
             workspace_root=workspace_root,
             audit_logger=audit_logger,
+            ide_inspector=ide_inspector,
+            debugger=debugger,
         )
         self.runner = msbuild_runner or self.tools.runner
         self.analyzer = error_analyzer or VSErrorAnalyzer()
@@ -552,6 +629,8 @@ class UnifiedVisualStudioAgent:
             audit_logger=self.audit,
         )
         self.repair_engine = self.code_repair
+        self.ide = ide_inspector or self.tools.ide
+        self.debugger = debugger or self.tools.debugger
         self.memory = memory
         self.workspace_root = Path(workspace_root).resolve() if workspace_root else None
         self.planner = UnifiedVSPlanner(model_router=self.router)
@@ -1223,6 +1302,182 @@ class UnifiedVisualStudioAgent:
             evidence={"inspection": insp_res.data, "artifacts": v_res.data, "tests": t_res.data},
             duration_s=time.time() - start_time,
         )
+
+    def execute_debug_workflow(
+        self,
+        goal: str = "Execute controlled debugging session",
+        target_path: Optional[Union[str, Path]] = None,
+        breakpoints: Optional[List[Dict[str, Any]]] = None,
+        workflow_id: Optional[str] = None,
+        configuration: str = "Debug",
+        platform: str = "Any CPU",
+        timeout: float = 30.0,
+        inspect_locals: bool = True,
+    ) -> UnifiedVSResult:
+        """Executes a controlled Visual Studio debugging workflow with state machine lifecycle."""
+        start_time = time.time()
+        req_id = f"vs_dbg_req_{uuid.uuid4().hex[:8]}"
+        wf_id = workflow_id or f"vs_dbg_wf_{uuid.uuid4().hex[:8]}"
+        sm = VSStateMachine(safety_gate=self.safety, audit_logger=self.audit)
+
+        # 1. Emergency stop check
+        if self.safety.is_emergency_stop_active():
+            sm.transition(UnifiedVSState.STOPPED, "Operation halted: EMERGENCY STOP active.")
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.CONTROLLED_DEBUG,
+                sm, False, UnifiedVSErrorDomain.SAFETY_REJECTION,
+                summary="Debugging workflow halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Visual Studio operations frozen.",
+                error_code=VSErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+
+        target = Path(target_path) if target_path else self.safety.authorized_project
+        evidence_dict: Dict[str, Any] = {}
+
+        try:
+            # 2. DEBUG_PREPARING
+            sm.transition(UnifiedVSState.DEBUG_PREPARING, f"Preparing debug target '{target.name}'.")
+            val_target = self.safety.validate_debug_target(target)
+
+            # Set breakpoints if provided
+            set_bps = []
+            if breakpoints:
+                for bp_req in breakpoints:
+                    bp_file = bp_req.get("file_path") or bp_req.get("target_file")
+                    bp_line = int(bp_req.get("line_number") or bp_req.get("line", 1))
+                    bp_cond = bp_req.get("condition")
+                    bp_hash = bp_req.get("expected_hash") or bp_req.get("expected_file_hash")
+                    bp = self.debugger.set_breakpoint(bp_file, bp_line, bp_cond, bp_hash)
+                    set_bps.append(bp.to_dict())
+
+            # 3. DEBUG_RUNNING
+            sm.transition(UnifiedVSState.DEBUG_RUNNING, f"Starting debug session on '{val_target.name}'.")
+            dbg_evidence = self.debugger.start_session(
+                target_path=val_target,
+                configuration=configuration,
+                platform=platform,
+                timeout=timeout,
+            )
+            evidence_dict["session_id"] = dbg_evidence.session_id
+            evidence_dict["start_state"] = dbg_evidence.state
+            evidence_dict["breakpoints"] = set_bps
+            evidence_dict["debug_evidence"] = dbg_evidence.to_dict()
+
+            # 4. If paused on breakpoint or paused by request -> DEBUG_PAUSED -> DEBUG_INSPECTING
+            if self.debugger.state == VSDebuggerState.PAUSED:
+                sm.transition(UnifiedVSState.DEBUG_PAUSED, "Debugger hit breakpoint; execution paused.")
+                sm.transition(UnifiedVSState.DEBUG_INSPECTING, "Inspecting debug location and variables.")
+
+                loc = self.debugger.get_current_location()
+                locals_vars = self.debugger.inspect_locals(max_count=50) if inspect_locals else []
+
+                evidence_dict["location"] = loc.to_dict() if loc else None
+                evidence_dict["locals"] = [v.to_dict() for v in locals_vars]
+                evidence_dict["stack_trace"] = [f.to_dict() for f in dbg_evidence.stack_trace]
+                evidence_dict["hit_breakpoint_id"] = dbg_evidence.hit_breakpoint_id
+
+            # 5. DEBUG_STOPPING
+            sm.transition(UnifiedVSState.DEBUG_STOPPING, "Stopping debug session.")
+            stop_ev = self.debugger.stop_session()
+            evidence_dict["stop_state"] = stop_ev.state
+
+            # 6. COMPLETED
+            sm.transition(UnifiedVSState.COMPLETED, "Controlled debug workflow completed successfully.")
+
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.CONTROLLED_DEBUG,
+                sm, True, UnifiedVSErrorDomain.NONE,
+                summary=f"Debug session completed successfully on '{val_target.name}'.",
+                evidence=evidence_dict,
+                duration_s=time.time() - start_time,
+            )
+
+        except VSSafetyError as se:
+            sm.transition(UnifiedVSState.FAILED, f"Safety rejection during debug: {se.message}")
+            try:
+                self.debugger.stop_session()
+            except Exception:
+                pass
+            domain = categorize_vs_error(se.message, se.code.value)
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.CONTROLLED_DEBUG,
+                sm, False, domain,
+                summary=f"Debug session failed safety validation: {se.message}",
+                error=se.message,
+                error_code=se.code.value,
+                evidence=evidence_dict,
+                duration_s=time.time() - start_time,
+            )
+        except Exception as e:
+            sm.transition(UnifiedVSState.FAILED, f"Debug workflow error: {e}")
+            try:
+                self.debugger.stop_session()
+            except Exception:
+                pass
+            domain = categorize_vs_error(str(e))
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.CONTROLLED_DEBUG,
+                sm, False, domain,
+                summary=f"Debug workflow failed: {e}",
+                error=str(e),
+                evidence=evidence_dict,
+                duration_s=time.time() - start_time,
+            )
+
+    def execute_inspect_ide_workflow(
+        self,
+        goal: str = "Inspect Visual Studio IDE state and active document",
+        workflow_id: Optional[str] = None,
+    ) -> UnifiedVSResult:
+        """Executes an IDE inspection workflow."""
+        start_time = time.time()
+        req_id = f"vs_ide_req_{uuid.uuid4().hex[:8]}"
+        wf_id = workflow_id or f"vs_ide_wf_{uuid.uuid4().hex[:8]}"
+        sm = VSStateMachine(safety_gate=self.safety, audit_logger=self.audit)
+
+        if self.safety.is_emergency_stop_active():
+            sm.transition(UnifiedVSState.STOPPED, "Operation halted: EMERGENCY STOP active.")
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.INSPECT_IDE,
+                sm, False, UnifiedVSErrorDomain.SAFETY_REJECTION,
+                summary="IDE inspection halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Visual Studio operations frozen.",
+                error_code=VSErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+
+        try:
+            sm.transition(UnifiedVSState.INSPECTING, "Inspecting Visual Studio IDE state.")
+            ide_state = self.ide.inspect_ide()
+            doc_info = {}
+            try:
+                doc_info = self.ide.inspect_active_document()
+            except Exception:
+                pass
+
+            evidence = {
+                "ide_state": ide_state.to_dict(),
+                "active_document": doc_info,
+            }
+
+            sm.transition(UnifiedVSState.COMPLETED, "IDE state inspected successfully.")
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.INSPECT_IDE,
+                sm, True, UnifiedVSErrorDomain.NONE,
+                summary=f"IDE State: {'Running' if ide_state.is_running else 'Not Running'}.",
+                evidence=evidence,
+                duration_s=time.time() - start_time,
+            )
+        except Exception as e:
+            sm.transition(UnifiedVSState.FAILED, f"IDE inspection failed: {e}")
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.INSPECT_IDE,
+                sm, False, UnifiedVSErrorDomain.IDE_FAILURE,
+                summary=f"IDE inspection failed: {e}",
+                error=str(e),
+                duration_s=time.time() - start_time,
+            )
 
     # -------------------------------------------------------------------------
     # Authoritative Verification & Evidence Override
