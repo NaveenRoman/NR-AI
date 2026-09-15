@@ -35,6 +35,7 @@ from app.agent.multi_agent_orchestrator import MultiAgentOrchestrator, Orchestra
 from app.agent.news_agent import NewsAgent, NewsItem, NewsVerificationReport, VerificationStatus
 from app.agent.safe_action_dispatcher import SafeActionDispatcher
 from app.agent.toolchain_registry import ToolchainRegistry
+from app.agent.vs_unified_agent import UnifiedVisualStudioAgent, VSWorkflowReport
 from app.agent.window_manager import WindowManager
 from app.brain.brain import NRBrain
 from app.commands.app_launcher import AppLauncher
@@ -77,6 +78,7 @@ class CommandCategory(str, Enum):
     COMPUTER_AGENT = "COMPUTER_AGENT"
     BROWSER_AGENT = "BROWSER_AGENT"
     ANDROID_STUDIO = "ANDROID_STUDIO"
+    VISUAL_STUDIO = "VISUAL_STUDIO"
 
 
 @dataclass
@@ -167,6 +169,11 @@ class NRCompanion:
             model_router=self.router,
             audit_logger=self.audit,
             memory=self.memory,
+        )
+        self.vs_agent = UnifiedVisualStudioAgent(
+            model_router=self.router,
+            audit_logger=self.audit,
+            workspace_root=self.workspace or Path.cwd(),
         )
 
         # Real-time state tracking
@@ -332,6 +339,10 @@ class NRCompanion:
             tokens = line_clean.split()
             first_tok = tokens[0].lower() if tokens else ""
             if first_tok in cli_diagnostic_commands:
+                if first_tok == "dotnet":
+                    if len(tokens) > 1 and tokens[1].lower() in ("build", "test", "run", "restore", "clean", "publish", "format"):
+                        return CommandCategory.VISUAL_STUDIO
+                    return CommandCategory.COMMAND_EXECUTION
                 if first_tok == "type":
                     # Disambiguate: only treat as CLI inspect command if followed by an explicit file path/extension
                     if len(tokens) > 1 and any("." in t for t in tokens[1:]):
@@ -350,6 +361,19 @@ class NRCompanion:
 
         if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run", "inspect code", "fix build", "repair build", "explain build error", "explain error", "code repair", "inspect android code", "inspect android build", "check android build", "why is android build failing", "why is the android build failing", "fix android build", "repair android compilation error", "show android repair result", "android build error", "repair android", "inspect the android screen", "what is on the android screen", "inspect android screen", "android screen", "find the login button on android", "tap the login button on android", "tap on android", "scroll down on android", "scroll on android", "android ui", "verify the android screen", "verify android screen", "verify android ui", "android device state", "android device ui", "show android logs", "check android logs", "why did the android app crash", "inspect android runtime", "diagnose android error", "what happened in android", "android logs", "android logcat", "android runtime", "android crash", "unified android", "unified android workflow", "run unified android", "android e2e", "android end to end")):
             return CommandCategory.ANDROID_STUDIO
+
+        # 0B.35. Visual Studio Agent Workflows (Safe MSBuild, .NET, Solution & Code Repair)
+        explicit_vs_prefixes = ("vs:", "visual studio:", "msbuild:", "dotnet:", "vs workflow:", "vs agent:", "run vs workflow:", "visual studio agent:")
+        if any(c_candidate.lower().startswith(pfx) for pfx in explicit_vs_prefixes):
+            return CommandCategory.VISUAL_STUDIO
+
+        if any(p in c_candidate.lower() for p in (
+            "visual studio", "msbuild", "inspect solution", "build solution",
+            "vs build", "vs agent", "dotnet build", "vs test", "vs repair",
+            "fix vs build", "repair vs build", "inspect vs project", "inspect vs solution",
+            "visual studio agent", "run vs test", ".sln", ".csproj", ".vbproj", ".fsproj"
+        )):
+            return CommandCategory.VISUAL_STUDIO
 
         # 0B.4. Browser Agent Workflows (Safe web automation & verification)
 
@@ -548,6 +572,10 @@ class NRCompanion:
     # Interaction Pipeline
     # -------------------------------------------------------------------------
 
+    def route_command(self, command: str) -> CompanionResponse:
+        """Routes a command directly through the companion pipeline."""
+        return self.interact(command, speak_output=False, wake_phrase_checked=True)
+
     def interact(
         self,
         user_input: str,
@@ -590,6 +618,8 @@ class NRCompanion:
             response = self._handle_browser_agent(clean_input)
         elif category == CommandCategory.ANDROID_STUDIO:
             response = self._handle_android_studio(clean_input)
+        elif category == CommandCategory.VISUAL_STUDIO:
+            response = self._handle_visual_studio(clean_input)
         elif category == CommandCategory.APPLICATION_LAUNCH:
             response = self._handle_application_launch(clean_input)
         elif category == CommandCategory.WINDOW_MANAGEMENT:
@@ -1707,6 +1737,33 @@ class NRCompanion:
             routed_to="AndroidStudioAgent",
             avatar_mode=AvatarMode.SPEAKING if report.success else (AvatarMode.ATTENTIVE if report.requires_confirmation else AvatarMode.ERROR),
             avatar_emotion=AvatarEmotion.HAPPY if report.success else (AvatarEmotion.ATTENTIVE if report.requires_confirmation else AvatarEmotion.CONCERNED),
+            data=report.to_dict(),
+        )
+
+    def _handle_visual_studio(self, command: str) -> CompanionResponse:
+        """
+        Executes goal-driven safe Visual Studio & MSBuild workflows using UnifiedVisualStudioAgent.
+        """
+        self.avatar.set_thinking("Executing Visual Studio workflow...")
+        self.current_route = "UnifiedVisualStudioAgent"
+        self.current_agent = "Agent-7-VisualStudio"
+        self.current_task_status = "Executing Visual Studio Workflow"
+
+        clean_goal = command.strip()
+        clean_goal = re.sub(r"^(?:vs|visual\s+studio|msbuild|dotnet|vs\s+workflow|vs\s+agent)\s*:\s*", "", clean_goal, flags=re.IGNORECASE).strip()
+
+        report: VSWorkflowReport = self.vs_agent.execute_workflow(
+            user_goal=clean_goal,
+        )
+
+        self.avatar.set_idle("Visual Studio workflow completed." if report.success else "Visual Studio workflow halted.")
+
+        return CompanionResponse(
+            text=report.summary,
+            category=CommandCategory.VISUAL_STUDIO,
+            routed_to="UnifiedVisualStudioAgent",
+            avatar_mode=AvatarMode.SPEAKING if report.success else AvatarMode.ERROR,
+            avatar_emotion=AvatarEmotion.HAPPY if report.success else AvatarEmotion.CONCERNED,
             data=report.to_dict(),
         )
 
