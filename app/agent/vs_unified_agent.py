@@ -74,6 +74,8 @@ class UnifiedVSErrorDomain(str, Enum):
     ENVIRONMENT_FAILURE = "ENVIRONMENT_FAILURE"
     SAFETY_REJECTION = "SAFETY_REJECTION"
     REPAIR_FAILURE = "REPAIR_FAILURE"
+    RUNTIME_FAILURE = "RUNTIME_FAILURE"
+    CONFIGURATION_FAILURE = "CONFIGURATION_FAILURE"
 
 
 class UnifiedVSWorkflowType(str, Enum):
@@ -84,7 +86,10 @@ class UnifiedVSWorkflowType(str, Enum):
     TEST_PROJECT = "TEST_PROJECT"
     DIAGNOSE_BUILD = "DIAGNOSE_BUILD"
     AUTONOMOUS_REPAIR = "AUTONOMOUS_REPAIR"
+    RUN_PROJECT = "RUN_PROJECT"
+    RUNTIME_DIAGNOSTICS = "RUNTIME_DIAGNOSTICS"
     END_TO_END = "END_TO_END"
+
 
 
 # -----------------------------------------------------------------------------
@@ -341,11 +346,22 @@ def classify_vs_error(
     if code_str == "TEST_FAILED" or "test failed" in err_str or "assertion failed" in err_str:
         return UnifiedVSErrorDomain.TEST_FAILURE
 
-    # 7. Build Error
+    # 7. Runtime Failure
+    if any(k in code_str for k in ("RUNTIME_CRASH", "RUNTIME_LAUNCH_FAILURE", "RUNTIME_TIMEOUT", "PORT_BIND_FAILURE", "UNHANDLED_EXCEPTION")):
+        return UnifiedVSErrorDomain.RUNTIME_FAILURE
+    if any(k in err_str for k in ("runtime crash", "unhandled exception", "missing runtime", "failed to bind to address", "process terminated")):
+        return UnifiedVSErrorDomain.RUNTIME_FAILURE
+
+    # 8. Configuration Failure
+    if any(k in code_str for k in ("CONFIGURATION_NOT_FOUND", "CONFIGURATION_FAILURE")):
+        return UnifiedVSErrorDomain.CONFIGURATION_FAILURE
+
+    # 9. Build Error
     if code_str == "BUILD_FAILED" or "cs0" in err_str or "compilation error" in err_str or "build failed" in err_str:
         return UnifiedVSErrorDomain.BUILD_ERROR
 
     return UnifiedVSErrorDomain.BUILD_ERROR if "build" in err_str else UnifiedVSErrorDomain.ENVIRONMENT_FAILURE
+
 
 
 # -----------------------------------------------------------------------------
@@ -393,6 +409,13 @@ class UnifiedVSPlanner:
                 VSPlanStep(3, "apply_repair", "Apply atomic repair with backup", {}),
                 VSPlanStep(4, "verify_repair", "Rebuild and verify", {}),
             ]
+        elif ("run" in g and ("project" in g or "app" in g or "executable" in g)) or "launch" in g or "runtime" in g:
+            w_type = UnifiedVSWorkflowType.RUN_PROJECT
+            steps = [
+                VSPlanStep(1, "vs.inspect_launch_configuration", "Inspect launch profiles", {}),
+                VSPlanStep(2, "vs.capture_runtime_output", "Run project output safely", {}),
+                VSPlanStep(3, "vs.verify_runtime_result", "Verify runtime execution status", {}),
+            ]
         elif ("build" in g and ("project" in g or "solution" in g or "vs" in g or "c#" in g)) or "compile" in g:
             w_type = UnifiedVSWorkflowType.BUILD_PROJECT
             steps = [
@@ -406,6 +429,7 @@ class UnifiedVSPlanner:
                 VSPlanStep(2, "vs.run_safe_build", "Build project", {"action": "BUILD"}),
                 VSPlanStep(3, "vs.verify_build_result", "Verify artifacts", {}),
             ]
+
 
         return UnifiedVSPlan(
             workflow_id=w_id,
@@ -526,8 +550,13 @@ class UnifiedVisualStudioAgent:
                 res = self._execute_diagnose_build(plan, sm, target, start_time)
             elif w_type == UnifiedVSWorkflowType.AUTONOMOUS_REPAIR:
                 res = self._execute_autonomous_repair(plan, sm, target, start_time)
+            elif w_type == UnifiedVSWorkflowType.RUN_PROJECT:
+                res = self._execute_run_project(plan, sm, target, start_time)
+            elif w_type == UnifiedVSWorkflowType.RUNTIME_DIAGNOSTICS:
+                res = self._execute_runtime_diagnostics(plan, sm, target, start_time)
             else:
                 res = self._execute_end_to_end(plan, sm, target, start_time, allow_repair)
+
 
             res.request_id = req_id
             self._audit_final_result(res)
@@ -703,6 +732,69 @@ class UnifiedVisualStudioAgent:
             summary=f"Diagnosed {len(errors)} build error(s).",
             evidence={"captured_lines": cap_res.data.get("lines_returned", 0)},
             diagnostics={"error_count": len(errors), "errors": [e.to_dict() for e in errors]},
+            duration_s=time.time() - start_time,
+        )
+
+    def _execute_run_project(
+        self, plan: UnifiedVSPlan, sm: VSStateMachine, target: Path, start_time: float
+    ) -> UnifiedVSResult:
+        sm.transition(UnifiedVSState.INSPECTING, "Inspecting launch configuration")
+        launch_res = self.tools.execute_tool("vs.inspect_launch_configuration", {"target_path": str(target)})
+
+        sm.transition(UnifiedVSState.EXECUTING, "Executing project runtime")
+        run_res = self.tools.execute_tool("vs.capture_runtime_output", {"target_path": str(target)})
+
+        sm.transition(UnifiedVSState.OBSERVING, "Observing runtime process output")
+
+        if run_res.success:
+            sm.transition(UnifiedVSState.VERIFYING, "Verifying runtime result")
+            v_res = self.tools.execute_tool("vs.verify_runtime_result", {})
+            sm.transition(UnifiedVSState.COMPLETED, "Project executed successfully")
+            return self._build_result(
+                "", plan.workflow_id, plan.goal, plan.workflow_type,
+                sm, True, UnifiedVSErrorDomain.NONE,
+                summary="Project runtime execution succeeded and verified.",
+                evidence={
+                    "launch_configuration": launch_res.data,
+                    "runtime": run_res.data,
+                    "verification": v_res.data,
+                },
+                duration_s=time.time() - start_time,
+            )
+        else:
+            sm.transition(UnifiedVSState.DIAGNOSING, "Diagnosing runtime failure")
+            diag = run_res.data.get("diagnosis") if run_res.data else None
+            sm.transition(UnifiedVSState.FAILED, "Project execution failed")
+            domain = classify_vs_error(run_res.error or run_res.output, run_res.error_code)
+            if domain == UnifiedVSErrorDomain.NONE:
+                domain = UnifiedVSErrorDomain.RUNTIME_FAILURE
+            return self._build_result(
+                "", plan.workflow_id, plan.goal, plan.workflow_type,
+                sm, False, domain,
+                summary=f"Project runtime failed: {run_res.error or 'Non-zero exit'}",
+                error=run_res.error or run_res.message,
+                error_code=run_res.error_code or (diag.get("error_code") if diag else None),
+                diagnostics={"runtime_failure": diag} if diag else None,
+                evidence={
+                    "launch_configuration": launch_res.data,
+                    "runtime": run_res.data,
+                },
+                duration_s=time.time() - start_time,
+            )
+
+    def _execute_runtime_diagnostics(
+        self, plan: UnifiedVSPlan, sm: VSStateMachine, target: Path, start_time: float
+    ) -> UnifiedVSResult:
+        sm.transition(UnifiedVSState.DIAGNOSING, "Capturing and diagnosing runtime output")
+        cap_res = self.tools.execute_tool("vs.capture_runtime_output", {"target_path": str(target)})
+        diag = cap_res.data.get("diagnosis") if cap_res.data else None
+        sm.transition(UnifiedVSState.COMPLETED, "Runtime diagnosis complete")
+        return self._build_result(
+            "", plan.workflow_id, plan.goal, plan.workflow_type,
+            sm, True, UnifiedVSErrorDomain.NONE,
+            summary="Runtime diagnosis complete.",
+            evidence={"runtime": cap_res.data},
+            diagnostics={"diagnosis": diag} if diag else None,
             duration_s=time.time() - start_time,
         )
 

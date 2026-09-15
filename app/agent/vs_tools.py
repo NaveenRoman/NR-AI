@@ -22,13 +22,21 @@ from app.agent.vs_safety import (
     ALLOWED_VS_TOOLS,
     BUILD_TIMEOUT_SECONDS,
     TEST_TIMEOUT_SECONDS,
+    RUNTIME_TIMEOUT_SECONDS,
+    MAX_BUILD_OUTPUT_BYTES,
+    MAX_BUILD_OUTPUT_LINES,
+    MAX_RUNTIME_OUTPUT_BYTES,
+    MAX_RUNTIME_OUTPUT_LINES,
+    GLOBAL_WORKSPACE_ROOT,
     redact_sensitive_data,
 )
 from app.agent.vs_environment import VSEnvironmentDetector, VSEnvironmentInfo
 from app.agent.vs_project import VSProjectInspector, VSProjectMetadata, VSSolutionMetadata
+from app.agent.vs_error_analyzer import VSErrorAnalyzer, VSBuildError, VSErrorCategory
 from app.memory.audit_logger import AuditLogger
 
 logger = logging.getLogger("NRAI.VSTools")
+
 
 
 @dataclass
@@ -82,21 +90,29 @@ class SafeMSBuildRunner:
         self,
         safety_gate: Optional[VSSafetyGate] = None,
         env_detector: Optional[VSEnvironmentDetector] = None,
+        audit_logger: Optional[Any] = None,
     ):
         self.safety = safety_gate or VSSafetyGate()
         self.env = env_detector or VSEnvironmentDetector()
+        self.audit = audit_logger
 
     def run_build(
         self,
         target_path: Path,
         action: str = "BUILD",
         configuration: str = "Debug",
+        platform: Optional[str] = None,
+        properties: Optional[Dict[str, str]] = None,
+        target_framework: Optional[str] = None,
+        max_lines: int = MAX_BUILD_OUTPUT_LINES,
+        max_bytes: int = MAX_BUILD_OUTPUT_BYTES,
         timeout: float = BUILD_TIMEOUT_SECONDS,
     ) -> Dict[str, Any]:
-        """Executes an authorized build action on a project or solution file."""
+        """Executes an authorized build action on a project or solution file with bounded capture."""
         self.safety.check_emergency_stop()
         validated_action = self.safety.validate_build_action(action)
         validated_target = self.safety.validate_file_path(target_path, check_writable=False)
+        val_timeout = self.safety.validate_timeout(timeout, max_timeout=BUILD_TIMEOUT_SECONDS)
 
         env_info = self.env.detect()
         dotnet = env_info.dotnet_path
@@ -123,10 +139,27 @@ class SafeMSBuildRunner:
                 cmd.extend(["restore", str(validated_target)])
             else:
                 cmd.extend(["build", str(validated_target), "-c", configuration])
+
+            if platform:
+                cmd.extend(["-p:Platform=" + platform])
+            if target_framework:
+                cmd.extend(["-f", target_framework])
+            if properties:
+                for k, v in properties.items():
+                    if re.match(r'^[A-Za-z0-9_]+$', str(k)) and not any(bad in str(v) for bad in ("|", "&", ";", ">", "<")):
+                        cmd.append(f"-p:{k}={v}")
         else:
             cmd.append(msbuild)
             target_switch = f"/t:{'Rebuild' if validated_action == 'REBUILD' else ('Clean' if validated_action == 'CLEAN' else 'Build')}"
             cmd.extend([str(validated_target), target_switch, f"/p:Configuration={configuration}", "/v:m"])
+            if platform:
+                cmd.append(f"/p:Platform={platform}")
+            if target_framework:
+                cmd.append(f"/p:TargetFramework={target_framework}")
+            if properties:
+                for k, v in properties.items():
+                    if re.match(r'^[A-Za-z0-9_]+$', str(k)) and not any(bad in str(v) for bad in ("|", "&", ";", ">", "<")):
+                        cmd.append(f"/p:{k}={v}")
 
         start_time = time.time()
         try:
@@ -137,20 +170,36 @@ class SafeMSBuildRunner:
                 stderr=subprocess.PIPE,
                 text=True,
                 shell=False,
-                timeout=timeout,
+                timeout=val_timeout,
             )
             duration = time.time() - start_time
-            raw = (res.stdout or "") + ("\n" + res.stderr if res.stderr else "")
-            sanitized = redact_sensitive_data(raw)
+            raw_stdout = redact_sensitive_data(res.stdout or "")
+            raw_stderr = redact_sensitive_data(res.stderr or "")
+            raw = raw_stdout + ("\n" + raw_stderr if raw_stderr else "")
+
+            # Bounded output line & byte limit
+            lines = raw.splitlines()
+            if len(lines) > max_lines:
+                lines = lines[:max_lines] + ["[TRUNCATED: MAX LINES REACHED]"]
+            bounded_text = "\n".join(lines)
+            if len(bounded_text.encode("utf-8")) > max_bytes:
+                bounded_text = bounded_text[:max_bytes] + "\n[TRUNCATED: MAX BYTES REACHED]"
+
             success = (res.returncode == 0)
 
             return {
                 "success": success,
                 "returncode": res.returncode,
-                "command": [cmd[0]] + cmd[1:],
-                "output_sample": sanitized[:2000],
-                "full_output": sanitized,
+                "command": cmd,
+                "stdout": raw_stdout[:2000],
+                "stderr": raw_stderr[:2000],
+                "output_sample": bounded_text[:2000],
+                "full_output": bounded_text,
                 "duration_s": round(duration, 2),
+                "action": validated_action,
+                "configuration": configuration,
+                "platform": platform,
+                "target": str(validated_target),
             }
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time
@@ -158,9 +207,14 @@ class SafeMSBuildRunner:
                 "success": False,
                 "returncode": -1,
                 "error_code": VSErrorCode.BUILD_TIMEOUT.value,
-                "output_sample": f"Build timed out after {timeout}s.",
+                "stdout": "",
+                "stderr": f"Build timed out after {val_timeout}s.",
+                "output_sample": f"Build timed out after {val_timeout}s.",
                 "full_output": "Build timed out.",
                 "duration_s": round(duration, 2),
+                "action": validated_action,
+                "configuration": configuration,
+                "target": str(validated_target),
             }
         except Exception as e:
             duration = time.time() - start_time
@@ -168,20 +222,29 @@ class SafeMSBuildRunner:
                 "success": False,
                 "returncode": -1,
                 "error_code": VSErrorCode.BUILD_FAILED.value,
+                "stdout": "",
+                "stderr": str(e),
                 "output_sample": str(e),
                 "full_output": str(e),
                 "duration_s": round(duration, 2),
+                "action": validated_action,
+                "configuration": configuration,
+                "target": str(validated_target),
             }
 
     def run_test(
         self,
         target_path: Path,
         filter_expr: Optional[str] = None,
+        configuration: str = "Debug",
+        max_lines: int = MAX_BUILD_OUTPUT_LINES,
+        max_bytes: int = MAX_BUILD_OUTPUT_BYTES,
         timeout: float = TEST_TIMEOUT_SECONDS,
     ) -> Dict[str, Any]:
         """Executes tests safely via dotnet test or vstest.console."""
         self.safety.check_emergency_stop()
         validated_target = self.safety.validate_file_path(target_path, check_writable=False)
+        val_timeout = self.safety.validate_timeout(timeout, max_timeout=TEST_TIMEOUT_SECONDS)
 
         env_info = self.env.detect()
         dotnet = env_info.dotnet_path
@@ -198,7 +261,7 @@ class SafeMSBuildRunner:
 
         cmd: List[str] = []
         if dotnet:
-            cmd.extend([dotnet, "test", str(validated_target), "--verbosity", "normal"])
+            cmd.extend([dotnet, "test", str(validated_target), "-c", configuration, "--verbosity", "normal"])
             if filter_expr:
                 cmd.extend(["--filter", filter_expr])
         else:
@@ -215,19 +278,35 @@ class SafeMSBuildRunner:
                 stderr=subprocess.PIPE,
                 text=True,
                 shell=False,
-                timeout=timeout,
+                timeout=val_timeout,
             )
             duration = time.time() - start_time
-            raw = (res.stdout or "") + ("\n" + res.stderr if res.stderr else "")
-            sanitized = redact_sensitive_data(raw)
-            success = (res.returncode == 0)
+            raw_stdout = redact_sensitive_data(res.stdout or "")
+            raw_stderr = redact_sensitive_data(res.stderr or "")
+            raw = raw_stdout + ("\n" + raw_stderr if raw_stderr else "")
+
+            # Bounded output line & byte limit
+            lines = raw.splitlines()
+            if len(lines) > max_lines:
+                lines = lines[:max_lines] + ["[TRUNCATED: MAX LINES REACHED]"]
+            bounded_text = "\n".join(lines)
+            if len(bounded_text.encode("utf-8")) > max_bytes:
+                bounded_text = bounded_text[:max_bytes] + "\n[TRUNCATED: MAX BYTES REACHED]"
+
+            summary = VSErrorAnalyzer().parse_test_summary(bounded_text)
+            success = (res.returncode == 0 and summary.get("failed", 0) == 0)
 
             return {
                 "success": success,
                 "returncode": res.returncode,
-                "output_sample": sanitized[:2000],
-                "full_output": sanitized,
+                "stdout": raw_stdout[:2000],
+                "stderr": raw_stderr[:2000],
+                "output_sample": bounded_text[:2000],
+                "full_output": bounded_text,
+                "summary": summary,
                 "duration_s": round(duration, 2),
+                "target": str(validated_target),
+                "command": cmd,
             }
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time
@@ -235,9 +314,13 @@ class SafeMSBuildRunner:
                 "success": False,
                 "returncode": -1,
                 "error_code": VSErrorCode.TEST_TIMEOUT.value,
-                "output_sample": f"Test execution timed out after {timeout}s.",
+                "stdout": "",
+                "stderr": f"Test execution timed out after {val_timeout}s.",
+                "output_sample": f"Test execution timed out after {val_timeout}s.",
                 "full_output": "Test execution timed out.",
+                "summary": {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "success": False},
                 "duration_s": round(duration, 2),
+                "target": str(validated_target),
             }
         except Exception as e:
             duration = time.time() - start_time
@@ -245,10 +328,129 @@ class SafeMSBuildRunner:
                 "success": False,
                 "returncode": -1,
                 "error_code": VSErrorCode.TEST_FAILED.value,
+                "stdout": "",
+                "stderr": str(e),
                 "output_sample": str(e),
                 "full_output": str(e),
+                "summary": {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "success": False},
                 "duration_s": round(duration, 2),
+                "target": str(validated_target),
             }
+
+
+class SafeRuntimeRunner:
+    """
+    Safely executes compiled .NET binaries and console projects.
+    Enforces strict boundaries:
+    - shell=False
+    - executable or assembly must be inside authorized workspace
+    - bounded runtime execution timeout (default 10s)
+    - bounded output capture (max lines & bytes)
+    - secret redaction
+    """
+
+    def __init__(
+        self,
+        safety_gate: Optional[VSSafetyGate] = None,
+        env_detector: Optional[VSEnvironmentDetector] = None,
+        audit_logger: Optional[Any] = None,
+    ):
+        self.safety = safety_gate or VSSafetyGate()
+        self.env = env_detector or VSEnvironmentDetector()
+        self.audit = audit_logger
+
+    def run_executable(
+        self,
+        target_path: Union[str, Path],
+        args: Optional[List[str]] = None,
+        timeout: float = RUNTIME_TIMEOUT_SECONDS,
+        max_lines: int = MAX_RUNTIME_OUTPUT_LINES,
+        max_bytes: int = MAX_RUNTIME_OUTPUT_BYTES,
+    ) -> Dict[str, Any]:
+        """Runs a project executable (.exe or dotnet .dll) under strict safety bounds."""
+        self.safety.check_emergency_stop()
+        val_path = self.safety.validate_executable_path(target_path)
+        val_timeout = self.safety.validate_timeout(timeout, max_timeout=60.0)
+
+        cmd: List[str] = []
+        if val_path.suffix.lower() == ".dll":
+            env_info = self.env.detect()
+            dotnet = env_info.dotnet_path or "dotnet"
+            cmd.extend([dotnet, str(val_path)])
+        else:
+            cmd.append(str(val_path))
+
+        if args:
+            for a in args:
+                # Sanitize arguments: no pipes, no shell redirects
+                if any(bad in str(a) for bad in ("|", "&", ";", ">", "<")):
+                    raise VSSafetyError(VSErrorCode.ACTION_NOT_ALLOWED, f"Disallowed character in argument: {a}")
+                cmd.append(str(a))
+
+        start_time = time.time()
+        try:
+            res = subprocess.run(
+                cmd,
+                cwd=str(val_path.parent),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                shell=False,
+                timeout=val_timeout,
+            )
+            duration = time.time() - start_time
+            raw_stdout = redact_sensitive_data(res.stdout or "")
+            raw_stderr = redact_sensitive_data(res.stderr or "")
+            full = raw_stdout + ("\n" + raw_stderr if raw_stderr else "")
+
+            # Truncate to bounds
+            lines = full.splitlines()
+            if len(lines) > max_lines:
+                lines = lines[:max_lines] + ["[TRUNCATED: MAX LINES REACHED]"]
+            bounded_text = "\n".join(lines)
+            if len(bounded_text.encode("utf-8")) > max_bytes:
+                bounded_text = bounded_text[:max_bytes] + "\n[TRUNCATED: MAX BYTES REACHED]"
+
+            return {
+                "success": (res.returncode == 0),
+                "returncode": res.returncode,
+                "stdout": raw_stdout[:2000],
+                "stderr": raw_stderr[:2000],
+                "full_output": bounded_text,
+                "output_sample": bounded_text[:2000],
+                "duration_s": round(duration, 2),
+                "command": cmd,
+                "timed_out": False,
+            }
+        except subprocess.TimeoutExpired:
+            duration = time.time() - start_time
+            return {
+                "success": False,
+                "returncode": -1,
+                "error_code": VSErrorCode.RUNTIME_TIMEOUT.value,
+                "stdout": "",
+                "stderr": f"Process timed out after {val_timeout}s.",
+                "full_output": f"Process timed out after {val_timeout}s.",
+                "output_sample": f"Process timed out after {val_timeout}s.",
+                "duration_s": round(duration, 2),
+                "command": cmd,
+                "timed_out": True,
+            }
+        except Exception as e:
+            duration = time.time() - start_time
+            return {
+                "success": False,
+                "returncode": -1,
+                "error_code": VSErrorCode.RUNTIME_LAUNCH_FAILURE.value,
+                "stdout": "",
+                "stderr": str(e),
+                "full_output": str(e),
+                "output_sample": str(e),
+                "duration_s": round(duration, 2),
+                "command": cmd,
+                "timed_out": False,
+            }
+
 
 
 class VSToolRegistry:
@@ -273,9 +475,13 @@ class VSToolRegistry:
         self.env = env_detector or VSEnvironmentDetector()
         self.inspector = project_inspector or VSProjectInspector(safety_gate=self.safety)
         self.runner = msbuild_runner or SafeMSBuildRunner(safety_gate=self.safety, env_detector=self.env)
+        self.analyzer = VSErrorAnalyzer(project_root=self.safety.authorized_project)
+        self.runtime_runner = SafeRuntimeRunner(safety_gate=self.safety, env_detector=self.env)
         self.audit = audit_logger
         self.workspace_root = Path(workspace_root).resolve() if workspace_root else None
         self.last_build_output: Dict[str, Any] = {}
+        self.last_test_output: Dict[str, Any] = {}
+        self.last_runtime_output: Dict[str, Any] = {}
 
     def execute(self, tool_name: str, params: Optional[Dict[str, Any]] = None) -> VSToolResult:
         """Alias for execute_tool."""
@@ -344,11 +550,17 @@ class VSToolRegistry:
             "vs.find_code": self._tool_find_code,
             "vs.read_code": self._tool_read_code,
             "vs.inspect_build_configuration": self._tool_inspect_build_configuration,
+            "vs.inspect_target_frameworks": self._tool_inspect_target_frameworks,
             "vs.inspect_dependencies": self._tool_inspect_dependencies,
             "vs.run_safe_build": self.run_safe_build,
-            "vs.run_safe_test": self._tool_run_safe_test,
             "vs.capture_build_output": self._tool_capture_build_output,
             "vs.verify_build_result": self._tool_verify_build_result,
+            "vs.run_safe_test": self._tool_run_safe_test,
+            "vs.capture_test_output": self._tool_capture_test_output,
+            "vs.verify_test_result": self._tool_verify_test_result,
+            "vs.inspect_launch_configuration": self._tool_inspect_launch_configuration,
+            "vs.capture_runtime_output": self._tool_capture_runtime_output,
+            "vs.verify_runtime_result": self._tool_verify_runtime_result,
         }
         handler = handlers.get(tool_name)
         if not handler:
@@ -481,18 +693,32 @@ class VSToolRegistry:
         target = params.get("target_path") or self.safety.authorized_project
         val_path = self.safety.validate_file_path(target, check_writable=False)
         configs: List[str] = ["Debug", "Release"]
+        data: Dict[str, Any] = {"target": str(val_path)}
 
         if val_path.suffix.lower() in (".sln", ".slnx"):
-            meta = self.inspector.inspect_solution(val_path)
-            configs = meta.configurations or configs
+            meta_sol = self.inspector.inspect_solution(val_path)
+            configs = meta_sol.configurations or configs
+            data["configurations"] = configs
         elif val_path.suffix.lower() in (".csproj", ".vbproj", ".fsproj"):
             meta = self.inspector.inspect_project(val_path)
             configs = [f"{c}|Any CPU" for c in configs]
+            data.update({
+                "configurations": configs,
+                "target_framework": meta.target_framework,
+                "target_frameworks": meta.target_frameworks,
+                "platform_target": meta.platform_target,
+                "runtime_identifier": meta.runtime_identifier,
+                "treat_warnings_as_errors": meta.treat_warnings_as_errors,
+                "lang_version": meta.lang_version,
+                "nullable": meta.nullable,
+            })
+        else:
+            data["configurations"] = configs
 
         return VSToolResult(
             tool="vs.inspect_build_configuration",
             success=True,
-            data={"target": str(val_path), "configurations": configs},
+            data=data,
             message=f"Configurations for '{val_path.name}': {configs}",
             verified=True,
         )
@@ -536,8 +762,20 @@ class VSToolRegistry:
 
         action = params.get("action", "BUILD")
         cfg = params.get("configuration", "Debug")
+        platform = params.get("platform")
+        props = params.get("properties")
+        tfm = params.get("target_framework")
+        timeout = float(params.get("timeout", BUILD_TIMEOUT_SECONDS))
 
-        build_res = self.runner.run_build(val_target, action=action, configuration=cfg)
+        build_res = self.runner.run_build(
+            val_target,
+            action=action,
+            configuration=cfg,
+            platform=platform,
+            properties=props,
+            target_framework=tfm,
+            timeout=timeout,
+        )
         self.last_build_output = build_res
         success = build_res.get("success", False)
 
@@ -564,7 +802,10 @@ class VSToolRegistry:
                 val_target = Path(projs[0]["path"])
 
         filter_exp = params.get("filter")
-        test_res = self.runner.run_test(val_target, filter_expr=filter_exp)
+        cfg = params.get("configuration", "Debug")
+        timeout = float(params.get("timeout", TEST_TIMEOUT_SECONDS))
+        test_res = self.runner.run_test(val_target, filter_expr=filter_exp, configuration=cfg, timeout=timeout)
+        self.last_test_output = test_res
         success = test_res.get("success", False)
 
         return VSToolResult(
@@ -611,11 +852,159 @@ class VSToolRegistry:
                     if f.endswith((".dll", ".exe")):
                         binaries.append(str(Path(r) / f))
 
-        verified = bool(binaries)
+        rc = self.last_build_output.get("returncode", 0) if self.last_build_output else 0
+        verified = bool(binaries) and (rc == 0)
         return VSToolResult(
             tool="vs.verify_build_result",
             success=verified,
-            data={"has_bin_dir": has_bin, "binaries_found": binaries, "count": len(binaries)},
-            message=f"Build result verification: {len(binaries)} build artifact(s) found.",
+            data={
+                "has_bin_dir": has_bin,
+                "binaries_found": binaries,
+                "count": len(binaries),
+                "verified": verified,
+                "returncode": rc,
+            },
+            message=f"Build result verification: {len(binaries)} build artifact(s) found (exit {rc}).",
             verified=verified,
         )
+
+    def _tool_inspect_target_frameworks(self, params: Dict[str, Any]) -> VSToolResult:
+        target = params.get("target_path") or params.get("path") or self.safety.authorized_project
+        tfms = self.inspector.inspect_target_frameworks(target)
+        return VSToolResult(
+            tool="vs.inspect_target_frameworks",
+            success=True,
+            data={"target": str(target), "target_frameworks": tfms},
+            message=f"Target frameworks for '{Path(target).name}': {tfms}",
+            verified=True,
+        )
+
+    def _tool_capture_test_output(self, params: Dict[str, Any]) -> VSToolResult:
+        max_lines = int(params.get("lines", 100))
+        full = self.last_test_output.get("full_output", "No recent test output recorded.")
+        lines = full.splitlines()
+        tail = lines[-max_lines:] if len(lines) > max_lines else lines
+        summary = self.last_test_output.get("summary", {})
+
+        return VSToolResult(
+            tool="vs.capture_test_output",
+            success=True,
+            data={
+                "lines_returned": len(tail),
+                "total_lines": len(lines),
+                "summary": summary,
+                "returncode": self.last_test_output.get("returncode", 0),
+            },
+            output="\n".join(tail),
+            message=f"Captured {len(tail)} lines of recent test output.",
+            verified=True,
+        )
+
+    def _tool_verify_test_result(self, params: Dict[str, Any]) -> VSToolResult:
+        summary = self.last_test_output.get("summary", {})
+        returncode = self.last_test_output.get("returncode", -1)
+        success = self.last_test_output.get("success", False)
+        failed_count = summary.get("failed", 0)
+
+        verified = (success and returncode == 0 and failed_count == 0)
+        return VSToolResult(
+            tool="vs.verify_test_result",
+            success=verified,
+            data={
+                "verified": verified,
+                "returncode": returncode,
+                "summary": summary,
+            },
+            message=f"Test verification: {'PASSED' if verified else 'FAILED'} (failed tests: {failed_count}).",
+            verified=verified,
+        )
+
+    def _tool_inspect_launch_configuration(self, params: Dict[str, Any]) -> VSToolResult:
+        target = params.get("target_path") or params.get("project_path") or self.safety.authorized_project
+        meta = self.inspector.inspect_launch_configuration(target)
+        return VSToolResult(
+            tool="vs.inspect_launch_configuration",
+            success=True,
+            data=meta.to_dict(),
+            message=f"Inspected {len(meta.profiles)} launch profile(s) from '{Path(meta.path).name}'.",
+            verified=True,
+        )
+
+    def _tool_capture_runtime_output(self, params: Dict[str, Any]) -> VSToolResult:
+        target = params.get("target_path") or params.get("executable_path")
+        if not target:
+            target = self._find_project_executable(self.safety.authorized_project)
+        if not target:
+            return VSToolResult(
+                tool="vs.capture_runtime_output",
+                success=False,
+                error="No executable or output binary specified or found.",
+                error_code=VSErrorCode.CONFIGURATION_NOT_FOUND.value,
+            )
+
+        args = params.get("args", [])
+        timeout = float(params.get("timeout", RUNTIME_TIMEOUT_SECONDS))
+        max_lines = int(params.get("max_lines", MAX_RUNTIME_OUTPUT_LINES))
+
+        res = self.runtime_runner.run_executable(target, args=args, timeout=timeout, max_lines=max_lines)
+        self.last_runtime_output = res
+        success = res.get("success", False)
+        returncode = res.get("returncode", -1)
+
+        diag = None
+        if not success:
+            err_item = self.analyzer.classify_runtime_failure(res.get("full_output", ""), exit_code=returncode)
+            diag = err_item.to_dict()
+
+        return VSToolResult(
+            tool="vs.capture_runtime_output",
+            success=success,
+            data={
+                "runtime_result": res,
+                "diagnosis": diag,
+            },
+            output=res.get("full_output", ""),
+            message=f"Runtime execution {'succeeded' if success else 'terminated with non-zero exit code'}.",
+            error=None if success else f"Runtime failed: {res.get('output_sample', '')[:200]}",
+            error_code=None if success else (diag.get("error_code") if diag else VSErrorCode.RUNTIME_CRASH.value),
+            verified=success,
+        )
+
+    def _tool_verify_runtime_result(self, params: Dict[str, Any]) -> VSToolResult:
+        res = self.last_runtime_output
+        returncode = res.get("returncode", -1)
+        success = res.get("success", False)
+        timed_out = res.get("timed_out", False)
+
+        verified = (success and returncode == 0 and not timed_out)
+        return VSToolResult(
+            tool="vs.verify_runtime_result",
+            success=verified,
+            data={
+                "verified": verified,
+                "returncode": returncode,
+                "timed_out": timed_out,
+            },
+            message=f"Runtime verification: {'PASSED (exit 0)' if verified else f'FAILED (exit {returncode})'}.",
+            verified=verified,
+        )
+
+    def _find_project_executable(self, root: Path) -> Optional[Path]:
+        """Locates compiled .exe or .dll in bin folder under authorized root."""
+        val_root = self.safety.validate_project_path(root)
+        if val_root.is_file():
+            val_root = val_root.parent
+
+        bin_dir = val_root / "bin"
+        if not bin_dir.exists():
+            return None
+
+        dll_cand = None
+        for r, dirs, files in os.walk(bin_dir):
+            for f in files:
+                f_lower = f.lower()
+                if f_lower.endswith(".exe"):
+                    return Path(r) / f
+                elif f_lower.endswith(".dll") and not f_lower.endswith(".views.dll") and dll_cand is None:
+                    dll_cand = Path(r) / f
+        return dll_cand

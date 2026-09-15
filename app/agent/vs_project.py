@@ -21,6 +21,7 @@ from app.agent.vs_safety import (
     VSSafetyError,
     ALLOWED_VS_EXTENSIONS,
     redact_sensitive_data,
+    GLOBAL_WORKSPACE_ROOT,
 )
 
 logger = logging.getLogger("NRAI.VSProject")
@@ -38,6 +39,11 @@ class VSProjectMetadata:
     root_namespace: Optional[str] = None
     nullable: Optional[str] = None
     lang_version: Optional[str] = None
+    platform_target: Optional[str] = None
+    runtime_identifier: Optional[str] = None
+    runtime_identifiers: List[str] = field(default_factory=list)
+    treat_warnings_as_errors: bool = False
+    configurations: List[str] = field(default_factory=lambda: ["Debug", "Release"])
     package_references: List[Dict[str, str]] = field(default_factory=list)
     project_references: List[str] = field(default_factory=list)
     properties: Dict[str, str] = field(default_factory=dict)
@@ -60,12 +66,61 @@ class VSProjectMetadata:
             "root_namespace": self.root_namespace,
             "nullable": self.nullable,
             "lang_version": self.lang_version,
+            "platform_target": self.platform_target,
+            "runtime_identifier": self.runtime_identifier,
+            "runtime_identifiers": self.runtime_identifiers,
+            "treat_warnings_as_errors": self.treat_warnings_as_errors,
+            "configurations": self.configurations,
             "package_references": self.package_references,
             "project_references": self.project_references,
             "properties": self.properties,
             "source_files_count": self.source_files_count,
             "central_package_management": self.central_package_management,
         }
+
+
+@dataclass
+class VSLaunchProfile:
+    """Represents a single launch profile from launchSettings.json."""
+    name: str
+    command_name: str = "Project"
+    command_line_args: Optional[str] = None
+    executable_path: Optional[str] = None
+    working_directory: Optional[str] = None
+    application_url: Optional[str] = None
+    launch_browser: bool = False
+    environment_variables: Dict[str, str] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "command_name": self.command_name,
+            "command_line_args": self.command_line_args,
+            "executable_path": self.executable_path,
+            "working_directory": self.working_directory,
+            "application_url": self.application_url,
+            "launch_browser": self.launch_browser,
+            "environment_variables": {
+                k: redact_sensitive_data(v) for k, v in self.environment_variables.items()
+            },
+        }
+
+
+@dataclass
+class VSLaunchSettingsMetadata:
+    """Inspection result for Properties/launchSettings.json."""
+    path: str
+    profiles: Dict[str, VSLaunchProfile] = field(default_factory=dict)
+    default_profile_name: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "path": self.path,
+            "profile_count": len(self.profiles),
+            "default_profile": self.default_profile_name,
+            "profiles": {k: p.to_dict() for k, p in self.profiles.items()},
+        }
+
 
 
 @dataclass
@@ -229,12 +284,16 @@ class VSProjectInspector:
         # Check SDK style
         is_sdk = "Sdk" in root.attrib or bool(root.findall(".//Sdk"))
 
-        # Extract TargetFrameworks
+        # Extract TargetFrameworks and properties
         tfms: List[str] = []
         output_type = "Library"
         root_ns = None
         nullable = None
         lang_ver = None
+        platform_target = None
+        runtime_identifier = None
+        runtime_identifiers: List[str] = []
+        treat_warnings_as_errors = False
         props: Dict[str, str] = {}
 
         # Search in PropertyGroups
@@ -256,6 +315,14 @@ class VSProjectInspector:
                     nullable = text
                 elif tag == "LangVersion":
                     lang_ver = text
+                elif tag == "PlatformTarget":
+                    platform_target = text
+                elif tag == "RuntimeIdentifier":
+                    runtime_identifier = text
+                elif tag == "RuntimeIdentifiers":
+                    runtime_identifiers.extend([r.strip() for r in text.split(";") if r.strip()])
+                elif tag == "TreatWarningsAsErrors":
+                    treat_warnings_as_errors = text.lower() == "true"
 
         # Extract PackageReferences
         pkg_refs: List[Dict[str, str]] = []
@@ -316,6 +383,11 @@ class VSProjectInspector:
             root_namespace=root_ns,
             nullable=nullable,
             lang_version=lang_ver,
+            platform_target=platform_target,
+            runtime_identifier=runtime_identifier,
+            runtime_identifiers=runtime_identifiers,
+            treat_warnings_as_errors=treat_warnings_as_errors,
+            configurations=["Debug", "Release"],
             package_references=pkg_refs,
             project_references=proj_refs,
             properties=props,
@@ -433,3 +505,101 @@ class VSProjectInspector:
             "lines": bounded_lines,
             "content": content_str,
         }
+
+    def inspect_launch_configuration(self, target_path: Union[str, Path]) -> VSLaunchSettingsMetadata:
+        """
+        Inspects launch configuration profiles from Properties/launchSettings.json.
+        Accepts path to launchSettings.json, project file, or project folder.
+        """
+        raw_p = Path(target_path)
+        candidate_file = None
+
+        if raw_p.name.lower() == "launchsettings.json":
+            candidate_file = raw_p
+        elif raw_p.is_file() and raw_p.suffix.lower() in (".csproj", ".vbproj", ".fsproj"):
+            candidate_file = raw_p.parent / "Properties" / "launchSettings.json"
+        elif raw_p.is_dir():
+            candidate_file = raw_p / "Properties" / "launchSettings.json"
+        else:
+            candidate_file = raw_p
+
+        val_file = self.safety.validate_file_path(candidate_file, check_writable=False)
+        if not val_file.exists():
+            raise VSSafetyError(
+                VSErrorCode.CONFIGURATION_NOT_FOUND,
+                f"Launch settings file not found: '{val_file}'",
+            )
+
+        try:
+            content = val_file.read_text(encoding="utf-8", errors="replace")
+            data = json.loads(content)
+        except Exception as e:
+            raise VSSafetyError(
+                VSErrorCode.CONFIGURATION_NOT_FOUND,
+                f"Failed to parse launchSettings.json: {e}",
+            )
+
+        raw_profiles = data.get("profiles", {})
+        profiles_dict: Dict[str, VSLaunchProfile] = {}
+        for p_name, p_data in raw_profiles.items():
+            if isinstance(p_data, dict):
+                env_vars = p_data.get("environmentVariables", {})
+                redacted_envs = {}
+                for k, v in env_vars.items():
+                    k_str = str(k)
+                    v_str = str(v)
+                    k_lower = k_str.lower()
+                    if any(sec in k_lower for sec in ("secret", "token", "password", "pwd", "apikey", "api_key", "connectionstring")):
+                        redacted_envs[k_str] = "[REDACTED]"
+                    else:
+                        redacted_envs[k_str] = redact_sensitive_data(v_str)
+                profiles_dict[p_name] = VSLaunchProfile(
+                    name=p_name,
+                    command_name=p_data.get("commandName", "Project"),
+                    command_line_args=p_data.get("commandLineArgs"),
+                    executable_path=p_data.get("executablePath"),
+                    working_directory=p_data.get("workingDirectory"),
+                    application_url=p_data.get("applicationUrl"),
+                    launch_browser=bool(p_data.get("launchBrowser", False)),
+                    environment_variables=redacted_envs,
+                )
+
+        default_name = next(iter(profiles_dict.keys()), None)
+        return VSLaunchSettingsMetadata(
+            path=str(val_file),
+            profiles=profiles_dict,
+            default_profile_name=default_name,
+        )
+
+    def inspect_target_frameworks(self, target_path: Union[str, Path]) -> List[str]:
+        """Returns target frameworks across a project or solution file."""
+        val_path = self.safety.validate_file_path(target_path, check_writable=False)
+        ext = val_path.suffix.lower()
+
+        if ext in (".sln", ".slnx"):
+            meta_sol = self.inspect_solution(val_path)
+            all_tfms: Set[str] = set()
+            for p in meta_sol.projects:
+                p_path = Path(p.get("full_path", ""))
+                if p_path.exists():
+                    try:
+                        p_meta = self.inspect_project(p_path)
+                        all_tfms.update(p_meta.target_frameworks)
+                    except Exception:
+                        pass
+            return sorted(list(all_tfms))
+        elif ext in (".csproj", ".vbproj", ".fsproj"):
+            p_meta = self.inspect_project(val_path)
+            return p_meta.target_frameworks
+        elif val_path.is_dir():
+            projs = self.list_projects(val_path)
+            all_tfms = set()
+            for p in projs:
+                if p["type"] == "project":
+                    try:
+                        p_meta = self.inspect_project(p["path"])
+                        all_tfms.update(p_meta.target_frameworks)
+                    except Exception:
+                        pass
+            return sorted(list(all_tfms))
+        return []

@@ -58,6 +58,11 @@ class VSErrorCode(str, Enum):
     REPAIR_UNSUPPORTED = "REPAIR_UNSUPPORTED"
     MALFORMED_PROPOSAL = "MALFORMED_PROPOSAL"
     VERIFICATION_FAILED = "VERIFICATION_FAILED"
+    RUNTIME_LAUNCH_FAILURE = "RUNTIME_LAUNCH_FAILURE"
+    RUNTIME_CRASH = "RUNTIME_CRASH"
+    RUNTIME_TIMEOUT = "RUNTIME_TIMEOUT"
+    UNAUTHORIZED_EXECUTABLE = "UNAUTHORIZED_EXECUTABLE"
+    OUTPUT_TOO_LARGE = "OUTPUT_TOO_LARGE"
 
 
 class VSSafetyError(Exception):
@@ -141,7 +146,6 @@ PROTECTED_VS_DIRECTORIES: Set[str] = {
 PROTECTED_VS_FILENAMES: Set[str] = {
     "secrets.json",
     "appsettings.production.json",
-    "launchsettings.json",
     ".env",
 }
 
@@ -153,11 +157,17 @@ ALLOWED_VS_TOOLS: Set[str] = {
     "vs.find_code",
     "vs.read_code",
     "vs.inspect_build_configuration",
+    "vs.inspect_target_frameworks",
     "vs.inspect_dependencies",
     "vs.run_safe_build",
-    "vs.run_safe_test",
     "vs.capture_build_output",
     "vs.verify_build_result",
+    "vs.run_safe_test",
+    "vs.capture_test_output",
+    "vs.verify_test_result",
+    "vs.inspect_launch_configuration",
+    "vs.capture_runtime_output",
+    "vs.verify_runtime_result",
 }
 
 ALLOWED_BUILD_ACTIONS: Set[str] = {
@@ -176,6 +186,11 @@ MAX_LINES_CHANGED: int = 200          # 200 lines limit
 MAX_REPAIR_ATTEMPTS: int = 2
 BUILD_TIMEOUT_SECONDS: float = 180.0
 TEST_TIMEOUT_SECONDS: float = 180.0
+RUNTIME_TIMEOUT_SECONDS: float = 10.0
+MAX_BUILD_OUTPUT_BYTES: int = 524_288   # 512 KB
+MAX_BUILD_OUTPUT_LINES: int = 2000
+MAX_RUNTIME_OUTPUT_BYTES: int = 131_072 # 128 KB
+MAX_RUNTIME_OUTPUT_LINES: int = 500
 
 # Aliases for operational limits
 MAX_PATCH_BYTES: int = MAX_PATCH_SIZE_BYTES
@@ -193,7 +208,7 @@ REDACTION_PATTERNS: List[Tuple[re.Pattern, str]] = [
     (re.compile(r'(?i)(AIza[0-9A-Za-z\-_]{20,40})'), "[REDACTED_API_KEY]"),
     (re.compile(r'(?i)(Bearer\s+)[A-Za-z0-9_\-\.]{20,}'), r"\1[REDACTED_TOKEN]"),
     (re.compile(r'(?i)(ghp_[0-9A-Za-z]{36}|gho_[0-9A-Za-z]{36})'), "[REDACTED_GITHUB_TOKEN]"),
-    (re.compile(r'(?i)(sk-[A-Za-z0-9]{32,})'), "[REDACTED_OPENAI_KEY]"),
+    (re.compile(r'(?i)(sk-[A-Za-z0-9\-_]{10,})'), "[REDACTED_API_KEY]"),
     (re.compile(r'(?i)(password\s*[:=]\s*)["\']?[^\s",;]+["\']?'), r"\1[REDACTED_PASSWORD]"),
     (re.compile(r'(?i)(pwd\s*[:=]\s*)["\']?[^\s",;]+["\']?'), r"\1[REDACTED_PASSWORD]"),
     (re.compile(r'(?i)(client_secret\s*[:=]\s*)["\']?[^\s",;]+["\']?'), r"\1[REDACTED_SECRET]"),
@@ -463,3 +478,84 @@ class VSSafetyGate:
                 f"Target file '{file_path.name}' hash mismatch: expected {expected_sha256[:8]}..., current is {current[:8]}... File was modified externally.",
             )
         return True
+
+    def validate_executable_path(self, exec_path: Union[str, Path]) -> Path:
+        """Validates that executable path is authorized and not an arbitrary shell or foreign executable."""
+        self.check_emergency_stop()
+        if not exec_path:
+            raise VSSafetyError(VSErrorCode.UNAUTHORIZED_EXECUTABLE, "Executable path cannot be empty.")
+
+        p_str = str(exec_path).strip()
+        if ".." in p_str.replace("\\", "/").split("/"):
+            raise VSSafetyError(VSErrorCode.PATH_TRAVERSAL_DETECTED, f"Path traversal in executable path: '{exec_path}'")
+
+        # Reject shells explicitly
+        base_name = Path(p_str).name.lower()
+        forbidden_shells = {"cmd.exe", "powershell.exe", "pwsh.exe", "bash.exe", "sh.exe", "wscript.exe", "cscript.exe"}
+        if base_name in forbidden_shells:
+            raise VSSafetyError(
+                VSErrorCode.UNAUTHORIZED_EXECUTABLE,
+                f"Execution of arbitrary shell '{base_name}' is strictly prohibited.",
+            )
+
+        try:
+            resolved = Path(exec_path).resolve()
+        except Exception as e:
+            raise VSSafetyError(VSErrorCode.UNAUTHORIZED_EXECUTABLE, f"Invalid executable path: {e}")
+
+        # Check if it is a built binary within workspace
+        is_workspace_binary = False
+        try:
+            resolved.relative_to(GLOBAL_WORKSPACE_ROOT)
+            is_workspace_binary = True
+        except ValueError:
+            pass
+
+        # Check if it is an approved system development tool (dotnet, vswhere, msbuild, vstest)
+        approved_tools = {"dotnet.exe", "vswhere.exe", "msbuild.exe", "vstest.console.exe", "dotnet"}
+        is_approved_dev_tool = base_name in approved_tools
+
+        if not is_workspace_binary and not is_approved_dev_tool:
+            raise VSSafetyError(
+                VSErrorCode.UNAUTHORIZED_EXECUTABLE,
+                f"Executable '{resolved}' is outside authorized workspace '{GLOBAL_WORKSPACE_ROOT}' and is not an approved developer tool.",
+            )
+
+        return resolved
+
+    def validate_timeout(self, timeout: float, max_timeout: float = BUILD_TIMEOUT_SECONDS) -> float:
+        """Validates that a timeout is positive and does not exceed maximum allowable bounds."""
+        self.check_emergency_stop()
+        try:
+            t = float(timeout)
+        except (ValueError, TypeError):
+            raise VSSafetyError(VSErrorCode.ACTION_NOT_ALLOWED, f"Invalid timeout value: {timeout}")
+        if t <= 0:
+            raise VSSafetyError(VSErrorCode.ACTION_NOT_ALLOWED, f"Timeout must be positive (got {t}s).")
+        if t > max_timeout:
+            raise VSSafetyError(
+                VSErrorCode.ACTION_NOT_ALLOWED,
+                f"Timeout {t}s exceeds maximum allowable timeout of {max_timeout}s.",
+            )
+        return t
+
+    def validate_output_size(
+        self,
+        output_bytes: int,
+        output_lines: Optional[int] = None,
+        context: str = "build",
+    ) -> None:
+        """Enforces output size and line count limits."""
+        max_bytes = MAX_RUNTIME_OUTPUT_BYTES if context == "runtime" else MAX_BUILD_OUTPUT_BYTES
+        max_lines = MAX_RUNTIME_OUTPUT_LINES if context == "runtime" else MAX_BUILD_OUTPUT_LINES
+
+        if output_bytes > max_bytes:
+            raise VSSafetyError(
+                VSErrorCode.OUTPUT_TOO_LARGE,
+                f"Output size ({output_bytes} bytes) exceeds maximum allowable {context} limit of {max_bytes} bytes.",
+            )
+        if output_lines is not None and output_lines > max_lines:
+            raise VSSafetyError(
+                VSErrorCode.OUTPUT_TOO_LARGE,
+                f"Output line count ({output_lines} lines) exceeds maximum allowable {context} limit of {max_lines} lines.",
+            )

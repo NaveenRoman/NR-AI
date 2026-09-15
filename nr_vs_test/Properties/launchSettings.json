@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "SampleApp": {
+      "commandName": "Project",
+      "commandLineArgs": "--verbose --mode test",
+      "workingDirectory": ".",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "API_SECRET_KEY": "sk-secret-key-12345",
+        "DATABASE_URL": "Server=myServerAddress;Database=myDataBase;Uid=myUsername;Pwd=myPassword;"
+      }
+    }
+  }
+}
