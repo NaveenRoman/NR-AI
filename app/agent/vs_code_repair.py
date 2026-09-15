@@ -68,12 +68,17 @@ class VSEditProposal:
         reason: Optional[str] = None,
         diagnostics_addressed: Optional[List[str]] = None,
         replacement: Optional[str] = None,
+        target_file_sha256: Optional[str] = None,
+        replacement_code: Optional[str] = None,
+        repair_id: Optional[str] = None,
+        diagnostic_code: Optional[str] = None,
+        original_code: Optional[str] = None,
     ):
         f_p = target_file if target_file is not None else file_path
         self.file_path = str(f_p) if f_p else ""
         self.target_file = self.file_path
 
-        h = expected_file_hash or expected_sha256 or target_sha256 or ""
+        h = expected_file_hash or expected_sha256 or target_sha256 or target_file_sha256 or ""
         self.expected_sha256 = str(h).strip()
         self.expected_file_hash = self.expected_sha256
         self.target_sha256 = self.expected_sha256
@@ -81,7 +86,7 @@ class VSEditProposal:
         self.start_line = int(start_line) if start_line is not None else 1
         self.end_line = int(end_line) if end_line is not None else 0
 
-        repl = replacement_text if replacement_text is not None else (new_content if new_content is not None else (replacement or ""))
+        repl = replacement_text if replacement_text is not None else (new_content if new_content is not None else (replacement_code if replacement_code is not None else (replacement or "")))
         self.replacement_text = str(repl)
         self.new_content = self.replacement_text
         self.replacement = self.replacement_text
@@ -374,6 +379,7 @@ class VSCodeRepairEngine:
         self.audit = audit_logger or AuditLogger()
         self.checkpoint_dir = Path(checkpoint_dir or DEFAULT_CHECKPOINT_DIR).resolve()
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.max_attempts = MAX_REPAIR_ATTEMPTS
 
     # -------------------------------------------------------------------------
     # Checkpoint & Backup Management

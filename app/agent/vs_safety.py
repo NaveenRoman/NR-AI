@@ -73,6 +73,10 @@ class VSErrorCode(str, Enum):
     DEBUG_EXECUTION_FAILED = "DEBUG_EXECUTION_FAILED"
     DEBUG_TIMEOUT = "DEBUG_TIMEOUT"
     IDE_NOT_RUNNING = "IDE_NOT_RUNNING"
+    # Step 7 Phase 5: Test, Performance, Diagnostics & Unified Intelligence
+    TEST_DISCOVERY_FAILED = "TEST_DISCOVERY_FAILED"
+    WORKFLOW_EXECUTION_FAILED = "WORKFLOW_EXECUTION_FAILED"
+    DIAGNOSTIC_FAILURE = "DIAGNOSTIC_FAILURE"
 
 
 class VSSafetyError(Exception):
@@ -190,6 +194,12 @@ ALLOWED_VS_TOOLS: Set[str] = {
     "vs.pause_debug",
     "vs.inspect_debug_location",
     "vs.inspect_debug_locals",
+    # Step 7 Phase 5: Test, Performance, Diagnostics & Unified Intelligence
+    "vs.discover_test_projects",
+    "vs.inspect_test_configuration",
+    "vs.inspect_diagnostics",
+    "vs.inspect_performance",
+    "vs.run_unified_workflow",
 }
 
 ALLOWED_BUILD_ACTIONS: Set[str] = {

@@ -1479,6 +1479,175 @@ class UnifiedVisualStudioAgent:
                 duration_s=time.time() - start_time,
             )
 
+    def execute_unified_workflow(
+        self,
+        goal: str = "Execute unified development workflow",
+        target_path: Optional[Union[str, Path]] = None,
+        stages: Optional[List[str]] = None,
+        allow_repair: bool = True,
+        repair_proposal_provider: Optional[Any] = None,
+        workflow_id: Optional[str] = None,
+    ) -> UnifiedVSResult:
+        """
+        Executes a bounded multi-stage Visual Studio development workflow:
+        INSPECT -> BUILD -> TEST -> DIAGNOSE -> DEBUG -> REPAIR -> REBUILD -> RETEST -> VERIFY -> REPORT
+        Only executes stages required by the goal or active evidence.
+        """
+        start_time = time.time()
+        req_id = f"vs_uni_req_{uuid.uuid4().hex[:8]}"
+        wf_id = workflow_id or f"vs_uni_wf_{uuid.uuid4().hex[:8]}"
+        sm = VSStateMachine(safety_gate=self.safety, audit_logger=self.audit)
+
+        if self.safety.is_emergency_stop_active():
+            sm.transition(UnifiedVSState.STOPPED, "Operation halted: EMERGENCY STOP active.")
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.END_TO_END,
+                sm, False, UnifiedVSErrorDomain.SAFETY_REJECTION,
+                summary="Workflow halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Visual Studio operations frozen.",
+                error_code=VSErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+
+        target = Path(target_path or self.safety.authorized_project)
+        # Default stages if unspecified: INSPECT -> BUILD -> TEST -> VERIFY
+        selected_stages = [s.upper().strip() for s in (stages or ["INSPECT", "BUILD", "TEST", "VERIFY"])]
+        executed_stages = []
+        evidence_dict = {}
+
+        plan = UnifiedVSPlan(
+            workflow_id=wf_id,
+            goal=goal,
+            workflow_type=UnifiedVSWorkflowType.END_TO_END,
+            steps=[VSPlanStep(i + 1, f"stage_{s.lower()}", f"Execute stage {s}", {}) for i, s in enumerate(selected_stages)],
+        )
+
+        try:
+            # 1. INSPECT stage
+            if "INSPECT" in selected_stages:
+                executed_stages.append("INSPECT")
+                sm.transition(UnifiedVSState.INSPECTING, "Inspecting target project/solution")
+                insp_res = self.tools.execute_tool("vs.inspect_project", {"project_path": str(target)})
+                evidence_dict["inspection"] = insp_res.data
+                if not insp_res.success:
+                    sm.transition(UnifiedVSState.FAILED, f"Inspection failed: {insp_res.error}")
+                    return self._build_result(
+                        req_id, wf_id, goal, UnifiedVSWorkflowType.END_TO_END,
+                        sm, False, UnifiedVSErrorDomain.PROJECT_CONFIG_FAILURE,
+                        summary=f"Inspection failed: {insp_res.error}",
+                        error=insp_res.error,
+                        evidence=evidence_dict,
+                        duration_s=time.time() - start_time,
+                    )
+
+            # 2. BUILD stage
+            if "BUILD" in selected_stages:
+                executed_stages.append("BUILD")
+                sm.transition(UnifiedVSState.BUILDING, "Executing build")
+                build_res = self.tools.execute_tool("vs.run_safe_build", {"target_path": str(target), "action": "BUILD"})
+                evidence_dict["build"] = build_res.data
+                if not build_res.success:
+                    if allow_repair and "REPAIR" in selected_stages:
+                        executed_stages.append("DIAGNOSE")
+                        executed_stages.append("REPAIR")
+                        sm.transition(UnifiedVSState.DIAGNOSING, "Diagnosing build failure for autonomous repair")
+                        errors = self.analyzer.analyze(build_res.output or build_res.message)
+                        return self._execute_repair_loop(
+                            plan, sm, target, start_time,
+                            repair_proposal_provider=repair_proposal_provider,
+                            run_tests=("TEST" in selected_stages),
+                            initial_build_res=build_res,
+                            initial_errors=errors,
+                        )
+                    else:
+                        sm.transition(UnifiedVSState.FAILED, f"Build failed: {build_res.error}")
+                        return self._build_result(
+                            req_id, wf_id, goal, UnifiedVSWorkflowType.END_TO_END,
+                            sm, False, UnifiedVSErrorDomain.BUILD_ERROR,
+                            summary="Build failed.",
+                            error=build_res.error,
+                            evidence=evidence_dict,
+                            duration_s=time.time() - start_time,
+                        )
+
+            # 3. TEST stage
+            if "TEST" in selected_stages:
+                executed_stages.append("TEST")
+                sm.transition(UnifiedVSState.TESTING, "Executing tests")
+                test_res = self.tools.execute_tool("vs.run_safe_test", {"target_path": str(target)})
+                evidence_dict["tests"] = test_res.data
+                if not test_res.success:
+                    if allow_repair and "REPAIR" in selected_stages:
+                        executed_stages.append("DIAGNOSE")
+                        executed_stages.append("REPAIR")
+                        sm.transition(UnifiedVSState.DIAGNOSING, "Diagnosing test failure for autonomous repair")
+                        errors = self.analyzer.analyze(test_res.output or test_res.message)
+                        return self._execute_repair_loop(
+                            plan, sm, target, start_time,
+                            repair_proposal_provider=repair_proposal_provider,
+                            run_tests=True,
+                            initial_build_res=test_res,
+                            initial_errors=errors,
+                        )
+                    else:
+                        sm.transition(UnifiedVSState.FAILED, f"Tests failed: {test_res.error}")
+                        return self._build_result(
+                            req_id, wf_id, goal, UnifiedVSWorkflowType.END_TO_END,
+                            sm, False, UnifiedVSErrorDomain.TEST_FAILURE,
+                            summary="Tests failed.",
+                            error=test_res.error,
+                            evidence=evidence_dict,
+                            duration_s=time.time() - start_time,
+                        )
+
+            # 4. DIAGNOSE stage (if requested)
+            if "DIAGNOSE" in selected_stages:
+                executed_stages.append("DIAGNOSE")
+                diag_res = self.tools.execute_tool("vs.inspect_diagnostics", {})
+                evidence_dict["diagnostics"] = diag_res.data
+
+            # 5. PERFORMANCE stage (if requested)
+            if "PERFORMANCE" in selected_stages:
+                executed_stages.append("PERFORMANCE")
+                perf_res = self.tools.execute_tool("vs.inspect_performance", {})
+                evidence_dict["performance"] = perf_res.data
+
+            # 6. VERIFY stage
+            if "VERIFY" in selected_stages:
+                executed_stages.append("VERIFY")
+                sm.transition(UnifiedVSState.VERIFYING, "Verifying artifacts")
+                v_res = self.tools.execute_tool("vs.verify_build_result", {"target_path": str(target)})
+                evidence_dict["artifacts"] = v_res.data
+
+            sm.transition(UnifiedVSState.COMPLETED, f"Unified workflow completed across stages: {' -> '.join(executed_stages)}")
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.END_TO_END,
+                sm, True, UnifiedVSErrorDomain.NONE,
+                summary=f"Unified workflow completed: {' -> '.join(executed_stages)}.",
+                evidence=evidence_dict,
+                duration_s=time.time() - start_time,
+            )
+        except EmergencyStopActiveError:
+            sm.transition(UnifiedVSState.STOPPED, "Halted by emergency stop.")
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.END_TO_END,
+                sm, False, UnifiedVSErrorDomain.SAFETY_REJECTION,
+                summary="Workflow halted: EMERGENCY STOP activated.",
+                error="EMERGENCY STOP is active.",
+                error_code=VSErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+        except Exception as e:
+            sm.transition(UnifiedVSState.FAILED, f"Workflow failed: {e}")
+            return self._build_result(
+                req_id, wf_id, goal, UnifiedVSWorkflowType.END_TO_END,
+                sm, False, classify_vs_error(e),
+                summary=f"Workflow failed: {e}",
+                error=str(e),
+                evidence=evidence_dict,
+                duration_s=time.time() - start_time,
+            )
+
     # -------------------------------------------------------------------------
     # Authoritative Verification & Evidence Override
     # -------------------------------------------------------------------------

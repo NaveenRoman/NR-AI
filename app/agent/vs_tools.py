@@ -45,6 +45,17 @@ from app.agent.vs_debugger import (
     VSDebugStackFrame,
 )
 from app.memory.audit_logger import AuditLogger
+from app.agent.vs_diagnostics import (
+    VSTestIntelligence,
+    VSPerformanceMonitor,
+    VSDiagnosticsEngine,
+    VSFailureType,
+    VSDiagnosticContext,
+    VSTestConfiguration,
+    VSTestProjectMetadata,
+    VSTestCaseResult,
+    VSTestFramework,
+)
 
 logger = logging.getLogger("NRAI.VSTools")
 
@@ -106,6 +117,7 @@ class SafeMSBuildRunner:
         self.safety = safety_gate or VSSafetyGate()
         self.env = env_detector or VSEnvironmentDetector()
         self.audit = audit_logger
+        self.perf_monitor: Optional[VSPerformanceMonitor] = None
 
     def run_build(
         self,
@@ -184,6 +196,11 @@ class SafeMSBuildRunner:
                 timeout=val_timeout,
             )
             duration = time.time() - start_time
+            if getattr(self, "perf_monitor", None):
+                try:
+                    self.perf_monitor.record_build_duration(duration)
+                except Exception:
+                    pass
             raw_stdout = redact_sensitive_data(res.stdout or "")
             raw_stderr = redact_sensitive_data(res.stderr or "")
             raw = raw_stdout + ("\n" + raw_stderr if raw_stderr else "")
@@ -292,6 +309,11 @@ class SafeMSBuildRunner:
                 timeout=val_timeout,
             )
             duration = time.time() - start_time
+            if getattr(self, "perf_monitor", None):
+                try:
+                    self.perf_monitor.record_test_duration(duration)
+                except Exception:
+                    pass
             raw_stdout = redact_sensitive_data(res.stdout or "")
             raw_stderr = redact_sensitive_data(res.stderr or "")
             raw = raw_stdout + ("\n" + raw_stderr if raw_stderr else "")
@@ -493,6 +515,10 @@ class VSToolRegistry:
         self.audit = audit_logger
         self.ide = ide_inspector or VSIdeInspector(safety_gate=self.safety, env_detector=self.env, project_inspector=self.inspector)
         self.debugger = debugger or SafeVSDebugger(safety_gate=self.safety, ide_inspector=self.ide, audit_logger=self.audit)
+        self.test_intel = VSTestIntelligence(safety_gate=self.safety, project_root=self.safety.authorized_project)
+        self.perf_monitor = VSPerformanceMonitor(safety_gate=self.safety)
+        self.diagnostics_engine = VSDiagnosticsEngine(safety_gate=self.safety, project_root=self.safety.authorized_project)
+        self.runner.perf_monitor = self.perf_monitor
         self.workspace_root = Path(workspace_root).resolve() if workspace_root else None
         self.last_build_output: Dict[str, Any] = {}
         self.last_test_output: Dict[str, Any] = {}
@@ -588,6 +614,12 @@ class VSToolRegistry:
             "vs.pause_debug": self._tool_pause_debug,
             "vs.inspect_debug_location": self._tool_inspect_debug_location,
             "vs.inspect_debug_locals": self._tool_inspect_debug_locals,
+            # Step 7 Phase 5: Test, Performance, Diagnostics & Unified Intelligence
+            "vs.discover_test_projects": self._tool_discover_test_projects,
+            "vs.inspect_test_configuration": self._tool_inspect_test_configuration,
+            "vs.inspect_diagnostics": self._tool_inspect_diagnostics,
+            "vs.inspect_performance": self._tool_inspect_performance,
+            "vs.run_unified_workflow": self._tool_run_unified_workflow,
         }
         handler = handlers.get(tool_name)
         if not handler:
@@ -832,6 +864,14 @@ class VSToolRegistry:
         cfg = params.get("configuration", "Debug")
         timeout = float(params.get("timeout", TEST_TIMEOUT_SECONDS))
         test_res = self.runner.run_test(val_target, filter_expr=filter_exp, configuration=cfg, timeout=timeout)
+        if test_res.get("full_output"):
+            try:
+                granular = self.test_intel.parse_granular_test_results(test_res["full_output"])
+                test_res["granular_results"] = granular
+                if getattr(self, "perf_monitor", None) and granular.get("slow_tests"):
+                    self.perf_monitor.set_slow_tests(granular["slow_tests"])
+            except Exception:
+                pass
         self.last_test_output = test_res
         success = test_res.get("success", False)
 
@@ -1233,4 +1273,136 @@ class VSToolRegistry:
             },
             message=f"Inspected {len(vars_list)} local variables (sanitized).",
             verified=True,
+        )
+
+    # -------------------------------------------------------------------------
+    # Step 7 Phase 5: Test, Performance, Diagnostics & Unified Intelligence Handlers
+    # -------------------------------------------------------------------------
+
+    def _tool_discover_test_projects(self, params: Dict[str, Any]) -> VSToolResult:
+        """Discovers test projects and test frameworks in authorized workspace."""
+        root = params.get("root_path") or params.get("path") or self.safety.authorized_project
+        projs = self.test_intel.discover_test_projects(root)
+        serialized = [p.to_dict() for p in projs]
+        return VSToolResult(
+            tool="vs.discover_test_projects",
+            success=True,
+            data={"test_projects": serialized, "count": len(serialized)},
+            message=f"Discovered {len(serialized)} test project(s).",
+            verified=True,
+        )
+
+    def _tool_inspect_test_configuration(self, params: Dict[str, Any]) -> VSToolResult:
+        """Inspects test configuration details including frameworks, runners, and .runsettings."""
+        target = params.get("target_path") or params.get("project_path") or self.safety.authorized_project
+        val_path = Path(target)
+        if val_path.is_dir():
+            projs = self.test_intel.discover_test_projects(val_path)
+            if projs:
+                target = projs[0].path
+            else:
+                p_list = self.inspector.list_projects(val_path)
+                if p_list:
+                    target = p_list[0]["path"]
+        cfg = self.test_intel.inspect_test_configuration(target)
+        return VSToolResult(
+            tool="vs.inspect_test_configuration",
+            success=True,
+            data=cfg.to_dict(),
+            message=f"Inspected test configuration for '{Path(target).name}'.",
+            verified=True,
+        )
+
+    def _tool_inspect_diagnostics(self, params: Dict[str, Any]) -> VSToolResult:
+        """Unifies build, test, runtime, debugger, and IDE state into structured diagnostic context."""
+        ide_st = None
+        try:
+            if hasattr(self.ide, 'get_ide_state'):
+                ide_st = self.ide.get_ide_state()
+        except Exception:
+            pass
+
+        ctx = self.diagnostics_engine.build_diagnostic_context(
+            build_output=self.last_build_output,
+            test_output=self.last_test_output,
+            runtime_output=self.last_runtime_output,
+            debugger_evidence=getattr(self.debugger, 'last_evidence', None),
+            ide_state=ide_st,
+        )
+        return VSToolResult(
+            tool="vs.inspect_diagnostics",
+            success=True,
+            data=ctx.to_dict(),
+            message=f"Diagnostics [{ctx.failure_type.value}]: {ctx.summary[:100]}",
+            verified=True,
+        )
+
+    def _tool_inspect_performance(self, params: Dict[str, Any]) -> VSToolResult:
+        """Inspects non-invasive performance metrics (build/test/debug durations, process stats)."""
+        proc_name = params.get("process_name")
+        metrics = self.perf_monitor.inspect_performance(target_process_name=proc_name)
+        return VSToolResult(
+            tool="vs.inspect_performance",
+            success=True,
+            data=metrics.to_dict(),
+            message=f"Performance metrics: build={metrics.build_duration_s}s, test={metrics.test_duration_s}s, memory={metrics.process_memory_mb}MB.",
+            verified=True,
+        )
+
+    def _tool_run_unified_workflow(self, params: Dict[str, Any]) -> VSToolResult:
+        """Executes a bounded multi-stage workflow (INSPECT -> BUILD -> TEST -> DIAGNOSE -> VERIFY)."""
+        goal = params.get("goal", "Inspect, build, test, and verify project")
+        target = params.get("target_path") or self.safety.authorized_project
+        stages = params.get("stages") or ["INSPECT", "BUILD", "TEST", "VERIFY"]
+
+        stage_results = {}
+        success = True
+        stage_log = []
+
+        for stg in stages:
+            s_up = str(stg).upper().strip()
+            stage_log.append(s_up)
+
+            if s_up == "INSPECT":
+                r = self.execute_tool("vs.inspect_project", {"project_path": str(target)})
+                stage_results["INSPECT"] = r.to_dict()
+                if not r.success:
+                    success = False
+                    break
+            elif s_up == "BUILD":
+                r = self.execute_tool("vs.run_safe_build", {"target_path": str(target)})
+                stage_results["BUILD"] = r.to_dict()
+                if not r.success:
+                    success = False
+                    break
+            elif s_up == "TEST":
+                r = self.execute_tool("vs.run_safe_test", {"target_path": str(target)})
+                stage_results["TEST"] = r.to_dict()
+                if not r.success:
+                    success = False
+                    break
+            elif s_up == "DIAGNOSE":
+                r = self.execute_tool("vs.inspect_diagnostics", {})
+                stage_results["DIAGNOSE"] = r.to_dict()
+            elif s_up == "PERFORMANCE":
+                r = self.execute_tool("vs.inspect_performance", {})
+                stage_results["PERFORMANCE"] = r.to_dict()
+            elif s_up == "VERIFY":
+                r = self.execute_tool("vs.verify_build_result", {"target_path": str(target)})
+                stage_results["VERIFY"] = r.to_dict()
+                if not r.success:
+                    success = False
+                    break
+
+        return VSToolResult(
+            tool="vs.run_unified_workflow",
+            success=success,
+            data={
+                "goal": goal,
+                "stages_executed": stage_log,
+                "stage_results": stage_results,
+                "success": success,
+            },
+            message=f"Unified workflow {'succeeded' if success else 'failed'} across stages: {' -> '.join(stage_log)}.",
+            verified=success,
         )
