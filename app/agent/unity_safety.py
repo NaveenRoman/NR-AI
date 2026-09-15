@@ -56,6 +56,12 @@ class UnityErrorCode(str, Enum):
     INVALID_BUILD_TARGET = "INVALID_BUILD_TARGET"
     INVALID_BUILD_OUTPUT = "INVALID_BUILD_OUTPUT"
     BUILD_ARTIFACT_MISSING = "BUILD_ARTIFACT_MISSING"
+    INVALID_TEST_MODE = "INVALID_TEST_MODE"
+    INVALID_TEST_FILTER = "INVALID_TEST_FILTER"
+    INVALID_TEST_OUTPUT = "INVALID_TEST_OUTPUT"
+    TEST_ARTIFACT_MISSING = "TEST_ARTIFACT_MISSING"
+    TEST_RUNNER_ERROR = "TEST_RUNNER_ERROR"
+    TEST_PARSER_ERROR = "TEST_PARSER_ERROR"
     EDIT_VALIDATION_FAILED = "EDIT_VALIDATION_FAILED"
     REPAIR_FAILED = "REPAIR_FAILED"
     ROLLBACK_FAILED = "ROLLBACK_FAILED"
@@ -168,7 +174,26 @@ ALLOWED_UNITY_BUILD_TOOLS: Set[str] = {
     "unity.clean_build_target",
 }
 
-ALL_ALLOWED_UNITY_TOOLS: Set[str] = ALLOWED_UNITY_TOOLS | ALLOWED_UNITY_BUILD_TOOLS
+ALLOWED_UNITY_TEST_TOOLS: Set[str] = {
+    # Step 8 Phase 3: Unity Test Runner & PlayMode Foundation
+    "unity.validate_test_mode",
+    "unity.validate_test_filter",
+    "unity.run_editmode_tests",
+    "unity.run_playmode_tests",
+    "unity.parse_test_results",
+    "unity.verify_test_artifact",
+    "unity.get_test_summary",
+    "unity.diagnose_test_failure",
+}
+
+ALL_ALLOWED_UNITY_TOOLS: Set[str] = (
+    ALLOWED_UNITY_TOOLS | ALLOWED_UNITY_BUILD_TOOLS | ALLOWED_UNITY_TEST_TOOLS
+)
+
+ALLOWED_TEST_MODES: Set[str] = {
+    "EditMode",
+    "PlayMode",
+}
 
 ALLOWED_BUILD_TARGETS: Set[str] = {
     "StandaloneWindows64",
@@ -191,6 +216,18 @@ PROTECTED_BUILD_OUTPUT_DIRS: Set[str] = {
     ".vs",
 }
 
+PROTECTED_TEST_OUTPUT_DIRS: Set[str] = {
+    "Assets",
+    "ProjectSettings",
+    "Packages",
+    "Library",
+    "Temp",
+    "obj",
+    "Logs",
+    ".git",
+    ".vs",
+}
+
 DISALLOWED_BUILD_OUTPUT_EXTENSIONS: Set[str] = {
     ".bat",
     ".cmd",
@@ -202,6 +239,22 @@ DISALLOWED_BUILD_OUTPUT_EXTENSIONS: Set[str] = {
     ".py",
     ".cs",
 }
+
+DISALLOWED_TEST_OUTPUT_EXTENSIONS: Set[str] = {
+    ".bat",
+    ".cmd",
+    ".ps1",
+    ".sh",
+    ".bash",
+    ".vbs",
+    ".js",
+    ".py",
+    ".cs",
+    ".exe",
+    ".dll",
+}
+
+MAX_TEST_RESULT_FILE_SIZE_BYTES: int = 5_000_000  # 5 MB limit for XML results
 
 # Operational limits
 MAX_FILES_CHANGED: int = 3
@@ -500,6 +553,134 @@ class UnitySafetyGate:
             raise UnitySafetyError(
                 UnityErrorCode.INVALID_BUILD_OUTPUT,
                 f"Disallowed script/executable extension '{suffix}' for build output.",
+                {"path": str(resolved), "suffix": suffix},
+            )
+
+        return resolved
+
+    def validate_test_mode(self, mode: str) -> str:
+        """Validates that test mode is one of the allowed test modes (EditMode, PlayMode)."""
+        self.assert_not_stopped()
+        if not mode or mode not in ALLOWED_TEST_MODES:
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_TEST_MODE,
+                f"Test mode '{mode}' is invalid. Allowed modes: {sorted(list(ALLOWED_TEST_MODES))}.",
+                {"mode": mode, "allowed": sorted(list(ALLOWED_TEST_MODES))},
+            )
+        return mode
+
+    def validate_test_filter(self, filter_str: Optional[str], filter_type: str = "filter") -> Optional[str]:
+        """
+        Validates test filter, category, class, or method strings.
+        Rejects shell metacharacters, control characters, quotes, or dangerous constructs.
+        Returns the validated filter string, or None if filter_str is None/empty.
+        """
+        self.assert_not_stopped()
+        if filter_str is None:
+            return None
+        clean = str(filter_str).strip()
+        if not clean:
+            return None
+
+        # Disallow shell metacharacters, control chars, quotes, redirects, backticks
+        dangerous_chars = set('&|;$`><"\'\n\r\t\x00\\')
+        for ch in clean:
+            if ch in dangerous_chars or ord(ch) < 32 or ord(ch) > 126:
+                raise UnitySafetyError(
+                    UnityErrorCode.INVALID_TEST_FILTER,
+                    f"Test {filter_type} '{clean}' contains dangerous or invalid character '{ch}'.",
+                    {"filter": clean, "invalid_char": ch, "type": filter_type},
+                )
+
+        if len(clean) > 256:
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_TEST_FILTER,
+                f"Test {filter_type} string exceeds maximum length of 256 characters ({len(clean)}).",
+                {"filter": clean[:50] + "...", "length": len(clean)},
+            )
+
+        # Disallow path traversal sequences
+        if ".." in clean:
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_TEST_FILTER,
+                f"Path traversal sequence '..' detected in test {filter_type}: '{clean}'.",
+                {"filter": clean},
+            )
+
+        return clean
+
+    def validate_test_output_path(self, target_path: Path | str, project_root: Optional[Path] = None) -> Path:
+        """
+        Validates test results XML output path.
+        Must be confined within project directory (e.g. TestResults/, Builds/) or workspace scratch folder.
+        Rejects traversal, system roots, protected project directories (Assets, ProjectSettings, Library),
+        and dangerous file extensions.
+        """
+        self.assert_not_stopped()
+        raw_str = str(target_path)
+        if ".." in raw_str.replace("\\", "/").split("/"):
+            raise UnitySafetyError(
+                UnityErrorCode.PATH_TRAVERSAL_DETECTED,
+                f"Path traversal sequence '..' detected in test output path: '{target_path}'.",
+                {"path": str(target_path)},
+            )
+
+        try:
+            resolved = Path(target_path).resolve()
+        except Exception as e:
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_TEST_OUTPUT,
+                f"Invalid test output filesystem path '{target_path}': {e}",
+            )
+
+        # Confinement check
+        in_project = False
+        target_project = (project_root or self.authorized_project).resolve()
+        for auth_p in self.authorized_projects + [target_project]:
+            try:
+                resolved.relative_to(auth_p)
+                in_project = True
+                break
+            except ValueError:
+                pass
+
+        in_workspace = False
+        try:
+            resolved.relative_to(self.workspace_root)
+            in_workspace = True
+        except ValueError:
+            pass
+
+        if not (in_project or in_workspace):
+            raise UnitySafetyError(
+                UnityErrorCode.FILE_NOT_AUTHORIZED,
+                f"Test output path '{resolved}' is outside authorized project/workspace boundaries.",
+                {"path": str(resolved)},
+            )
+
+        # Check that output path does not target protected project directories (like Assets, ProjectSettings, Library)
+        rel_to_proj = None
+        if in_project:
+            try:
+                rel_to_proj = resolved.relative_to(target_project)
+            except ValueError:
+                pass
+        if rel_to_proj:
+            parts = rel_to_proj.parts
+            if parts:
+                top_part = parts[0]
+                if top_part in PROTECTED_TEST_OUTPUT_DIRS:
+                    raise UnitySafetyError(
+                        UnityErrorCode.PROTECTED_DIRECTORY_REJECTED,
+                        f"Test output cannot be written directly into protected directory '{top_part}'. Use 'TestResults/' instead.",
+                        {"path": str(resolved), "directory": top_part},
+                    )
+
+        suffix = resolved.suffix.lower()
+        if suffix in DISALLOWED_TEST_OUTPUT_EXTENSIONS:
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_TEST_OUTPUT,
+                f"Disallowed script/executable extension '{suffix}' for test output.",
                 {"path": str(resolved), "suffix": suffix},
             )
 

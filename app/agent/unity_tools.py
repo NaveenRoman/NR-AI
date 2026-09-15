@@ -15,6 +15,9 @@ from typing import Any, Callable, Dict, List, Optional, Set
 from app.memory.audit_logger import AuditLogger
 from app.agent.unity_safety import (
     ALLOWED_UNITY_TOOLS,
+    ALLOWED_UNITY_BUILD_TOOLS,
+    ALLOWED_UNITY_TEST_TOOLS,
+    ALL_ALLOWED_UNITY_TOOLS,
     UnityErrorCode,
     UnitySafetyError,
     UnitySafetyGate,
@@ -33,6 +36,11 @@ from app.agent.unity_build import (
     UnityBuildManager,
     DEFAULT_UNITY_BUILD_MANAGER,
     UnityLogParser,
+)
+from app.agent.unity_tests import (
+    UnityTestManager,
+    DEFAULT_UNITY_TEST_MANAGER,
+    DEFAULT_TEST_TIMEOUT,
 )
 
 logger = logging.getLogger("NRAI.UnityTools")
@@ -74,19 +82,27 @@ class UnityToolRegistry:
         env_detector: Optional[UnityEnvironmentDetector] = None,
         inspector: Optional[UnityProjectInspector] = None,
         build_manager: Optional[UnityBuildManager] = None,
+        test_manager: Optional[UnityTestManager] = None,
         audit_logger: Optional[AuditLogger] = None,
         workspace_root: Optional[Path] = None,
         include_build_tools: Optional[bool] = None,
+        include_test_tools: Optional[bool] = None,
     ):
         self.safety = safety_gate or DEFAULT_UNITY_SAFETY_GATE
         self.env = env_detector or DEFAULT_UNITY_ENV_DETECTOR
         self.inspector = inspector or DEFAULT_UNITY_PROJECT_INSPECTOR
         self.build = build_manager or DEFAULT_UNITY_BUILD_MANAGER
+        self.tests = test_manager or DEFAULT_UNITY_TEST_MANAGER
         self.audit = audit_logger or AuditLogger()
         self.workspace_root = workspace_root or self.safety.workspace_root
 
         if include_build_tools is None:
             include_build_tools = (build_manager is not None) or (inspector is None and env_detector is None)
+
+        if include_test_tools is None:
+            include_test_tools = (test_manager is not None) or (
+                inspector is None and env_detector is None and build_manager is None
+            )
 
         self._handlers: Dict[str, Callable[[Dict[str, Any]], UnityToolResult]] = {
             # Step 8 Phase 1: Environment & Project Inspection Foundation
@@ -115,6 +131,19 @@ class UnityToolRegistry:
                 "unity.parse_build_log": self._tool_parse_build_log,
                 "unity.get_build_configuration": self._tool_get_build_configuration,
                 "unity.clean_build_target": self._tool_clean_build_target,
+            })
+
+        if include_test_tools:
+            # Step 8 Phase 3: Unity Test Runner & PlayMode Foundation
+            self._handlers.update({
+                "unity.validate_test_mode": self._tool_validate_test_mode,
+                "unity.validate_test_filter": self._tool_validate_test_filter,
+                "unity.run_editmode_tests": self._tool_run_editmode_tests,
+                "unity.run_playmode_tests": self._tool_run_playmode_tests,
+                "unity.parse_test_results": self._tool_parse_test_results,
+                "unity.verify_test_artifact": self._tool_verify_test_artifact,
+                "unity.get_test_summary": self._tool_get_test_summary,
+                "unity.diagnose_test_failure": self._tool_diagnose_test_failure,
             })
 
     def get_registered_tools(self) -> Set[str]:
@@ -527,6 +556,161 @@ class UnityToolRegistry:
             data={"cleaned": cleaned, "path": str(out_p)},
             message=f"Cleaned build target '{out_p}'.",
             verified=cleaned,
+        )
+
+    # -------------------------------------------------------------------------
+    # Step 8 Phase 3: Test Runner & PlayMode Tool Handlers
+    # -------------------------------------------------------------------------
+
+    def _tool_validate_test_mode(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Validates that test mode is in ALLOWED_TEST_MODES (EditMode, PlayMode)."""
+        mode = params.get("mode") or params.get("test_mode")
+        if not mode:
+            raise UnitySafetyError(UnityErrorCode.INVALID_TEST_MODE, "mode parameter is required.")
+        val_mode = self.tests.validate_test_mode(str(mode))
+        return UnityToolResult(
+            tool="unity.validate_test_mode",
+            success=True,
+            data={"test_mode": val_mode, "allowed": True},
+            message=f"Test mode '{val_mode}' is valid and approved.",
+            verified=True,
+        )
+
+    def _tool_validate_test_filter(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Validates test filter strings against shell injection and traversal."""
+        filt = params.get("filter") or params.get("test_filter")
+        f_type = params.get("filter_type", "filter")
+        val_filter = self.tests.validate_test_filter(filt, filter_type=f_type)
+        return UnityToolResult(
+            tool="unity.validate_test_filter",
+            success=True,
+            data={"filter": val_filter, "filter_type": f_type, "valid": True},
+            message=f"Test {f_type} '{val_filter}' is valid and safe.",
+            verified=True,
+        )
+
+    def _tool_run_editmode_tests(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Safely executes Unity EditMode tests in batchmode with bounded timeout."""
+        proj_p = params.get("project_path")
+        editor_p = params.get("editor_path")
+        filt = params.get("test_filter") or params.get("filter")
+        assemblies = params.get("assembly_names") or params.get("assemblies")
+        categories = params.get("category_names") or params.get("categories")
+        xml_p = params.get("result_xml_path") or params.get("output_path")
+        timeout = float(params.get("timeout_seconds", DEFAULT_TEST_TIMEOUT))
+
+        res = self.tests.run_editmode_tests(
+            project_path=proj_p,
+            editor_path=editor_p,
+            test_filter=filt,
+            assembly_names=assemblies,
+            category_names=categories,
+            result_xml_path=xml_p,
+            timeout_seconds=timeout,
+        )
+        return UnityToolResult(
+            tool="unity.run_editmode_tests",
+            success=res.success,
+            data=res.to_dict(),
+            error=res.error_summary if not res.success else None,
+            error_code=UnityErrorCode.TEST_FAILED.value if not res.success else None,
+            message=f"EditMode tests {'passed' if res.success else 'failed'}: {res.error_summary or 'All tests passed.'}",
+            verified=res.verified,
+        )
+
+    def _tool_run_playmode_tests(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Safely executes Unity PlayMode tests in batchmode with bounded timeout."""
+        proj_p = params.get("project_path")
+        editor_p = params.get("editor_path")
+        filt = params.get("test_filter") or params.get("filter")
+        assemblies = params.get("assembly_names") or params.get("assemblies")
+        categories = params.get("category_names") or params.get("categories")
+        xml_p = params.get("result_xml_path") or params.get("output_path")
+        timeout = float(params.get("timeout_seconds", DEFAULT_TEST_TIMEOUT))
+
+        res = self.tests.run_playmode_tests(
+            project_path=proj_p,
+            editor_path=editor_p,
+            test_filter=filt,
+            assembly_names=assemblies,
+            category_names=categories,
+            result_xml_path=xml_p,
+            timeout_seconds=timeout,
+        )
+        return UnityToolResult(
+            tool="unity.run_playmode_tests",
+            success=res.success,
+            data=res.to_dict(),
+            error=res.error_summary if not res.success else None,
+            error_code=UnityErrorCode.TEST_FAILED.value if not res.success else None,
+            message=f"PlayMode tests {'passed' if res.success else 'failed'}: {res.error_summary or 'All tests passed.'}",
+            verified=res.verified,
+        )
+
+    def _tool_parse_test_results(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Parses NUnit3 / Unity XML test results into structured cases and failures."""
+        xml_content = params.get("xml_content")
+        xml_path = params.get("xml_path") or params.get("path")
+        mode = params.get("test_mode", "EditMode")
+        data = self.tests.parse_test_results(xml_content=xml_content, xml_path=xml_path, test_mode=mode)
+        return UnityToolResult(
+            tool="unity.parse_test_results",
+            success=True,
+            data=data,
+            message=f"Parsed {data['cases_count']} test case(s) with {data['failures_count']} failure(s).",
+            verified=True,
+        )
+
+    def _tool_verify_test_artifact(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Verifies test results XML artifact existence, size, valid XML, and SHA-256."""
+        out_p = params.get("output_path") or params.get("path")
+        if not out_p:
+            raise UnitySafetyError(UnityErrorCode.INVALID_TEST_OUTPUT, "output_path is required.")
+        data = self.tests.verify_test_artifact(out_p)
+        return UnityToolResult(
+            tool="unity.verify_test_artifact",
+            success=data.get("verified", False),
+            data=data,
+            error=data.get("error"),
+            error_code=UnityErrorCode.TEST_ARTIFACT_MISSING.value if not data.get("verified") else None,
+            message=f"Test artifact '{out_p}' verified: {data.get('verified', False)}.",
+            verified=data.get("verified", False),
+        )
+
+    def _tool_get_test_summary(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Extracts high-level summary and pass/fail metrics from test results."""
+        xml_content = params.get("xml_content")
+        xml_path = params.get("xml_path") or params.get("path")
+        mode = params.get("test_mode", "EditMode")
+        data = self.tests.get_test_summary(xml_content=xml_content, xml_path=xml_path, test_mode=mode)
+        return UnityToolResult(
+            tool="unity.get_test_summary",
+            success=True,
+            data=data,
+            message=f"Test summary: {data['passed']}/{data['total']} passed ({data['pass_rate']:.1f}%), status: {data['status']}.",
+            verified=True,
+        )
+
+    def _tool_diagnose_test_failure(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Diagnoses failure cause and classifies into deterministic category."""
+        msg = params.get("message", "")
+        st = params.get("stack_trace", "")
+        log = params.get("log_text", "")
+        code = int(params.get("exit_code", 0))
+        mode = params.get("test_mode", "EditMode")
+        data = self.tests.diagnose_test_failure(
+            message=msg,
+            stack_trace=st,
+            log_text=log,
+            exit_code=code,
+            test_mode=mode,
+        )
+        return UnityToolResult(
+            tool="unity.diagnose_test_failure",
+            success=True,
+            data=data,
+            message=data["diagnostics"],
+            verified=True,
         )
 
 
