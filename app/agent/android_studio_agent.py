@@ -160,6 +160,13 @@ class AndroidStudioAgent:
             audit_logger=self.audit,
         )
 
+        from app.agent.android_diagnostics import AndroidDiagnosticsController
+        self.diagnostics_controller = AndroidDiagnosticsController(
+            safety_gate=self.safety,
+            adb_client=self.tools.adb,
+            audit_logger=self.audit,
+        )
+
     # -------------------------------------------------------------------------
     # Goal Parsing & Deterministic Planning
     # -------------------------------------------------------------------------
@@ -474,6 +481,16 @@ class AndroidStudioAgent:
         # Check for UI verification requests
         if any(kw in g_lower for kw in ("verify the android screen", "verify android screen", "verify ui", "verify screen")):
             return self._execute_ui_verify_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
+
+        # Check for Android runtime error diagnosis / crash analysis
+        if any(kw in g_lower for kw in ("why did the android app crash", "why did the app crash", "diagnose android error", "diagnose crash", "android crash", "what happened in android", "inspect android runtime", "diagnose runtime")):
+            serial = "15930545720012G" if ("15930545720012g" in g_lower or "vivo" in g_lower) else ("emulator-5554" if "emulator" in g_lower else None)
+            return self._execute_runtime_diagnosis_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time, serial=serial or "emulator-5554")
+
+        # Check for Android logcat inspection requests
+        if any(kw in g_lower for kw in ("show android logs", "check android logs", "capture android logs", "android logcat", "show logcat", "check logcat")):
+            serial = "15930545720012G" if ("15930545720012g" in g_lower or "vivo" in g_lower) else ("emulator-5554" if "emulator" in g_lower else None)
+            return self._execute_logcat_inspection_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time, serial=serial or "emulator-5554")
 
         # Plan actions
         intents = self.plan_goal(user_goal)
@@ -1468,6 +1485,170 @@ class AndroidStudioAgent:
                 total_steps=1,
                 steps_executed=0,
                 summary=f"UI verification failed: {se.message}",
+                error=se.message,
+                error_code=se.code.value,
+                duration_s=time.time() - start_time,
+            )
+        self._audit_workflow(report)
+        return report
+
+    def capture_runtime_logs(
+        self,
+        serial: str = "emulator-5554",
+        lines: int = 100,
+        severity: Optional[str] = None,
+        package_name: Optional[str] = None,
+        tag: Optional[str] = None,
+    ) -> str:
+        """Captures bounded, filtered, and sanitized logcat entries on authorized device."""
+        if self.safety.is_emergency_stop_active():
+            raise EmergencyStopActiveError()
+        return self.diagnostics_controller.capture_logs(
+            serial=serial,
+            lines=lines,
+            severity=severity,
+            package_name=package_name,
+            tag=tag,
+        )
+
+    def get_diagnostic_snapshot(
+        self,
+        serial: str = "emulator-5554",
+        package_name: str = AUTHORIZED_PACKAGE_NAME,
+        lines: int = 200,
+        severity: Optional[str] = None,
+    ):
+        """Creates a comprehensive, immutable DiagnosticSnapshot on authorized device."""
+        if self.safety.is_emergency_stop_active():
+            raise EmergencyStopActiveError()
+        return self.diagnostics_controller.create_diagnostic_snapshot(
+            serial=serial,
+            package_name=package_name,
+            lines=lines,
+            severity=severity,
+        )
+
+    def diagnose_runtime_error(
+        self,
+        serial: str = "emulator-5554",
+        package_name: str = AUTHORIZED_PACKAGE_NAME,
+        lines: int = 300,
+    ) -> Dict[str, Any]:
+        """Performs a deterministic crash diagnosis session on authorized device."""
+        if self.safety.is_emergency_stop_active():
+            raise EmergencyStopActiveError()
+        return self.diagnostics_controller.diagnose_crash(
+            serial=serial,
+            package_name=package_name,
+            lines=lines,
+        )
+
+    def _execute_runtime_diagnosis_workflow(
+        self,
+        user_goal: str,
+        workflow_id: str,
+        start_time: float,
+        serial: str = "emulator-5554",
+    ) -> AndroidWorkflowReport:
+        if self.safety.is_emergency_stop_active():
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=0,
+                steps_executed=0,
+                summary="Workflow halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Android operations are frozen.",
+                error_code=AndroidErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+            self._audit_workflow(report)
+            return report
+
+        try:
+            diag_res = self.diagnostics_controller.diagnose_crash(serial, AUTHORIZED_PACKAGE_NAME)
+            steps = [{
+                "stage": "DIAGNOSTIC_ANALYSIS",
+                "success": True,
+                "has_crash": diag_res.get("has_crash", False),
+                "detected_errors_count": diag_res.get("detected_errors_count", 0),
+                "summary": diag_res.get("summary"),
+            }]
+            summary = f"Runtime diagnostics on {serial}: {diag_res.get('summary')}"
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=True,
+                total_steps=1,
+                steps_executed=1,
+                steps=steps,
+                summary=summary,
+                duration_s=time.time() - start_time,
+            )
+        except AndroidSafetyError as se:
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=1,
+                steps_executed=0,
+                summary=f"Runtime diagnosis failed: {se.message}",
+                error=se.message,
+                error_code=se.code.value,
+                duration_s=time.time() - start_time,
+            )
+        self._audit_workflow(report)
+        return report
+
+    def _execute_logcat_inspection_workflow(
+        self,
+        user_goal: str,
+        workflow_id: str,
+        start_time: float,
+        serial: str = "emulator-5554",
+    ) -> AndroidWorkflowReport:
+        if self.safety.is_emergency_stop_active():
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=0,
+                steps_executed=0,
+                summary="Workflow halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Android operations are frozen.",
+                error_code=AndroidErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+            self._audit_workflow(report)
+            return report
+
+        try:
+            logs = self.diagnostics_controller.capture_logs(serial, lines=100, package_name=AUTHORIZED_PACKAGE_NAME)
+            line_count = len(logs.splitlines())
+            steps = [{
+                "stage": "LOGCAT_INSPECTION",
+                "success": True,
+                "lines_captured": line_count,
+            }]
+            summary = f"Captured {line_count} logcat lines from {serial} for {AUTHORIZED_PACKAGE_NAME}."
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=True,
+                total_steps=1,
+                steps_executed=1,
+                steps=steps,
+                summary=summary,
+                duration_s=time.time() - start_time,
+            )
+        except AndroidSafetyError as se:
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=1,
+                steps_executed=0,
+                summary=f"Logcat inspection failed: {se.message}",
                 error=se.message,
                 error_code=se.code.value,
                 duration_s=time.time() - start_time,

@@ -191,6 +191,12 @@ class AndroidErrorCategory(str, Enum):
     DUPLICATE_CLASS = "DUPLICATE_CLASS"
     SYNTAX_ERROR = "SYNTAX_ERROR"
     TYPE_ERROR = "TYPE_ERROR"
+    RUNTIME_CRASH = "RUNTIME_CRASH"
+    RUNTIME_ANR = "RUNTIME_ANR"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND"
+    CLASS_NOT_FOUND = "CLASS_NOT_FOUND"
+    ACTIVITY_LAUNCH_FAILURE = "ACTIVITY_LAUNCH_FAILURE"
     UNKNOWN_BUILD_ERROR = "UNKNOWN_BUILD_ERROR"
 
 
@@ -544,6 +550,60 @@ class AndroidErrorAnalyzer:
     def analyze(cls, output: str, project_root: Optional[Path] = None) -> AndroidBuildError:
         analyzer = cls()
         return analyzer.analyze_build_output(output, project_root)
+
+    @classmethod
+    def distinguish_error_type(cls, text: str) -> str:
+        """Distinguishes whether an error text is build-time, runtime, or environment."""
+        if not text:
+            return "UNKNOWN"
+        lower = text.lower()
+        if any(k in lower for k in ("fatal exception", "anr in", "androidruntime", "activitynotfoundexception", "resources$notfoundexception", "securityexception: permission denial")):
+            return "RUNTIME_CRASH"
+        if any(k in lower for k in ("unsupported class file major version", "failed to find target with hash string", "sdk location not found", "android_home", "java_home")):
+            return "ENVIRONMENT_CONFIG"
+        if any(k in lower for k in ("compiledebugjava", "compiledebugkotlin", "compilation error", "e: ", "syntax error", "type mismatch", "duplicate class", "manifest merger failed", "aapt:")):
+            return "BUILD_TIME"
+        return "UNKNOWN"
+
+    @classmethod
+    def analyze_runtime_log(cls, log_text: str, project_root: Optional[Path] = None) -> List[AndroidBuildError]:
+        """Analyzes Android logcat text and returns structured errors mapped to project source files."""
+        from app.agent.android_diagnostics import AndroidLogParser, RuntimeErrorType
+        runtime_errors = AndroidLogParser.extract_runtime_errors(log_text)
+        build_errors: List[AndroidBuildError] = []
+
+        root = Path(project_root or AUTHORIZED_PROJECT_PATH).resolve()
+
+        cat_map = {
+            RuntimeErrorType.FATAL_EXCEPTION: AndroidErrorCategory.RUNTIME_CRASH,
+            RuntimeErrorType.ANDROID_RUNTIME_CRASH: AndroidErrorCategory.RUNTIME_CRASH,
+            RuntimeErrorType.ANR: AndroidErrorCategory.RUNTIME_ANR,
+            RuntimeErrorType.PERMISSION_DENIED: AndroidErrorCategory.PERMISSION_DENIED,
+            RuntimeErrorType.RESOURCE_NOT_FOUND: AndroidErrorCategory.RESOURCE_NOT_FOUND,
+            RuntimeErrorType.CLASS_NOT_FOUND: AndroidErrorCategory.CLASS_NOT_FOUND,
+            RuntimeErrorType.ACTIVITY_LAUNCH_FAILURE: AndroidErrorCategory.ACTIVITY_LAUNCH_FAILURE,
+        }
+
+        for r_err in runtime_errors:
+            cat = cat_map.get(r_err.error_type, AndroidErrorCategory.RUNTIME_CRASH)
+            fpath = None
+            if r_err.source_file:
+                candidate = root / "app" / "src" / "main" / "java" / "com" / "nrai" / "test" / r_err.source_file
+                if candidate.exists():
+                    fpath = str(candidate)
+                else:
+                    fpath = r_err.source_file
+
+            build_errors.append(AndroidBuildError(
+                category=cat,
+                file_path=fpath,
+                line=r_err.source_line,
+                message=f"{r_err.exception_class}: {r_err.message}",
+                diagnosis=f"Android runtime failure: {r_err.error_type.value} - {r_err.exception_class}",
+                relevant_files=[fpath] if fpath else [],
+            ))
+
+        return build_errors
 
     def analyze_build_output(self, output: str, project_root: Optional[Path] = None) -> AndroidBuildError:
         """Parses compiler/Gradle output into a structured AndroidBuildError."""

@@ -122,3 +122,6 @@ class AuditLogger:
 
     def get_recent_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
         return list(self.entries)[-limit:]
+
+    def get_recent_events(self, limit: int = 50) -> List[Dict[str, Any]]:
+        return list(self.entries)[-limit:]

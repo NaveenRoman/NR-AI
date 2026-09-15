@@ -210,14 +210,84 @@ class SafeAdbClient:
         message = out if success else (err or out or "APK installation failed.")
         return success, message
 
+    def capture_logcat_advanced(
+        self,
+        serial: str,
+        lines: int = 100,
+        severity: Optional[str] = None,
+        filter_package: Optional[str] = None,
+        filter_tag: Optional[str] = None,
+        clear_buffer: bool = False,
+    ) -> str:
+        """Captures bounded, formatted, and sanitized logcat entries."""
+        if clear_buffer:
+            self._run_adb(["-s", serial, "logcat", "-c"], timeout=5.0)
+
+        bounded_lines = max(1, min(lines, 1000))
+        cmd = ["-s", serial, "logcat", "-d", "-v", "threadtime", "-t", str(bounded_lines)]
+
+        if severity:
+            sev = severity.strip().upper()
+            if sev in ("V", "D", "I", "W", "E", "F"):
+                cmd.append(f"*:{sev}")
+
+        code, out, _ = self._run_adb(cmd, timeout=15.0)
+        if code != 0 or not out:
+            return ""
+
+        result_lines = out.splitlines()
+        if filter_package:
+            result_lines = [l for l in result_lines if filter_package in l]
+        if filter_tag:
+            result_lines = [l for l in result_lines if filter_tag in l]
+
+        result_text = "\n".join(result_lines)
+        if len(result_text.encode("utf-8")) > 200_000:
+            result_text = result_text[:199_000] + "\n... [LOGCAT TRUNCATED AT 200KB] ..."
+
+        from app.agent.android_code_repair import redact_sensitive_content
+        return redact_sensitive_content(result_text)
+
     def capture_logcat(self, serial: str, lines: int = 100, filter_package: Optional[str] = None) -> str:
         """Captures bounded recent logcat messages, optionally filtered to package."""
-        bounded_lines = max(1, min(lines, 500))
-        code, out, _ = self._run_adb(["-s", serial, "logcat", "-d", "-t", str(bounded_lines)])
-        if filter_package:
-            filtered = [line for line in out.splitlines() if filter_package in line]
-            return "\n".join(filtered)
-        return out
+        return self.capture_logcat_advanced(serial, lines=lines, filter_package=filter_package)
+
+    def get_device_info(self, serial: str) -> Dict[str, str]:
+        """Queries core hardware, OS, and build properties for an authorized device."""
+        code, out, _ = self._run_adb(["-s", serial, "shell", "getprop"], timeout=8.0)
+        props: Dict[str, str] = {}
+        if code == 0 and out:
+            for line in out.splitlines():
+                m = re.match(r"\[(.*?)\]:\s*\[(.*?)\]", line.strip())
+                if m:
+                    props[m.group(1)] = m.group(2)
+
+        return {
+            "serial": serial,
+            "os_version": props.get("ro.build.version.release", "unknown"),
+            "sdk_level": props.get("ro.build.version.sdk", "unknown"),
+            "model": props.get("ro.product.model", "unknown"),
+            "manufacturer": props.get("ro.product.manufacturer", "unknown"),
+            "brand": props.get("ro.product.brand", "unknown"),
+            "fingerprint": props.get("ro.build.fingerprint", "unknown"),
+        }
+
+    def get_process_info(self, serial: str, package_name: str) -> Dict[str, Any]:
+        """Queries runtime process information for a package."""
+        pid = self.get_process_pid(serial, package_name)
+        is_running = pid is not None
+        info: Dict[str, Any] = {
+            "package": package_name,
+            "is_running": is_running,
+            "pid": pid,
+        }
+        if is_running and pid is not None:
+            code, out, _ = self._run_adb(["-s", serial, "shell", "dumpsys", "meminfo", package_name], timeout=5.0)
+            if code == 0 and out:
+                m = re.search(r"TOTAL\s+PSS:\s*(\d+)", out)
+                if m:
+                    info["total_pss_kb"] = int(m.group(1))
+        return info
 
     def get_app_state(self, serial: str, package_name: str = AUTHORIZED_PACKAGE_NAME) -> Dict[str, Any]:
         """Captures bounded deterministic state for package on target device."""

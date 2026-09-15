@@ -63,6 +63,10 @@ class AndroidErrorCode(str, Enum):
     HIGH_RISK_ACTION_BLOCKED = "HIGH_RISK_ACTION_BLOCKED"
     UI_EXTRACTION_FAILED = "UI_EXTRACTION_FAILED"
     SCREEN_CAPTURE_FAILED = "SCREEN_CAPTURE_FAILED"
+    LOGCAT_EXTRACTION_FAILED = "LOGCAT_EXTRACTION_FAILED"
+    DIAGNOSTIC_SNAPSHOT_FAILED = "DIAGNOSTIC_SNAPSHOT_FAILED"
+    MALFORMED_DIAGNOSTIC_SCHEMA = "MALFORMED_DIAGNOSTIC_SCHEMA"
+    RUNTIME_ERROR_DETECTED = "RUNTIME_ERROR_DETECTED"
 
 
 # -----------------------------------------------------------------------------
@@ -168,6 +172,20 @@ ALLOWED_KEYCODES: Set[int] = {
 }
 
 DEFAULT_TARGET_TTL_SECONDS: float = 15.0
+
+ALLOWED_ANDROID_DIAGNOSTIC_OPERATIONS: Set[str] = {
+    "capture_logcat",
+    "get_device_info",
+    "get_process_info",
+    "inspect_runtime_state",
+    "extract_runtime_errors",
+    "create_diagnostic_snapshot",
+    "diagnose_crash",
+}
+
+MAX_LOGCAT_LINES: int = 1000
+MAX_LOGCAT_BYTES: int = 200_000
+MAX_SNAPSHOT_BYTES: int = 500_000
 
 DEFAULT_STUDIO_PATH = Path(r"C:\Program Files\Android\Android Studio1\bin\studio64.exe")
 DEFAULT_JDK_PATH = Path(r"C:\Program Files\Android\Android Studio1\jbr")
@@ -803,3 +821,19 @@ class AndroidSafetyGate:
                     AndroidErrorCode.HIGH_RISK_ACTION_BLOCKED,
                     f"Action '{action}' involves blocked high-risk pattern '{pattern}'.",
                 )
+
+    def validate_diagnostic_operation(self, operation: str) -> None:
+        """Validates that a diagnostic operation is in the allowlist."""
+        self.check_emergency_stop()
+        if operation not in ALLOWED_ANDROID_DIAGNOSTIC_OPERATIONS:
+            raise AndroidSafetyError(
+                AndroidErrorCode.ACTION_NOT_ALLOWED,
+                f"Diagnostic operation '{operation}' is not in the authorized allowlist.",
+            )
+
+    def validate_logcat_bounds(self, lines: int, max_lines: int = MAX_LOGCAT_LINES) -> int:
+        """Validates and bounds logcat line request."""
+        self.check_emergency_stop()
+        if lines <= 0:
+            return 100
+        return min(int(lines), max_lines)
