@@ -83,6 +83,7 @@ class AndroidToolResult:
     risk_level: str = RiskLevel.LOW.value
     requires_confirmation: bool = False
     verified: bool = False
+    output: str = ""
     timestamp: float = field(default_factory=time.time)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -581,6 +582,18 @@ class SafeGradleRunner:
                 error_code=se.code.value,
             )
 
+    def find_debug_apk(self) -> Optional[Path]:
+        """Locates the debug APK generated in the authorized project, if any."""
+        apk_dir = self.project_dir / "app" / "build" / "outputs" / "apk" / "debug"
+        if apk_dir.exists():
+            apks = list(apk_dir.glob("*.apk"))
+            if apks:
+                return apks[0]
+            default = apk_dir / "app-debug.apk"
+            if default.exists():
+                return default
+        return None
+
 
 class SafeEmulatorManager:
     """Safe emulator management for allowlisted AVDs."""
@@ -769,6 +782,20 @@ class AndroidToolRegistry:
                     risk_level=risk.value,
                 )
             )
+
+    def inspect_project(self, project_path: Optional[str] = None) -> AndroidToolResult:
+        """Convenience method to execute android.inspect_project."""
+        params = {"project_path": project_path} if project_path else {}
+        return self.execute_tool("android.inspect_project", params)
+
+    def build_project(self, action: Any = "DEBUG_ASSEMBLE") -> AndroidToolResult:
+        """Convenience method to execute android.build_project."""
+        action_val = action.value if hasattr(action, "value") else str(action)
+        return self.execute_tool("android.build_project", {"action": action_val})
+
+    def get_build_status(self) -> AndroidToolResult:
+        """Convenience method to execute android.get_build_status."""
+        return self.execute_tool("android.get_build_status", {})
 
     def _get_handler(self, tool_name: str) -> Callable[[Dict[str, Any]], AndroidToolResult]:
         handlers: Dict[str, Callable[[Dict[str, Any]], AndroidToolResult]] = {

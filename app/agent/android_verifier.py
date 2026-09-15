@@ -386,6 +386,10 @@ class AndroidVerifier:
         )
         return report
 
+    def run_all_checks(self, project_path: Optional[Path] = None) -> AndroidVerificationReport:
+        """Alias for run_full_verification for unified runner compatibility."""
+        return self.run_full_verification()
+
     # -------------------------------------------------------------------------
     # Pipeline Ground-Truth Verification (Step 6 Phase 2)
     # -------------------------------------------------------------------------

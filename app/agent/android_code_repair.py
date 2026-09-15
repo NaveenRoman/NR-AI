@@ -191,6 +191,8 @@ class AndroidErrorCategory(str, Enum):
     DUPLICATE_CLASS = "DUPLICATE_CLASS"
     SYNTAX_ERROR = "SYNTAX_ERROR"
     TYPE_ERROR = "TYPE_ERROR"
+    UNRESOLVED_REFERENCE = "UNRESOLVED_REFERENCE"
+    MISSING_IMPORT = "MISSING_IMPORT"
     RUNTIME_CRASH = "RUNTIME_CRASH"
     RUNTIME_ANR = "RUNTIME_ANR"
     PERMISSION_DENIED = "PERMISSION_DENIED"
@@ -543,12 +545,21 @@ class AndroidErrorAnalyzer:
     Reuses and extends ErrorAnalyzer.
     """
 
-    def __init__(self, base_analyzer: Optional[ErrorAnalyzer] = None):
-        self.base_analyzer = base_analyzer or ErrorAnalyzer()
+    def __init__(self, project_root: Optional[Union[Path, ErrorAnalyzer]] = None, base_analyzer: Optional[ErrorAnalyzer] = None):
+        if isinstance(project_root, ErrorAnalyzer):
+            self.base_analyzer = project_root
+            self.project_root = AUTHORIZED_PROJECT_PATH
+        else:
+            self.project_root = Path(project_root or AUTHORIZED_PROJECT_PATH).resolve()
+            self.base_analyzer = base_analyzer or ErrorAnalyzer()
+
+    def categorize_build_failure(self, output: str, project_root: Optional[Path] = None) -> AndroidBuildError:
+        """Alias for analyze_build_output."""
+        return self.analyze_build_output(output, project_root or self.project_root)
 
     @classmethod
     def analyze(cls, output: str, project_root: Optional[Path] = None) -> AndroidBuildError:
-        analyzer = cls()
+        analyzer = cls(project_root)
         return analyzer.analyze_build_output(output, project_root)
 
     @classmethod
@@ -1289,9 +1300,36 @@ class AndroidCodeRepairEngine:
             "source_files": source_files[:50],
         }
 
-    # -------------------------------------------------------------------------
-    # Build Error Repair Loop
-    # -------------------------------------------------------------------------
+    def diagnose_build_failure(self) -> Dict[str, Any]:
+        """Diagnoses current build failure without modifying code."""
+        build_res = self.gradle.run_action("DEBUG_ASSEMBLE")
+        if build_res.get("success"):
+            return {
+                "has_error": False,
+                "summary": "Project builds cleanly with 0 errors.",
+                "output": build_res.get("full_output", ""),
+            }
+        raw = build_res.get("full_output") or build_res.get("output_sample", "") or str(build_res.get("diagnosis", ""))
+        err = self.analyzer.analyze_build_output(raw, self.project_path)
+        return {
+            "has_error": True,
+            "summary": f"{err.category.value}: {err.message}",
+            "error_info": err.to_dict(),
+            "output": raw,
+        }
+
+    def attempt_autonomous_repair(self, max_attempts: int = MAX_REPAIR_ATTEMPTS) -> Dict[str, Any]:
+        """Convenience wrapper around repair_build returning a dictionary."""
+        result = self.repair_build(max_attempts=max_attempts)
+        return {
+            "success": result.success,
+            "attempts": result.attempts,
+            "summary": result.summary,
+            "message": result.summary,
+            "error_code": result.error_code,
+            "rolled_back": result.rolled_back,
+            "attempts_history": [e.to_dict() for e in result.applied_edits],
+        }
 
     def repair_build(
         self,

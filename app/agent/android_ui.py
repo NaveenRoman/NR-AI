@@ -445,6 +445,23 @@ class AndroidUIController:
         )
         return snapshot
 
+    def capture_and_inspect(self, serial: str) -> Dict[str, Any]:
+        """Convenience method returning UI inspection dictionary."""
+        try:
+            snap = self.inspect_ui(serial)
+            d = snap.to_dict()
+            d["success"] = True
+            d["target_count"] = len(snap.targets)
+            return d
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "target_count": 0,
+                "targets": [],
+            }
+
+
     def find_ui_text(self, serial: str, query: str) -> List[Dict[str, Any]]:
         self.safety.validate_device_serial(serial)
         self.safety.check_emergency_stop()
