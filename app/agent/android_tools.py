@@ -34,6 +34,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -140,6 +141,24 @@ class SafeAdbClient:
         )
         return res.returncode, res.stdout.strip(), res.stderr.strip()
 
+    def _run_adb_bytes(self, args: List[str], timeout: float = 10.0) -> Tuple[int, bytes, str]:
+        exe = self._resolve_adb()
+        if not exe.exists() and not shutil_which("adb"):
+            raise AndroidSafetyError(
+                AndroidErrorCode.DEVICE_NOT_FOUND,
+                f"ADB executable not found at '{exe}'.",
+            )
+        cmd = [str(exe)] + args
+        res = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=False,
+            shell=False,
+            timeout=timeout,
+        )
+        return res.returncode, res.stdout, res.stderr.decode("utf-8", errors="replace").strip()
+
     def list_devices(self) -> List[Dict[str, str]]:
         """Lists attached devices with serials and states."""
         try:
@@ -218,6 +237,133 @@ class SafeAdbClient:
         """Kills an emulator safely using emu kill."""
         code, _, _ = self._run_adb(["-s", serial, "emu", "kill"])
         return code == 0
+
+    def get_foreground_app(self, serial: str) -> Dict[str, str]:
+        """Queries the current focused foreground application and activity."""
+        code, out, _ = self._run_adb(["-s", serial, "shell", "dumpsys", "window", "displays"], timeout=5.0)
+        if code != 0 or not out:
+            code, out, _ = self._run_adb(["-s", serial, "shell", "dumpsys", "activity", "recents"], timeout=5.0)
+
+        # Match mCurrentFocus or mFocusedApp or topResumedActivity
+        m = re.search(r"(?:mCurrentFocus|mFocusedApp|topResumedActivity|ResumedActivity)[^=\n:]*[=:]\s*(?:Window\{|ActivityRecord\{)?[^}\n]*?\s+([a-zA-Z0-9._]+)/([a-zA-Z0-9._$]+)", out)
+        if m:
+            pkg, act = m.group(1).strip(), m.group(2).strip()
+            if act.startswith("."):
+                act = pkg + act
+            return {"package": pkg, "activity": act}
+
+        # Fallback: check mCurrentFocus without slash
+        m2 = re.search(r"mCurrentFocus=Window\{[^}\n]*?\s+([a-zA-Z0-9._]+)\}", out)
+        if m2:
+            return {"package": m2.group(1).strip(), "activity": "unknown"}
+
+        return {"package": "unknown", "activity": "unknown"}
+
+    def get_screen_size(self, serial: str) -> Tuple[int, int]:
+        """Queries the physical or override screen dimensions of the target device."""
+        code, out, _ = self._run_adb(["-s", serial, "shell", "wm", "size"], timeout=5.0)
+        if code == 0 and out:
+            m = re.search(r"(?:Override size|Physical size):\s*(\d+)x(\d+)", out)
+            if m:
+                return int(m.group(1)), int(m.group(2))
+        return 1080, 2400
+
+    def capture_screen(self, serial: str, dest_path: Optional[Path] = None) -> bytes:
+        """Captures screenshot bytes from authorized device and optionally writes to dest_path."""
+        code, raw_bytes, err = self._run_adb_bytes(["-s", serial, "exec-out", "screencap", "-p"], timeout=15.0)
+        if code != 0 or not raw_bytes or not raw_bytes.startswith(b"\x89PNG"):
+            # Fallback to device-local file capture and pull
+            temp_dev = "/sdcard/nrai_temp_cap.png"
+            self._run_adb(["-s", serial, "shell", "screencap", "-p", temp_dev], timeout=10.0)
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                local_tmp = Path(tf.name)
+            try:
+                self._run_adb(["-s", serial, "pull", temp_dev, str(local_tmp)], timeout=15.0)
+                if local_tmp.exists():
+                    raw_bytes = local_tmp.read_bytes()
+            finally:
+                self._run_adb(["-s", serial, "shell", "rm", "-f", temp_dev])
+                if local_tmp.exists():
+                    try:
+                        local_tmp.unlink()
+                    except Exception:
+                        pass
+
+        if not raw_bytes:
+            raise AndroidSafetyError(
+                AndroidErrorCode.SCREEN_CAPTURE_FAILED,
+                f"Failed to capture screen on device '{serial}'.",
+            )
+
+        if dest_path:
+            p = Path(dest_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(raw_bytes)
+
+        return raw_bytes
+
+    def dump_ui_hierarchy(self, serial: str) -> str:
+        """Captures and returns the raw UI hierarchy XML via uiautomator dump with cleanup."""
+        temp_dev = "/sdcard/nrai_ui_dump.xml"
+        code, out, err = self._run_adb(["-s", serial, "shell", "uiautomator", "dump", temp_dev], timeout=15.0)
+        xml_content = ""
+        if code == 0:
+            c_code, c_out, _ = self._run_adb(["-s", serial, "shell", "cat", temp_dev], timeout=10.0)
+            if c_code == 0:
+                xml_content = c_out
+            self._run_adb(["-s", serial, "shell", "rm", "-f", temp_dev])
+        return xml_content
+
+    def tap(self, serial: str, x: int, y: int) -> bool:
+        """Injects a single tap event at validated screen coordinates."""
+        code, out, err = self._run_adb(["-s", serial, "shell", "input", "tap", str(int(x)), str(int(y))])
+        return code == 0
+
+    def press_key(self, serial: str, keycode: int) -> bool:
+        """Injects a keyevent for an allowlisted keycode."""
+        code, out, err = self._run_adb(["-s", serial, "shell", "input", "keyevent", str(int(keycode))])
+        return code == 0
+
+    def back(self, serial: str) -> bool:
+        """Presses the Back key (KEYCODE_BACK = 4)."""
+        return self.press_key(serial, 4)
+
+    def home(self, serial: str) -> bool:
+        """Presses the Home key (KEYCODE_HOME = 3)."""
+        return self.press_key(serial, 3)
+
+    def swipe(self, serial: str, x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300) -> bool:
+        """Injects a swipe gesture between validated screen coordinates."""
+        code, out, err = self._run_adb(
+            ["-s", serial, "shell", "input", "swipe", str(int(x1)), str(int(y1)), str(int(x2)), str(int(y2)), str(int(duration_ms))]
+        )
+        return code == 0
+
+    def scroll(self, serial: str, direction: str = "down", distance_ratio: float = 0.5) -> bool:
+        """Performs a bounded directional scroll gesture on the target device."""
+        w, h = self.get_screen_size(serial)
+        cx = w // 2
+        ratio = max(0.1, min(distance_ratio, 0.8))
+        if direction.lower() == "down":
+            start_y = int(h * (0.5 + ratio / 2))
+            end_y = int(h * (0.5 - ratio / 2))
+            return self.swipe(serial, cx, start_y, cx, end_y)
+        elif direction.lower() == "up":
+            start_y = int(h * (0.5 - ratio / 2))
+            end_y = int(h * (0.5 + ratio / 2))
+            return self.swipe(serial, cx, start_y, cx, end_y)
+        elif direction.lower() == "right":
+            start_x = int(w * (0.5 + ratio / 2))
+            end_x = int(w * (0.5 - ratio / 2))
+            cy = h // 2
+            return self.swipe(serial, start_x, cy, end_x, cy)
+        elif direction.lower() == "left":
+            start_x = int(w * (0.5 - ratio / 2))
+            end_x = int(w * (0.5 + ratio / 2))
+            cy = h // 2
+            return self.swipe(serial, start_x, cy, end_x, cy)
+        else:
+            return False
 
 
 class SafeGradleRunner:

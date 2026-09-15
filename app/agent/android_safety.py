@@ -56,6 +56,13 @@ class AndroidErrorCode(str, Enum):
     ROLLBACK_FAILED = "ROLLBACK_FAILED"
     REPAIR_UNSUPPORTED = "REPAIR_UNSUPPORTED"
     MALFORMED_PROPOSAL = "MALFORMED_PROPOSAL"
+    TARGET_NOT_FOUND = "TARGET_NOT_FOUND"
+    COORDINATES_OUT_OF_BOUNDS = "COORDINATES_OUT_OF_BOUNDS"
+    SCREEN_DIMENSION_MISMATCH = "SCREEN_DIMENSION_MISMATCH"
+    MALFORMED_ACTION_SCHEMA = "MALFORMED_ACTION_SCHEMA"
+    HIGH_RISK_ACTION_BLOCKED = "HIGH_RISK_ACTION_BLOCKED"
+    UI_EXTRACTION_FAILED = "UI_EXTRACTION_FAILED"
+    SCREEN_CAPTURE_FAILED = "SCREEN_CAPTURE_FAILED"
 
 
 # -----------------------------------------------------------------------------
@@ -126,6 +133,41 @@ ALLOWED_ANDROID_TOOLS: Set[str] = {
     "android.capture_log",
     "android.verify_app",
 }
+
+ALLOWED_ANDROID_UI_OPERATIONS: Set[str] = {
+    "get_device_state",
+    "get_foreground_app",
+    "get_screen_size",
+    "capture_screen",
+    "inspect_ui",
+    "find_ui_text",
+    "find_ui_element",
+    "verify_ui_state",
+    "tap_target",
+    "back",
+    "home",
+    "press_key",
+    "swipe",
+    "scroll",
+}
+
+ALLOWED_KEYCODES: Set[int] = {
+    3,   # KEYCODE_HOME
+    4,   # KEYCODE_BACK
+    19,  # KEYCODE_DPAD_UP
+    20,  # KEYCODE_DPAD_DOWN
+    21,  # KEYCODE_DPAD_LEFT
+    22,  # KEYCODE_DPAD_RIGHT
+    24,  # KEYCODE_VOLUME_UP
+    25,  # KEYCODE_VOLUME_DOWN
+    61,  # KEYCODE_TAB
+    66,  # KEYCODE_ENTER
+    67,  # KEYCODE_DEL
+    82,  # KEYCODE_MENU
+    111, # KEYCODE_ESCAPE
+}
+
+DEFAULT_TARGET_TTL_SECONDS: float = 15.0
 
 DEFAULT_STUDIO_PATH = Path(r"C:\Program Files\Android\Android Studio1\bin\studio64.exe")
 DEFAULT_JDK_PATH = Path(r"C:\Program Files\Android\Android Studio1\jbr")
@@ -660,3 +702,104 @@ class AndroidSafetyGate:
                 AndroidErrorCode.REPAIR_UNSUPPORTED,
                 f"Build error in category '{error_category}' is unsupported for autonomous repair (high-risk or security boundary).",
             )
+
+    def validate_ui_operation(self, operation: str) -> None:
+        """Validates that a UI operation is in the allowlist."""
+        self.check_emergency_stop()
+        if operation not in ALLOWED_ANDROID_UI_OPERATIONS:
+            raise AndroidSafetyError(
+                AndroidErrorCode.ACTION_NOT_ALLOWED,
+                f"UI operation '{operation}' is not in the authorized allowlist.",
+            )
+
+    def validate_target_coordinates(
+        self,
+        x: int,
+        y: int,
+        screen_width: int,
+        screen_height: int,
+    ) -> Tuple[int, int]:
+        """Validates that coordinates are within screen dimensions."""
+        self.check_emergency_stop()
+        if screen_width <= 0 or screen_height <= 0:
+            raise AndroidSafetyError(
+                AndroidErrorCode.SCREEN_DIMENSION_MISMATCH,
+                f"Invalid screen dimensions: {screen_width}x{screen_height}.",
+            )
+        if x < 0 or x >= screen_width or y < 0 or y >= screen_height:
+            raise AndroidSafetyError(
+                AndroidErrorCode.COORDINATES_OUT_OF_BOUNDS,
+                f"Coordinates ({x}, {y}) are out of screen bounds ({screen_width}x{screen_height}).",
+            )
+        return int(x), int(y)
+
+    def validate_target_freshness(
+        self,
+        target_timestamp: float,
+        ttl_seconds: float = DEFAULT_TARGET_TTL_SECONDS,
+    ) -> None:
+        """Validates that a target has not exceeded its TTL."""
+        self.check_emergency_stop()
+        age = time.time() - target_timestamp
+        if age > ttl_seconds:
+            raise AndroidSafetyError(
+                AndroidErrorCode.STALE_TARGET,
+                f"Target is stale (age {age:.2f}s > TTL {ttl_seconds}s).",
+            )
+
+    def validate_screen_dimensions(
+        self,
+        expected_w: int,
+        expected_h: int,
+        current_w: int,
+        current_h: int,
+    ) -> None:
+        """Validates that current screen dimensions match target capture dimensions."""
+        self.check_emergency_stop()
+        if expected_w != current_w or expected_h != current_h:
+            raise AndroidSafetyError(
+                AndroidErrorCode.SCREEN_DIMENSION_MISMATCH,
+                f"Screen dimension mismatch: expected {expected_w}x{expected_h}, found {current_w}x{current_h}.",
+            )
+
+    def validate_keycode(self, keycode: int) -> int:
+        """Validates that keycode is in allowlist."""
+        self.check_emergency_stop()
+        if keycode not in ALLOWED_KEYCODES:
+            raise AndroidSafetyError(
+                AndroidErrorCode.ACTION_NOT_ALLOWED,
+                f"Keycode {keycode} is not in authorized allowlist.",
+            )
+        return keycode
+
+    def validate_safe_ui_action(
+        self,
+        action: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Blocks high-risk or destructive UI operations."""
+        self.check_emergency_stop()
+        self.validate_ui_operation(action)
+
+        p = params or {}
+        text_content = str(p).lower()
+        high_risk_patterns = [
+            "factory reset",
+            "erase all data",
+            "wipe data",
+            "delete account",
+            "uninstall",
+            "format",
+            "install unknown",
+            "password change",
+            "banking",
+            "payment",
+            "credit card",
+            "cvv",
+        ]
+        for pattern in high_risk_patterns:
+            if pattern in text_content:
+                raise AndroidSafetyError(
+                    AndroidErrorCode.HIGH_RISK_ACTION_BLOCKED,
+                    f"Action '{action}' involves blocked high-risk pattern '{pattern}'.",
+                )

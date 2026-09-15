@@ -152,6 +152,14 @@ class AndroidStudioAgent:
             router=self.router,
         )
 
+        from app.agent.android_ui import AndroidUIController, AndroidTargetRegistry
+        self.ui_controller = AndroidUIController(
+            safety_gate=self.safety,
+            adb_client=self.tools.adb,
+            target_registry=AndroidTargetRegistry(safety_gate=self.safety),
+            audit_logger=self.audit,
+        )
+
     # -------------------------------------------------------------------------
     # Goal Parsing & Deterministic Planning
     # -------------------------------------------------------------------------
@@ -450,6 +458,22 @@ class AndroidStudioAgent:
         # Check for explain build error requests
         if any(kw in g_lower for kw in ("explain build error", "explain error", "why is android build failing", "why is the android build failing", "why is build failing", "diagnose build error")):
             return self._execute_explain_error_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
+
+        # Check for UI inspection / perception requests
+        if any(kw in g_lower for kw in ("inspect the android screen", "inspect android screen", "what is on the android screen", "what is on screen", "screen state", "inspect screen")):
+            return self._execute_ui_inspect_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
+
+        # Check for UI target discovery requests
+        if any(kw in g_lower for kw in ("find the ", "find button", "find element", "find ui", "locate ")):
+            return self._execute_ui_find_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
+
+        # Check for UI interaction requests
+        if any(kw in g_lower for kw in ("tap ", "click ", "scroll down", "scroll up", "scroll ", "swipe ", "go back", "press back", "press home")):
+            return self._execute_ui_interaction_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
+
+        # Check for UI verification requests
+        if any(kw in g_lower for kw in ("verify the android screen", "verify android screen", "verify ui", "verify screen")):
+            return self._execute_ui_verify_workflow(user_goal=user_goal, workflow_id=workflow_id, start_time=start_time)
 
         # Plan actions
         intents = self.plan_goal(user_goal)
@@ -1135,5 +1159,318 @@ class AndroidStudioAgent:
             summary=f"Build error explained: {parsed_err.category.value} - {parsed_err.diagnosis}",
             duration_s=time.time() - start_time,
         )
+        self._audit_workflow(report)
+        return report
+
+    # -------------------------------------------------------------------------
+    # Android UI Perception & Interaction Methods (Step 6 Phase 5)
+    # -------------------------------------------------------------------------
+
+    def inspect_screen(self, serial: str = "emulator-5554"):
+        """Captures and returns current UI snapshot on authorized device."""
+        if self.safety.is_emergency_stop_active():
+            raise EmergencyStopActiveError()
+        return self.ui_controller.inspect_ui(serial)
+
+    def find_ui_target(self, query: str, serial: str = "emulator-5554") -> List[Dict[str, Any]]:
+        """Finds UI targets matching query on authorized device."""
+        if self.safety.is_emergency_stop_active():
+            raise EmergencyStopActiveError()
+        return self.ui_controller.find_ui_element(serial, query)
+
+    def execute_ui_action(
+        self,
+        action: str,
+        params: Optional[Dict[str, Any]] = None,
+        serial: str = "emulator-5554",
+    ) -> Dict[str, Any]:
+        """Executes a bounded, safe UI action on authorized device."""
+        if self.safety.is_emergency_stop_active():
+            raise EmergencyStopActiveError()
+        return self.ui_controller.execute_action(serial, action, params)
+
+    def _execute_ui_inspect_workflow(
+        self,
+        user_goal: str,
+        workflow_id: str,
+        start_time: float,
+        serial: str = "emulator-5554",
+    ) -> AndroidWorkflowReport:
+        if self.safety.is_emergency_stop_active():
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=0,
+                steps_executed=0,
+                summary="Workflow halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Android operations are frozen.",
+                error_code=AndroidErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+            self._audit_workflow(report)
+            return report
+
+        try:
+            snapshot = self.ui_controller.inspect_ui(serial)
+            steps = [{
+                "stage": "OBSERVATION",
+                "success": True,
+                "targets_count": len(snapshot.targets),
+                "foreground_app": snapshot.foreground_app,
+                "visible_texts": snapshot.visible_text_items[:20],
+            }]
+            summary = (
+                f"Screen inspected on {serial}: {len(snapshot.targets)} targets discovered. "
+                f"Foreground app: {snapshot.foreground_app.get('package')}/{snapshot.foreground_app.get('activity')}."
+            )
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=True,
+                total_steps=1,
+                steps_executed=1,
+                steps=steps,
+                summary=summary,
+                duration_s=time.time() - start_time,
+            )
+        except AndroidSafetyError as se:
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=1,
+                steps_executed=0,
+                summary=f"Screen inspection failed: {se.message}",
+                error=se.message,
+                error_code=se.code.value,
+                duration_s=time.time() - start_time,
+            )
+        self._audit_workflow(report)
+        return report
+
+    def _execute_ui_find_workflow(
+        self,
+        user_goal: str,
+        workflow_id: str,
+        start_time: float,
+        serial: str = "emulator-5554",
+    ) -> AndroidWorkflowReport:
+        if self.safety.is_emergency_stop_active():
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=0,
+                steps_executed=0,
+                summary="Workflow halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Android operations are frozen.",
+                error_code=AndroidErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+            self._audit_workflow(report)
+            return report
+
+        m = re.search(r"(?:find\s+(?:the\s+)?|locate\s+)(.+)", user_goal, re.IGNORECASE)
+        query = m.group(1).strip() if m else user_goal
+
+        try:
+            matches = self.ui_controller.find_ui_element(serial, query)
+            steps = [{
+                "stage": "TARGET_DISCOVERY",
+                "success": bool(matches),
+                "query": query,
+                "matches_count": len(matches),
+                "matches": matches[:5],
+            }]
+            success = len(matches) > 0
+            summary = f"Found {len(matches)} matching target(s) for '{query}' on {serial}." if success else f"No targets matching '{query}' found on {serial}."
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=success,
+                total_steps=1,
+                steps_executed=1,
+                steps=steps,
+                summary=summary,
+                error=None if success else f"Target '{query}' not found.",
+                error_code=None if success else AndroidErrorCode.TARGET_NOT_FOUND.value,
+                duration_s=time.time() - start_time,
+            )
+        except AndroidSafetyError as se:
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=1,
+                steps_executed=0,
+                summary=f"Target discovery failed: {se.message}",
+                error=se.message,
+                error_code=se.code.value,
+                duration_s=time.time() - start_time,
+            )
+        self._audit_workflow(report)
+        return report
+
+    def _execute_ui_interaction_workflow(
+        self,
+        user_goal: str,
+        workflow_id: str,
+        start_time: float,
+        serial: str = "emulator-5554",
+    ) -> AndroidWorkflowReport:
+        if self.safety.is_emergency_stop_active():
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=0,
+                steps_executed=0,
+                summary="Workflow halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Android operations are frozen.",
+                error_code=AndroidErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+            self._audit_workflow(report)
+            return report
+
+        g_lower = user_goal.lower()
+        steps: List[Dict[str, Any]] = []
+
+        try:
+            if "go back" in g_lower or "press back" in g_lower:
+                res = self.ui_controller.back(serial)
+                steps.append({"stage": "PROPOSED_ACTION", "action": "back"})
+                steps.append({"stage": "EXECUTED_ACTION", "action": "back", "success": res.get("success", False)})
+                success = res.get("success", False)
+                summary = f"Pressed Back on {serial}."
+            elif "press home" in g_lower:
+                res = self.ui_controller.home(serial)
+                steps.append({"stage": "PROPOSED_ACTION", "action": "home"})
+                steps.append({"stage": "EXECUTED_ACTION", "action": "home", "success": res.get("success", False)})
+                success = res.get("success", False)
+                summary = f"Pressed Home on {serial}."
+            elif "scroll down" in g_lower or "scroll" in g_lower or "swipe" in g_lower:
+                direction = "up" if "scroll up" in g_lower else "down"
+                res = self.ui_controller.scroll(serial, direction=direction)
+                steps.append({"stage": "PROPOSED_ACTION", "action": "scroll", "direction": direction})
+                steps.append({"stage": "EXECUTED_ACTION", "action": "scroll", "success": res.get("success", False)})
+                success = res.get("success", False)
+                summary = f"Scrolled {direction} on {serial}."
+            elif "tap " in g_lower or "click " in g_lower:
+                m = re.search(r"(?:tap|click)\s+(?:the\s+)?(.+)", user_goal, re.IGNORECASE)
+                target_query = m.group(1).strip() if m else ""
+
+                if target_query.startswith("android.target."):
+                    target_id = target_query
+                else:
+                    matches = self.ui_controller.find_ui_element(serial, target_query)
+                    if not matches:
+                        raise AndroidSafetyError(
+                            AndroidErrorCode.TARGET_NOT_FOUND,
+                            f"Target '{target_query}' not found on screen.",
+                        )
+                    target_id = matches[0]["target_id"]
+
+                steps.append({"stage": "PROPOSED_ACTION", "action": "tap_target", "target_id": target_id})
+                res = self.ui_controller.tap_target(serial, target_id)
+                steps.append({
+                    "stage": "EXECUTED_ACTION",
+                    "action": "tap_target",
+                    "target_id": target_id,
+                    "coordinates": res.get("coordinates"),
+                    "success": res.get("success", False),
+                })
+                steps.append({
+                    "stage": "VERIFIED_ACTION",
+                    "foreground_app": res.get("foreground_app"),
+                })
+                success = res.get("success", False)
+                summary = f"Tapped target '{target_id}' at {res.get('coordinates')} on {serial}."
+            else:
+                raise AndroidSafetyError(
+                    AndroidErrorCode.ACTION_NOT_ALLOWED,
+                    f"Unsupported UI interaction command: '{user_goal}'.",
+                )
+
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=success,
+                total_steps=len(steps),
+                steps_executed=len(steps),
+                steps=steps,
+                summary=summary,
+                duration_s=time.time() - start_time,
+            )
+        except AndroidSafetyError as se:
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=max(1, len(steps)),
+                steps_executed=len(steps),
+                steps=steps,
+                summary=f"UI interaction failed: {se.message}",
+                error=se.message,
+                error_code=se.code.value,
+                duration_s=time.time() - start_time,
+            )
+        self._audit_workflow(report)
+        return report
+
+    def _execute_ui_verify_workflow(
+        self,
+        user_goal: str,
+        workflow_id: str,
+        start_time: float,
+        serial: str = "emulator-5554",
+    ) -> AndroidWorkflowReport:
+        if self.safety.is_emergency_stop_active():
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=0,
+                steps_executed=0,
+                summary="Workflow halted: EMERGENCY STOP is active.",
+                error="EMERGENCY STOP is active. All Android operations are frozen.",
+                error_code=AndroidErrorCode.EMERGENCY_STOPPED.value,
+                duration_s=time.time() - start_time,
+            )
+            self._audit_workflow(report)
+            return report
+
+        try:
+            res = self.ui_controller.verify_ui_state(serial)
+            steps = [{
+                "stage": "VERIFIED_ACTION",
+                "success": res.get("success", False),
+                "foreground_app": res.get("foreground_app"),
+                "targets_count": res.get("targets_count", 0),
+            }]
+            summary = f"UI state verified on {serial}: foreground app is {res.get('foreground_app', {}).get('package')}."
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=res.get("success", False),
+                total_steps=1,
+                steps_executed=1,
+                steps=steps,
+                summary=summary,
+                duration_s=time.time() - start_time,
+            )
+        except AndroidSafetyError as se:
+            report = AndroidWorkflowReport(
+                workflow_id=workflow_id,
+                goal=user_goal,
+                success=False,
+                total_steps=1,
+                steps_executed=0,
+                summary=f"UI verification failed: {se.message}",
+                error=se.message,
+                error_code=se.code.value,
+                duration_s=time.time() - start_time,
+            )
         self._audit_workflow(report)
         return report
