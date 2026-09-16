@@ -94,6 +94,12 @@ class UnrealErrorCode(str, Enum):
     ATOMIC_REPLACE_FAILED = "ATOMIC_REPLACE_FAILED"
     HASH_VERIFICATION_FAILED = "HASH_VERIFICATION_FAILED"
     MODEL_PROPOSAL_REJECTED = "MODEL_PROPOSAL_REJECTED"
+    WORKFLOW_STEP_LIMIT_EXCEEDED = "WORKFLOW_STEP_LIMIT_EXCEEDED"
+    INVALID_WORKFLOW = "INVALID_WORKFLOW"
+    WORKFLOW_NOT_FOUND = "WORKFLOW_NOT_FOUND"
+    WORKFLOW_FAILED = "WORKFLOW_FAILED"
+    WORKFLOW_TIMEOUT = "WORKFLOW_TIMEOUT"
+    PLAN_VALIDATION_FAILED = "PLAN_VALIDATION_FAILED"
 
 
 class UnrealSafetyError(Exception):
@@ -228,11 +234,29 @@ ALLOWED_UNREAL_PHASE4_TOOLS: Set[str] = {
     "unreal.verify_source_change",
 }
 
-ALL_ALLOWED_UNREAL_TOOLS: Set[str] = (
+ALLOWED_UNREAL_PHASE5_TOOLS: Set[str] = {
+    "unreal.create_repair_workflow",
+    "unreal.inspect_failure",
+    "unreal.diagnose_failure",
+    "unreal.plan_repair",
+    "unreal.validate_repair_plan",
+    "unreal.execute_repair_workflow",
+    "unreal.verify_repair_workflow",
+    "unreal.rollback_repair_workflow",
+    "unreal.stop_repair_workflow",
+    "unreal.get_workflow_status",
+}
+
+ALLOWED_UNREAL_PHASE4_ALL_TOOLS: Set[str] = (
     ALLOWED_UNREAL_PHASE1_TOOLS
     | ALLOWED_UNREAL_PHASE2_TOOLS
     | ALLOWED_UNREAL_PHASE3_TOOLS
     | ALLOWED_UNREAL_PHASE4_TOOLS
+)
+
+ALL_ALLOWED_UNREAL_TOOLS: Set[str] = (
+    ALLOWED_UNREAL_PHASE4_ALL_TOOLS
+    | ALLOWED_UNREAL_PHASE5_TOOLS
 )
 ALLOWED_UNREAL_TOOLS: Set[str] = ALL_ALLOWED_UNREAL_TOOLS
 
@@ -300,6 +324,8 @@ MAX_CAPTURED_OUTPUT_BYTES: int = 500_000
 MAX_FILE_SIZE_BYTES: int = 50_000_000
 MAX_TEST_LOG_BYTES: int = 500_000
 MAX_TEST_RESULT_BYTES: int = 10_000_000
+WORKFLOW_TIMEOUT_SECONDS: float = 300.0
+MAX_WORKFLOW_STEPS: int = 25
 
 # Sensitive token patterns for automatic masking
 SENSITIVE_PATTERNS = [
@@ -370,6 +396,10 @@ class UnrealSafetyGate:
     def clear_emergency_stop(self) -> None:
         """Alias for reset_emergency_stop for API consistency."""
         self.reset_emergency_stop()
+
+    def activate_emergency_stop(self, reason: str = "Operator or safety trigger") -> None:
+        """Alias for trigger_emergency_stop for API consistency."""
+        self.trigger_emergency_stop(reason)
 
     def is_emergency_stopped(self) -> bool:
         with self._stop_lock:
@@ -709,10 +739,13 @@ class UnrealSafetyGate:
         path: Union[str, Path],
         project_path: Optional[Union[str, Path]] = None,
         must_exist: bool = False,
+        project_root: Optional[Union[str, Path]] = None,
     ) -> Path:
         """
         Validates that a C++ source/header file path is authorized and within bounds.
         """
+        if project_path is None and project_root is not None:
+            project_path = project_root
         self.assert_not_emergency_stopped()
         self.check_rate_limit("validate_source_file_path")
 
@@ -907,6 +940,37 @@ class UnrealSafetyGate:
                         f"Prohibited command token '{dangerous}' in proposal field '{fld}'",
                         {"field": fld, "token": dangerous},
                     )
+
+    def validate_workflow_step_count(self, step_count: int) -> None:
+        """Validates that workflow step count does not exceed MAX_WORKFLOW_STEPS."""
+        self.assert_not_emergency_stopped()
+        if step_count > MAX_WORKFLOW_STEPS:
+            raise UnrealSafetyError(
+                UnrealErrorCode.WORKFLOW_STEP_LIMIT_EXCEEDED,
+                f"Workflow step count ({step_count}) exceeds maximum allowed limit ({MAX_WORKFLOW_STEPS}).",
+                {"step_count": step_count, "max_steps": MAX_WORKFLOW_STEPS},
+            )
+
+    def validate_repair_attempts(self, attempts: int) -> int:
+        """
+        Validates that repair attempts do not exceed MAX_REPAIR_ATTEMPTS (strictly 2).
+        Attempts 1 and 2 are allowed.
+        Attempts 3 or more are deterministically rejected with UnrealSafetyError(REPAIR_ATTEMPTS_EXCEEDED).
+        """
+        self.assert_not_emergency_stopped()
+        if not isinstance(attempts, int) or attempts < 1:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_PARAMETER,
+                f"Repair attempts must be a positive integer (1 or 2), got {attempts}.",
+                {"attempts": attempts, "min_attempts": 1, "max_attempts": MAX_REPAIR_ATTEMPTS},
+            )
+        if attempts > MAX_REPAIR_ATTEMPTS:
+            raise UnrealSafetyError(
+                UnrealErrorCode.REPAIR_ATTEMPTS_EXCEEDED,
+                f"Repair attempts ({attempts}) exceeds maximum allowed safety limit of {MAX_REPAIR_ATTEMPTS}.",
+                {"attempts": attempts, "max_attempts": MAX_REPAIR_ATTEMPTS},
+            )
+        return attempts
 
     @staticmethod
     def _is_subpath(child: Path, parent: Path) -> bool:

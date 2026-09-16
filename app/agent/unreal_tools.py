@@ -31,6 +31,8 @@ from app.agent.unreal_safety import (
     UnrealSafetyError,
     UnrealSafetyGate,
     DEFAULT_UNREAL_SAFETY_GATE,
+    DEFAULT_AUTHORIZED_PROJECT,
+    MAX_REPAIR_ATTEMPTS,
     redact_sensitive_data,
 )
 from app.agent.unreal_environment import (
@@ -91,6 +93,15 @@ from app.agent.unreal_tests import (
     DEFAULT_UNREAL_TEST_ARTIFACT_VERIFIER,
     DEFAULT_UNREAL_RUNTIME_RESULT_VERIFIER,
 )
+from app.agent.unreal_agent import (
+    UnrealAutonomousAgent,
+    DEFAULT_UNREAL_AGENT,
+    UnrealWorkflowState,
+    UnrealFailureDomain,
+    UnrealWorkflowType,
+    UnrealWorkflowPlan,
+    UnrealWorkflowReport,
+)
 
 logger = logging.getLogger("NRAI.UnrealTools")
 
@@ -147,6 +158,8 @@ class UnrealToolRegistry:
         bp_inspector: Optional[UnrealBlueprintInspector] = None,
         source_modifier: Optional[UnrealSourceModifier] = None,
         include_source_tools: Optional[bool] = None,
+        agent: Optional[UnrealAutonomousAgent] = None,
+        include_workflow_tools: Optional[bool] = None,
     ):
         self.safety = safety_gate or DEFAULT_UNREAL_SAFETY_GATE
         self.env = env_detector or DEFAULT_UNREAL_ENV_DETECTOR
@@ -184,6 +197,24 @@ class UnrealToolRegistry:
             include_source_tools = (
                 (cpp_analyzer is not None or bp_inspector is not None or source_modifier is not None)
                 or (inspector is None and env_detector is None)
+            )
+
+        self.agent = agent or DEFAULT_UNREAL_AGENT
+        if include_workflow_tools is None:
+            include_workflow_tools = (
+                agent is not None
+                or (
+                    inspector is None
+                    and env_detector is None
+                    and cpp_analyzer is None
+                    and bp_inspector is None
+                    and source_modifier is None
+                    and build_runner is None
+                    and test_runner is None
+                    and include_source_tools is not False
+                    and include_test_tools is not False
+                    and include_build_tools is not False
+                )
             )
 
         # Handler dispatch map
@@ -248,6 +279,21 @@ class UnrealToolRegistry:
                 "unreal.apply_cpp_change": self._tool_apply_cpp_change,
                 "unreal.rollback_cpp_change": self._tool_rollback_cpp_change,
                 "unreal.verify_source_change": self._tool_verify_source_change,
+            })
+
+        if include_workflow_tools:
+            # Step 9 Phase 5: Autonomous Repair & End-to-End Workflows
+            self._handlers.update({
+                "unreal.create_repair_workflow": self._tool_create_repair_workflow,
+                "unreal.inspect_failure": self._tool_inspect_failure,
+                "unreal.diagnose_failure": self._tool_diagnose_failure,
+                "unreal.plan_repair": self._tool_plan_repair,
+                "unreal.validate_repair_plan": self._tool_validate_repair_plan,
+                "unreal.execute_repair_workflow": self._tool_execute_repair_workflow,
+                "unreal.verify_repair_workflow": self._tool_verify_repair_workflow,
+                "unreal.rollback_repair_workflow": self._tool_rollback_repair_workflow,
+                "unreal.stop_repair_workflow": self._tool_stop_repair_workflow,
+                "unreal.get_workflow_status": self._tool_get_workflow_status,
             })
 
     def get_registered_tools(self) -> List[str]:
@@ -1899,6 +1945,386 @@ class UnrealToolRegistry:
                 error=str(e),
                 error_code=UnrealErrorCode.VERIFICATION_FAILED.value,
                 message=f"Failed to verify source change: {e}",
+            )
+
+    # -------------------------------------------------------------------------
+    # Step 9 Phase 5 Tool Handlers: Autonomous Repair & End-to-End Workflows
+    # -------------------------------------------------------------------------
+
+    def _tool_create_repair_workflow(
+        self,
+        project_path: str = "",
+        workflow_type: str = "WORKFLOW_BUILD_FAILURE_REPAIR",
+        goal: str = "",
+        custom_steps: Optional[List[Dict[str, Any]]] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.create_repair_workflow: Creates and validates a structured workflow plan."""
+        try:
+            proj = project_path or str(DEFAULT_AUTHORIZED_PROJECT)
+            try:
+                wf_type = UnrealWorkflowType(workflow_type)
+            except ValueError:
+                wf_type = UnrealWorkflowType.CUSTOM
+
+            max_repair_attempts = kwargs.get("max_repair_attempts", MAX_REPAIR_ATTEMPTS)
+            plan = self.agent.create_workflow_plan(
+                workflow_type=wf_type,
+                target_project=proj,
+                goal=goal or f"Autonomous workflow for {wf_type.value}",
+                custom_steps=custom_steps,
+                max_repair_attempts=max_repair_attempts,
+            )
+            return UnrealToolResult(
+                tool="unreal.create_repair_workflow",
+                success=True,
+                data=plan.to_dict(),
+                verified=True,
+                message=f"Created workflow plan {plan.workflow_id} with {len(plan.steps)} steps.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.create_repair_workflow",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety policy rejected workflow creation: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.create_repair_workflow",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_OPERATION.value,
+                message=f"Failed to create repair workflow: {e}",
+            )
+
+    def _tool_inspect_failure(
+        self,
+        project_path: str = "",
+        build_log: Optional[str] = None,
+        test_log: Optional[str] = None,
+        runtime_log: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.inspect_failure: Deterministically inspects failure evidence across build/runtime logs."""
+        try:
+            proj = project_path or str(DEFAULT_AUTHORIZED_PROJECT)
+            diag_res = self.agent.inspect_and_diagnose(
+                project_path=proj,
+                build_log=build_log,
+                test_log=test_log,
+                runtime_log=runtime_log,
+            )
+            return UnrealToolResult(
+                tool="unreal.inspect_failure",
+                success=True,
+                data=diag_res,
+                verified=True,
+                message=f"Failure inspection classified domain: {diag_res.get('failure_domain')}",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.inspect_failure",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected failure inspection: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.inspect_failure",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_OPERATION.value,
+                message=f"Failed to inspect failure: {e}",
+            )
+
+    def _tool_diagnose_failure(
+        self,
+        project_path: str = "",
+        build_log: Optional[str] = None,
+        test_log: Optional[str] = None,
+        runtime_log: Optional[str] = None,
+        source_file: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.diagnose_failure: Executes deterministic failure diagnosis enforcing EVIDENCE > MODEL CLAIMS."""
+        try:
+            proj = project_path or str(DEFAULT_AUTHORIZED_PROJECT)
+            diag_res = self.agent.inspect_and_diagnose(
+                project_path=proj,
+                build_log=build_log,
+                test_log=test_log,
+                runtime_log=runtime_log,
+                source_file=source_file,
+            )
+            return UnrealToolResult(
+                tool="unreal.diagnose_failure",
+                success=True,
+                data=diag_res,
+                verified=True,
+                message=f"Diagnosis completed: domain={diag_res.get('failure_domain')}, root_cause={diag_res.get('root_cause')}",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.diagnose_failure",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected failure diagnosis: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.diagnose_failure",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_OPERATION.value,
+                message=f"Failed to diagnose failure: {e}",
+            )
+
+    def _tool_plan_repair(
+        self,
+        project_path: str = "",
+        workflow_type: str = "WORKFLOW_BUILD_FAILURE_REPAIR",
+        goal: str = "",
+        custom_steps: Optional[List[Dict[str, Any]]] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.plan_repair: Creates a structured repair plan bounded to max 25 steps."""
+        return self._tool_create_repair_workflow(
+            project_path=project_path,
+            workflow_type=workflow_type,
+            goal=goal,
+            custom_steps=custom_steps,
+            **kwargs,
+        )
+
+    def _tool_validate_repair_plan(
+        self,
+        plan: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.validate_repair_plan: Validates plan against step bounds and prohibited execution tokens."""
+        if not plan or not isinstance(plan, dict):
+            return UnrealToolResult(
+                tool="unreal.validate_repair_plan",
+                success=False,
+                error="plan parameter is required and must be a dict object",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="Plan dict is required.",
+            )
+        try:
+            wf_type_str = plan.get("workflow_type", "CUSTOM")
+            try:
+                wf_type = UnrealWorkflowType(wf_type_str)
+            except ValueError:
+                wf_type = UnrealWorkflowType.CUSTOM
+
+            max_att = plan.get("max_repair_attempts", MAX_REPAIR_ATTEMPTS)
+            plan_obj = UnrealWorkflowPlan(
+                workflow_id=plan.get("workflow_id", "wf_val"),
+                goal=plan.get("goal", ""),
+                workflow_type=wf_type,
+                target_project=plan.get("target_project", str(DEFAULT_AUTHORIZED_PROJECT)),
+                steps=plan.get("steps", []),
+                max_repair_attempts=max_att,
+            )
+            is_valid = self.agent.validate_workflow_plan(plan_obj)
+            return UnrealToolResult(
+                tool="unreal.validate_repair_plan",
+                success=is_valid,
+                data={"valid": is_valid, "step_count": len(plan_obj.steps)},
+                verified=True,
+                message=f"Plan validation passed with {len(plan_obj.steps)} steps.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.validate_repair_plan",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected repair plan: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.validate_repair_plan",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.PLAN_VALIDATION_FAILED.value,
+                message=f"Failed to validate repair plan: {e}",
+            )
+
+    def _tool_execute_repair_workflow(
+        self,
+        project_path: str = "",
+        workflow_type: str = "WORKFLOW_BUILD_FAILURE_REPAIR",
+        goal: str = "",
+        target_file: Optional[str] = None,
+        operation: Optional[str] = None,
+        replacement: Optional[str] = None,
+        expected_sha256: Optional[str] = None,
+        build_log: Optional[str] = None,
+        test_log: Optional[str] = None,
+        runtime_log: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.execute_repair_workflow: Executes end-to-end bounded repair workflow."""
+        try:
+            proj = project_path or str(DEFAULT_AUTHORIZED_PROJECT)
+            try:
+                wf_type = UnrealWorkflowType(workflow_type)
+            except ValueError:
+                wf_type = UnrealWorkflowType.CUSTOM
+
+            report = self.agent.execute_workflow(
+                workflow_type=wf_type,
+                target_project=proj,
+                goal=goal,
+                build_log=build_log,
+                test_log=test_log,
+                runtime_log=runtime_log,
+                target_file=target_file,
+                operation=operation,
+                replacement=replacement,
+                expected_sha256=expected_sha256,
+            )
+            return UnrealToolResult(
+                tool="unreal.execute_repair_workflow",
+                success=report.success,
+                data=report.to_dict(),
+                error=report.error,
+                error_code=report.failure_domain.value if not report.success else None,
+                verified=report.success,
+                message=f"Workflow {report.workflow_id} [{report.workflow_type.value}] finished with state {report.final_state.value}.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.execute_repair_workflow",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected workflow execution: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.execute_repair_workflow",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_OPERATION.value,
+                message=f"Failed to execute repair workflow: {e}",
+            )
+
+    def _tool_verify_repair_workflow(
+        self,
+        file_path: str = "",
+        expected_sha256: Optional[str] = None,
+        check_syntax: bool = True,
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.verify_repair_workflow: Verifies syntax and SHA-256 integrity of modified files."""
+        res = self._tool_verify_source_change(
+            file_path=file_path,
+            expected_sha256=expected_sha256,
+            check_syntax=check_syntax,
+            project_path=project_path,
+            **kwargs,
+        )
+        return UnrealToolResult(
+            tool="unreal.verify_repair_workflow",
+            success=res.success,
+            data=res.data,
+            error=res.error,
+            error_code=res.error_code,
+            verified=res.verified,
+            message=res.message,
+        )
+
+    def _tool_rollback_repair_workflow(
+        self,
+        backup_id: Optional[str] = None,
+        backup_path: Optional[str] = None,
+        target_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.rollback_repair_workflow: Rolls back modifications byte-for-byte using backup checkpoint."""
+        res = self._tool_rollback_cpp_change(
+            backup_id=backup_id,
+            backup_path=backup_path,
+            target_path=target_path,
+            **kwargs,
+        )
+        return UnrealToolResult(
+            tool="unreal.rollback_repair_workflow",
+            success=res.success,
+            data=res.data,
+            error=res.error,
+            error_code=res.error_code,
+            verified=res.verified,
+            message=res.message,
+        )
+
+    def _tool_stop_repair_workflow(
+        self,
+        workflow_id: str = "",
+        reason: str = "User requested stop",
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.stop_repair_workflow: Halts an active workflow and cleans up all owned processes."""
+        try:
+            success = self.agent.stop_workflow(workflow_id, reason)
+            return UnrealToolResult(
+                tool="unreal.stop_repair_workflow",
+                success=success,
+                data={"workflow_id": workflow_id, "stopped": True, "reason": reason},
+                verified=True,
+                message=f"Workflow {workflow_id} stopped: {reason}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.stop_repair_workflow",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_OPERATION.value,
+                message=f"Failed to stop repair workflow: {e}",
+            )
+
+    def _tool_get_workflow_status(
+        self,
+        workflow_id: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.get_workflow_status: Returns active workflow report or current agent state."""
+        try:
+            if workflow_id and workflow_id in self.agent._active_workflows:
+                report = self.agent._active_workflows[workflow_id]
+                return UnrealToolResult(
+                    tool="unreal.get_workflow_status",
+                    success=True,
+                    data=report.to_dict(),
+                    verified=True,
+                    message=f"Workflow {workflow_id} state: {report.final_state.value}",
+                )
+            else:
+                return UnrealToolResult(
+                    tool="unreal.get_workflow_status",
+                    success=True,
+                    data={
+                        "current_state": self.agent.current_state.value,
+                        "active_workflows_count": len(self.agent._active_workflows),
+                        "owned_processes_count": len(self.agent._owned_processes),
+                    },
+                    verified=True,
+                    message=f"Unreal Agent state: {self.agent.current_state.value}",
+                )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.get_workflow_status",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_OPERATION.value,
+                message=f"Failed to get workflow status: {e}",
             )
 
 
