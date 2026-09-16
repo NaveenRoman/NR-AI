@@ -141,6 +141,11 @@ class TestSuiteResult:
     cases: List[TestCaseResult] = field(default_factory=list)
     suites: List["TestSuiteResult"] = field(default_factory=list)
 
+    @property
+    def test_cases(self) -> List[TestCaseResult]:
+        """Alias for cases."""
+        return self.cases
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,

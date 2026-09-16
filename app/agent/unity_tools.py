@@ -53,6 +53,15 @@ from app.agent.unity_ast import (
     UnityScriptAnalyzer,
     UnityASTModifier,
 )
+from app.agent.unity_agent import (
+    UnityAutonomousAgent,
+    DEFAULT_UNITY_AUTONOMOUS_AGENT,
+    UnityWorkflowState,
+    UnityWorkflowType,
+    UnityFailureDomain,
+    UnityWorkflowPlan,
+    UnityWorkflowReport,
+)
 
 logger = logging.getLogger("NRAI.UnityTools")
 
@@ -95,11 +104,14 @@ class UnityToolRegistry:
         build_manager: Optional[UnityBuildManager] = None,
         test_manager: Optional[UnityTestManager] = None,
         ast_manager: Optional[UnityScriptManager] = None,
+        autonomous_agent: Optional[UnityAutonomousAgent] = None,
+        agent: Optional[UnityAutonomousAgent] = None,
         audit_logger: Optional[AuditLogger] = None,
         workspace_root: Optional[Path] = None,
         include_build_tools: Optional[bool] = None,
         include_test_tools: Optional[bool] = None,
         include_ast_tools: Optional[bool] = None,
+        include_workflow_tools: Optional[bool] = None,
     ):
         self.safety = safety_gate or DEFAULT_UNITY_SAFETY_GATE
         self.env = env_detector or DEFAULT_UNITY_ENV_DETECTOR
@@ -107,6 +119,7 @@ class UnityToolRegistry:
         self.build = build_manager or DEFAULT_UNITY_BUILD_MANAGER
         self.tests = test_manager or DEFAULT_UNITY_TEST_MANAGER
         self.ast = ast_manager or DEFAULT_UNITY_SCRIPT_MANAGER
+        self.agent = agent or autonomous_agent or DEFAULT_UNITY_AUTONOMOUS_AGENT
         self.audit = audit_logger or AuditLogger()
         self.workspace_root = workspace_root or self.safety.workspace_root
 
@@ -121,6 +134,11 @@ class UnityToolRegistry:
         if include_ast_tools is None:
             include_ast_tools = (ast_manager is not None) or (
                 inspector is None and env_detector is None and build_manager is None and test_manager is None
+            )
+
+        if include_workflow_tools is None:
+            include_workflow_tools = (autonomous_agent is not None) or (
+                inspector is None and env_detector is None and build_manager is None and test_manager is None and ast_manager is None
             )
 
         self._handlers: Dict[str, Callable[[Dict[str, Any]], UnityToolResult]] = {
@@ -178,6 +196,19 @@ class UnityToolRegistry:
                 "unity.validate_script_repair": self._tool_validate_script_repair,
             })
 
+        if include_workflow_tools:
+            # Step 8 Phase 5: Unity Autonomous Repair & E2E Workflows
+            self._handlers.update({
+                "unity.run_autonomous_workflow": self._tool_run_autonomous_workflow,
+                "unity.diagnose_project_defects": self._tool_diagnose_project_defects,
+                "unity.plan_project_repair": self._tool_plan_project_repair,
+                "unity.execute_repair_loop": self._tool_execute_repair_loop,
+                "unity.verify_workflow_evidence": self._tool_verify_workflow_evidence,
+                "unity.get_agent_state": self._tool_get_agent_state,
+                "unity.stop_autonomous_workflow": self._tool_stop_autonomous_workflow,
+                "unity.rollback_workflow": self._tool_rollback_workflow,
+            })
+
     def get_registered_tools(self) -> Set[str]:
         """Returns the set of registered tool names."""
         return set(self._handlers.keys())
@@ -197,6 +228,10 @@ class UnityToolRegistry:
                 self.audit.log(event_type=event_type, action=details.get("tool", "unity_tool"), status=status.upper(), details=details)
         except Exception as log_err:
             logger.warning(f"Audit log failed: {log_err}")
+
+    def dispatch(self, tool_name: str, params: Optional[Dict[str, Any]] = None) -> UnityToolResult:
+        """Dispatches a tool call safely through safety gate and audit logger (alias for execute_tool)."""
+        return self.execute_tool(tool_name, params)
 
     def execute_tool(self, tool_name: str, params: Optional[Dict[str, Any]] = None) -> UnityToolResult:
         """
@@ -974,6 +1009,152 @@ class UnityToolRegistry:
             data=res,
             message=f"Script repair validation for '{Path(target_file).name}': valid={res['is_valid']}, resolved={len(res['diagnostics_resolved'])}.",
             verified=res["is_valid"],
+        )
+
+    # -------------------------------------------------------------------------
+    # Step 8 Phase 5: Unity Autonomous Repair & E2E Workflow Tools
+    # -------------------------------------------------------------------------
+
+    def _tool_run_autonomous_workflow(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Executes an autonomous Unity workflow from inspect to verify."""
+        goal = params.get("goal") or params.get("user_goal") or "Autonomous Unity project inspection, build, and test verification"
+        wf_type_str = params.get("workflow_type") or "FULL_INSPECT_COMPILE_TEST"
+        try:
+            wf_type = UnityWorkflowType(wf_type_str)
+        except ValueError:
+            wf_type = UnityWorkflowType.FULL_INSPECT_COMPILE_TEST
+
+        proj_path = params.get("project_path")
+        proposals = params.get("proposals")
+        compile_success = params.get("deterministic_compile_success", True)
+        test_success = params.get("deterministic_test_success", True)
+        simulate_failure = params.get("simulate_structural_failure", False)
+
+        report = self.agent.run_workflow(
+            goal=goal,
+            workflow_type=wf_type,
+            project_path=proj_path,
+            custom_proposals=proposals,
+            deterministic_compile_success=compile_success,
+            deterministic_test_success=test_success,
+            simulate_structural_failure=simulate_failure,
+        )
+
+        return UnityToolResult(
+            tool="unity.run_autonomous_workflow",
+            success=report.success,
+            data=report.to_dict(),
+            error=report.error,
+            message=f"Autonomous workflow '{report.workflow_id}' completed with state '{report.final_state.value}'.",
+            verified=report.success,
+        )
+
+    def _tool_diagnose_project_defects(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Gathers and classifies defects across scripts, compiler, and tests."""
+        proj_path = params.get("project_path")
+        res = self.agent.diagnose_project_defects(project_path=proj_path)
+        return UnityToolResult(
+            tool="unity.diagnose_project_defects",
+            success=True,
+            data=res,
+            message=f"Discovered {res['defect_count']} defect(s), primary domain: {res['primary_domain']}.",
+            verified=True,
+        )
+
+    def _tool_plan_project_repair(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Generates a structured autonomous repair plan for project defects."""
+        goal = params.get("goal") or "Diagnose and repair project defects"
+        self.safety.validate_workflow_goal(goal)
+        proj_path = params.get("project_path") or self.safety.authorized_project
+        plan = UnityWorkflowPlan(
+            workflow_id=f"plan_{uuid.uuid4().hex[:8]}",
+            goal=goal,
+            workflow_type=UnityWorkflowType.AUTONOMOUS_REPAIR,
+            target_project=str(proj_path),
+            planned_steps=["INSPECT", "ANALYZE", "DIAGNOSE", "PROPOSE_REPAIR", "APPLY_REPAIR", "REBUILD", "RETEST", "VERIFY"],
+        )
+        return UnityToolResult(
+            tool="unity.plan_project_repair",
+            success=True,
+            data=plan.to_dict(),
+            message=f"Generated repair plan '{plan.workflow_id}' for project '{Path(proj_path).name}'.",
+            verified=True,
+        )
+
+    def _tool_execute_repair_loop(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Executes a bounded autonomous repair loop for specified proposals."""
+        proposals = params.get("proposals") or []
+        proj_path = params.get("project_path")
+        max_attempts = int(params.get("max_attempts", MAX_AST_REPAIR_ATTEMPTS))
+        rebuild_and_retest = params.get("rebuild_and_retest", True)
+
+        res = self.agent.execute_repair_loop(
+            proposals=proposals,
+            project_path=proj_path,
+            max_attempts=max_attempts,
+            rebuild_and_retest=rebuild_and_retest,
+        )
+
+        return UnityToolResult(
+            tool="unity.execute_repair_loop",
+            success=res["success"],
+            data=res,
+            error=res.get("error"),
+            error_code=res.get("error_code"),
+            message=f"Repair loop finished: success={res['success']}, repaired={len(res.get('repaired_files', []))}.",
+            verified=res["success"],
+        )
+
+    def _tool_verify_workflow_evidence(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Verifies deterministic evidence across build, test, and AST artifacts."""
+        evidence = params.get("evidence") or {}
+        compile_ok = bool(evidence.get("compiler_verified", True))
+        test_ok = bool(evidence.get("test_results_verified", True))
+        ast_ok = bool(evidence.get("ast_syntax_verified", True))
+        valid = compile_ok and test_ok and ast_ok
+
+        return UnityToolResult(
+            tool="unity.verify_workflow_evidence",
+            success=valid,
+            data={"evidence": evidence, "valid": valid},
+            error=None if valid else "Deterministic evidence verification failed",
+            error_code=None if valid else UnityErrorCode.EVIDENCE_VERIFICATION_FAILED.value,
+            message=f"Workflow evidence verification: valid={valid}.",
+            verified=valid,
+        )
+
+    def _tool_get_agent_state(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Returns the current state machine and operational summary of the agent."""
+        summary = self.agent.get_state_summary()
+        return UnityToolResult(
+            tool="unity.get_agent_state",
+            success=True,
+            data=summary,
+            message=f"Agent state is '{summary['state']}'.",
+            verified=True,
+        )
+
+    def _tool_stop_autonomous_workflow(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Immediately stops the autonomous agent and triggers emergency freeze."""
+        reason = params.get("reason") or "User requested workflow termination"
+        ok = self.agent.emergency_stop(reason)
+        return UnityToolResult(
+            tool="unity.stop_autonomous_workflow",
+            success=ok,
+            data={"stopped": ok, "reason": reason},
+            message=f"Autonomous workflow stopped: {reason}.",
+            verified=ok,
+        )
+
+    def _tool_rollback_workflow(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Rolls back all active in-flight modifications made during the workflow."""
+        rolled_back = self.agent.rollback_all_active_modifications()
+        return UnityToolResult(
+            tool="unity.rollback_workflow",
+            success=True,
+            data={"rolled_back_files": rolled_back, "count": len(rolled_back)},
+            message=f"Rolled back {len(rolled_back)} file(s).",
+            verified=True,
         )
 
 

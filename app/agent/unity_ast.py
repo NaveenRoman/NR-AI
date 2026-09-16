@@ -335,6 +335,14 @@ class CSharpSyntaxTree:
             all_t.extend(ns.types)
         return all_t
 
+    @property
+    def methods(self) -> List[CSharpMethodNode]:
+        """Returns all methods across all types in the syntax tree."""
+        all_m = []
+        for t in self.get_all_types():
+            all_m.extend(t.methods)
+        return all_m
+
     def get_all_symbols(self) -> List[Dict[str, Any]]:
         symbols = []
         for ns in self.namespaces:
@@ -396,6 +404,12 @@ class CSharpParser:
 
     def __init__(self):
         pass
+
+    def parse_file(self, file_path: Union[str, Path]) -> CSharpSyntaxTree:
+        """Parses C# source directly from a file path."""
+        p = Path(file_path)
+        source = p.read_text(encoding="utf-8", errors="replace")
+        return self.parse(source, file_path=str(p))
 
     def parse(self, source_text: str, file_path: Optional[Union[str, Path]] = None) -> CSharpSyntaxTree:
         """
@@ -1012,13 +1026,21 @@ class UnityScriptAnalyzer:
 
     def analyze_script(
         self,
-        source_text: str,
+        source_text: Union[str, Path],
         file_path: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Any]:
         """
         Performs comprehensive script analysis, producing bounded diagnostics.
+        Accepts raw C# source text or a file path.
         """
-        tree = self.parser.parse(source_text, file_path=file_path)
+        if isinstance(source_text, Path) or (isinstance(source_text, str) and "\n" not in source_text and Path(source_text).is_file()):
+            f_p = Path(source_text)
+            file_path = str(f_p)
+            actual_source = f_p.read_text(encoding="utf-8", errors="replace")
+        else:
+            actual_source = str(source_text)
+
+        tree = self.parser.parse(actual_source, file_path=file_path)
         diagnostics: List[CSharpSyntaxDefect] = list(tree.diagnostics)
 
         # 1. Unity compilation checks
@@ -1411,6 +1433,11 @@ class UnityScriptModificationResult:
     error_code: Optional[str] = None
     ast_valid: bool = False
 
+    @property
+    def backup_path(self) -> Optional[str]:
+        """Alias for checkpoint_path."""
+        return self.checkpoint_path
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "success": self.success,
@@ -1420,6 +1447,7 @@ class UnityScriptModificationResult:
             "patch_size_bytes": self.patch_size_bytes,
             "lines_changed": self.lines_changed,
             "checkpoint_path": self.checkpoint_path,
+            "backup_path": self.checkpoint_path,
             "rolled_back": self.rolled_back,
             "error": self.error,
             "error_code": self.error_code,

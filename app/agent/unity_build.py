@@ -51,13 +51,24 @@ DEFAULT_BUILD_TIMEOUT = 300.0
 @dataclass
 class UnityCompilerIssue:
     """Structured C# compiler error, warning, or Unity build issue."""
-    file: str
-    line: int
-    column: int
-    code: str
-    message: str
-    severity: str  # "error" or "warning"
+    file: str = ""
+    line: int = 1
+    column: int = 1
+    code: str = ""
+    message: str = ""
+    severity: str = "error"  # "error" or "warning"
     raw_line: str = ""
+    file_path: Optional[str] = None
+    error_code: Optional[str] = None
+    line_number: Optional[int] = None
+
+    def __post_init__(self):
+        if self.file_path and not self.file:
+            self.file = self.file_path
+        if self.error_code and not self.code:
+            self.code = self.error_code
+        if self.line_number and self.line == 1:
+            self.line = self.line_number
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -76,7 +87,7 @@ class CompilationResult:
     """Structured evidence of a Unity project compilation."""
     success: bool
     exit_code: int
-    duration_seconds: float
+    duration_seconds: float = 0.0
     errors: List[UnityCompilerIssue] = field(default_factory=list)
     warnings: List[UnityCompilerIssue] = field(default_factory=list)
     log_path: Optional[str] = None
@@ -92,6 +103,10 @@ class CompilationResult:
     @property
     def warning_count(self) -> int:
         return len(self.warnings)
+
+    @property
+    def error(self) -> Optional[str]:
+        return self.error_summary or (self.errors[0].message if self.errors else None)
 
     def to_dict(self) -> Dict[str, Any]:
         return {

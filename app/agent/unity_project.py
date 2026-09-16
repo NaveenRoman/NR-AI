@@ -69,6 +69,11 @@ class UnityProjectMetadata:
     def packages_count(self) -> int:
         return len(self.packages)
 
+    @property
+    def version(self) -> str:
+        """Alias for unity_version."""
+        return self.unity_version
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,

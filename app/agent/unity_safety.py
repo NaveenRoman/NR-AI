@@ -70,6 +70,11 @@ class UnityErrorCode(str, Enum):
     VERIFICATION_FAILED = "VERIFICATION_FAILED"
     AST_INTEGRITY_FAILED = "AST_INTEGRITY_FAILED"
     REPAIR_ATTEMPTS_EXCEEDED = "REPAIR_ATTEMPTS_EXCEEDED"
+    UNREPAIRABLE_FAILURE = "UNREPAIRABLE_FAILURE"
+    REPAIR_LOOP_EXHAUSTED = "REPAIR_LOOP_EXHAUSTED"
+    EVIDENCE_VERIFICATION_FAILED = "EVIDENCE_VERIFICATION_FAILED"
+    WORKFLOW_CANCELLED = "WORKFLOW_CANCELLED"
+    INVALID_PARAMETER = "INVALID_PARAMETER"
 
 
 class UnitySafetyError(Exception):
@@ -79,6 +84,10 @@ class UnitySafetyError(Exception):
         self.message = message
         self.details = details or {}
         super().__init__(f"[{code.value}] {message}")
+
+    @property
+    def error_code(self) -> UnityErrorCode:
+        return self.code
 
 
 class EmergencyStopActiveError(UnitySafetyError):
@@ -200,8 +209,24 @@ ALLOWED_UNITY_AST_TOOLS: Set[str] = {
     "unity.validate_script_repair",
 }
 
+ALLOWED_UNITY_WORKFLOW_TOOLS: Set[str] = {
+    # Step 8 Phase 5: Unity Autonomous Repair & E2E Workflows
+    "unity.run_autonomous_workflow",
+    "unity.diagnose_project_defects",
+    "unity.plan_project_repair",
+    "unity.execute_repair_loop",
+    "unity.verify_workflow_evidence",
+    "unity.get_agent_state",
+    "unity.stop_autonomous_workflow",
+    "unity.rollback_workflow",
+}
+
 ALL_ALLOWED_UNITY_TOOLS: Set[str] = (
-    ALLOWED_UNITY_TOOLS | ALLOWED_UNITY_BUILD_TOOLS | ALLOWED_UNITY_TEST_TOOLS | ALLOWED_UNITY_AST_TOOLS
+    ALLOWED_UNITY_TOOLS
+    | ALLOWED_UNITY_BUILD_TOOLS
+    | ALLOWED_UNITY_TEST_TOOLS
+    | ALLOWED_UNITY_AST_TOOLS
+    | ALLOWED_UNITY_WORKFLOW_TOOLS
 )
 
 ALLOWED_TEST_MODES: Set[str] = {
@@ -372,6 +397,10 @@ class UnitySafetyGate:
         with self._lock:
             return self._emergency_stop_active
 
+    def trigger_emergency_stop(self, reason: str = "Emergency stop activated") -> None:
+        """Alias for emergency_stop."""
+        self.emergency_stop(reason)
+
     def assert_not_stopped(self) -> None:
         """Raises EmergencyStopActiveError if emergency stop is currently active."""
         with self._lock:
@@ -379,6 +408,10 @@ class UnitySafetyGate:
                 raise EmergencyStopActiveError(
                     f"EMERGENCY STOP is active [{self._emergency_stop_reason}]. All Unity operations frozen."
                 )
+
+    def assert_not_emergency_stopped(self) -> None:
+        """Alias for assert_not_stopped."""
+        self.assert_not_stopped()
 
     def validate_tool_allowed(self, tool_name: str) -> None:
         """Verifies tool_name is present in approved Unity tool allowlists."""
@@ -712,6 +745,10 @@ class UnitySafetyGate:
         patch_size_bytes: int = 0,
         lines_changed: int = 0,
         attempts: int = 1,
+        file_count: Optional[int] = None,
+        patch_bytes: Optional[int] = None,
+        changed_lines: Optional[int] = None,
+        attempt_count: Optional[int] = None,
     ) -> None:
         """
         Enforces Phase 4 AST modification limits:
@@ -721,29 +758,33 @@ class UnitySafetyGate:
         - Max 2 repair attempts
         """
         self.assert_not_stopped()
-        if num_files > MAX_AST_FILES_PER_OP:
+        actual_files = file_count if file_count is not None else num_files
+        actual_bytes = patch_bytes if patch_bytes is not None else patch_size_bytes
+        actual_lines = changed_lines if changed_lines is not None else lines_changed
+        actual_attempts = attempt_count if attempt_count is not None else attempts
+        if actual_files > MAX_AST_FILES_PER_OP:
             raise UnitySafetyError(
                 UnityErrorCode.TOO_MANY_FILES_CHANGED,
-                f"Requested modification affects {num_files} files, exceeding limit of {MAX_AST_FILES_PER_OP}.",
-                {"num_files": num_files, "limit": MAX_AST_FILES_PER_OP},
+                f"Requested modification affects {actual_files} files, exceeding limit of {MAX_AST_FILES_PER_OP}.",
+                {"num_files": actual_files, "limit": MAX_AST_FILES_PER_OP},
             )
-        if patch_size_bytes > MAX_AST_PATCH_BYTES:
+        if actual_bytes > MAX_AST_PATCH_BYTES:
             raise UnitySafetyError(
                 UnityErrorCode.PATCH_TOO_LARGE,
-                f"Requested patch size {patch_size_bytes} bytes exceeds maximum limit of {MAX_AST_PATCH_BYTES} bytes (100 KB).",
-                {"patch_size_bytes": patch_size_bytes, "limit": MAX_AST_PATCH_BYTES},
+                f"Requested patch size {actual_bytes} bytes exceeds maximum limit of {MAX_AST_PATCH_BYTES} bytes (100 KB).",
+                {"patch_size_bytes": actual_bytes, "limit": MAX_AST_PATCH_BYTES},
             )
-        if lines_changed > MAX_AST_CHANGED_LINES:
+        if actual_lines > MAX_AST_CHANGED_LINES:
             raise UnitySafetyError(
                 UnityErrorCode.TOO_MANY_LINES_CHANGED,
-                f"Requested modification changes {lines_changed} lines, exceeding limit of {MAX_AST_CHANGED_LINES}.",
-                {"lines_changed": lines_changed, "limit": MAX_AST_CHANGED_LINES},
+                f"Requested modification changes {actual_lines} lines, exceeding limit of {MAX_AST_CHANGED_LINES}.",
+                {"lines_changed": actual_lines, "limit": MAX_AST_CHANGED_LINES},
             )
-        if attempts > MAX_AST_REPAIR_ATTEMPTS:
+        if actual_attempts > MAX_AST_REPAIR_ATTEMPTS:
             raise UnitySafetyError(
                 UnityErrorCode.REPAIR_ATTEMPTS_EXCEEDED,
-                f"Modification attempt count {attempts} exceeds maximum allowed attempts of {MAX_AST_REPAIR_ATTEMPTS}.",
-                {"attempts": attempts, "limit": MAX_AST_REPAIR_ATTEMPTS},
+                f"Modification attempt count {actual_attempts} exceeds maximum allowed attempts of {MAX_AST_REPAIR_ATTEMPTS}.",
+                {"attempts": actual_attempts, "limit": MAX_AST_REPAIR_ATTEMPTS},
             )
 
     def validate_script_file_target(
@@ -838,6 +879,28 @@ class UnitySafetyGate:
                 {"path": str(resolved), "current_sha256": current_hash, "expected_sha256": exp},
             )
         return True
+
+    def validate_workflow_goal(self, goal: str) -> str:
+        """Validates that a workflow goal string is non-empty and bounded."""
+        self.assert_not_emergency_stopped()
+        if not goal or not str(goal).strip():
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_PARAMETER,
+                "Workflow goal cannot be empty.",
+            )
+        g = str(goal).strip()
+        if len(g) > 2000:
+            raise UnitySafetyError(
+                UnityErrorCode.INVALID_PARAMETER,
+                f"Workflow goal exceeds 2000 characters ({len(g)} chars).",
+            )
+        return g
+
+    def validate_project_path(self, project_path: Path | str) -> Path:
+        """Validates that project_path is confined within authorized project or workspace boundaries."""
+        self.assert_not_stopped()
+        p = Path(project_path)
+        return self.validate_path(p, allow_read_only_workspace=True)
 
 
 # Global default instance
