@@ -68,6 +68,8 @@ class UnityErrorCode(str, Enum):
     REPAIR_UNSUPPORTED = "REPAIR_UNSUPPORTED"
     MALFORMED_PROPOSAL = "MALFORMED_PROPOSAL"
     VERIFICATION_FAILED = "VERIFICATION_FAILED"
+    AST_INTEGRITY_FAILED = "AST_INTEGRITY_FAILED"
+    REPAIR_ATTEMPTS_EXCEEDED = "REPAIR_ATTEMPTS_EXCEEDED"
 
 
 class UnitySafetyError(Exception):
@@ -186,8 +188,20 @@ ALLOWED_UNITY_TEST_TOOLS: Set[str] = {
     "unity.diagnose_test_failure",
 }
 
+ALLOWED_UNITY_AST_TOOLS: Set[str] = {
+    # Step 8 Phase 4: Unity C# Script Analysis & AST Modification
+    "unity.parse_script_ast",
+    "unity.analyze_script",
+    "unity.propose_ast_modification",
+    "unity.apply_ast_modification",
+    "unity.verify_ast_integrity",
+    "unity.rollback_script_modification",
+    "unity.get_script_symbols",
+    "unity.validate_script_repair",
+}
+
 ALL_ALLOWED_UNITY_TOOLS: Set[str] = (
-    ALLOWED_UNITY_TOOLS | ALLOWED_UNITY_BUILD_TOOLS | ALLOWED_UNITY_TEST_TOOLS
+    ALLOWED_UNITY_TOOLS | ALLOWED_UNITY_BUILD_TOOLS | ALLOWED_UNITY_TEST_TOOLS | ALLOWED_UNITY_AST_TOOLS
 )
 
 ALLOWED_TEST_MODES: Set[str] = {
@@ -266,6 +280,12 @@ BUILD_TIMEOUT_SECONDS: float = 300.0
 TEST_TIMEOUT_SECONDS: float = 180.0
 MAX_READ_LINES: int = 500
 MAX_SEARCH_RESULTS: int = 50
+
+# Step 8 Phase 4 AST Modification limits
+MAX_AST_FILES_PER_OP: int = 5
+MAX_AST_PATCH_BYTES: int = 100_000    # 100 KB total patch limit
+MAX_AST_CHANGED_LINES: int = 500      # 500 changed lines limit
+MAX_AST_REPAIR_ATTEMPTS: int = 2      # 2 repair attempts limit
 
 
 # -----------------------------------------------------------------------------
@@ -685,6 +705,139 @@ class UnitySafetyGate:
             )
 
         return resolved
+
+    def validate_ast_limits(
+        self,
+        num_files: int = 1,
+        patch_size_bytes: int = 0,
+        lines_changed: int = 0,
+        attempts: int = 1,
+    ) -> None:
+        """
+        Enforces Phase 4 AST modification limits:
+        - Max 5 files per operation
+        - Max 100 KB total patch
+        - Max 500 changed lines
+        - Max 2 repair attempts
+        """
+        self.assert_not_stopped()
+        if num_files > MAX_AST_FILES_PER_OP:
+            raise UnitySafetyError(
+                UnityErrorCode.TOO_MANY_FILES_CHANGED,
+                f"Requested modification affects {num_files} files, exceeding limit of {MAX_AST_FILES_PER_OP}.",
+                {"num_files": num_files, "limit": MAX_AST_FILES_PER_OP},
+            )
+        if patch_size_bytes > MAX_AST_PATCH_BYTES:
+            raise UnitySafetyError(
+                UnityErrorCode.PATCH_TOO_LARGE,
+                f"Requested patch size {patch_size_bytes} bytes exceeds maximum limit of {MAX_AST_PATCH_BYTES} bytes (100 KB).",
+                {"patch_size_bytes": patch_size_bytes, "limit": MAX_AST_PATCH_BYTES},
+            )
+        if lines_changed > MAX_AST_CHANGED_LINES:
+            raise UnitySafetyError(
+                UnityErrorCode.TOO_MANY_LINES_CHANGED,
+                f"Requested modification changes {lines_changed} lines, exceeding limit of {MAX_AST_CHANGED_LINES}.",
+                {"lines_changed": lines_changed, "limit": MAX_AST_CHANGED_LINES},
+            )
+        if attempts > MAX_AST_REPAIR_ATTEMPTS:
+            raise UnitySafetyError(
+                UnityErrorCode.REPAIR_ATTEMPTS_EXCEEDED,
+                f"Modification attempt count {attempts} exceeds maximum allowed attempts of {MAX_AST_REPAIR_ATTEMPTS}.",
+                {"attempts": attempts, "limit": MAX_AST_REPAIR_ATTEMPTS},
+            )
+
+    def validate_script_file_target(
+        self,
+        file_path: Path | str,
+        check_exists: bool = True,
+    ) -> Path:
+        """
+        Validates that target script file is authorized for AST analysis or modification.
+        Enforces:
+        - Emergency stop check
+        - No path traversal
+        - Workspace/authorized project confinement
+        - Must have .cs extension
+        - Not in protected files (ProjectVersion.txt, manifest.json)
+        - Not in protected directories (Library, Temp, obj, Logs, .git, .vs)
+        - File existence check if check_exists is True
+        """
+        self.assert_not_stopped()
+        raw_str = str(file_path)
+        if ".." in raw_str.replace("\\", "/").split("/"):
+            raise UnitySafetyError(
+                UnityErrorCode.PATH_TRAVERSAL_DETECTED,
+                f"Path traversal sequence '..' detected in script target: '{file_path}'.",
+                {"path": str(file_path)},
+            )
+
+        try:
+            resolved = Path(file_path).resolve()
+        except Exception as e:
+            raise UnitySafetyError(
+                UnityErrorCode.FILE_NOT_AUTHORIZED,
+                f"Invalid script filesystem path '{file_path}': {e}",
+            )
+
+        # Confinement check
+        self.validate_path(resolved, allow_read_only_workspace=True)
+
+        # Extension check
+        suffix = resolved.suffix.lower()
+        if suffix != ".cs":
+            raise UnitySafetyError(
+                UnityErrorCode.FILE_NOT_AUTHORIZED,
+                f"AST modification/analysis only applies to C# (.cs) files, received '{suffix}': {resolved.name}.",
+                {"path": str(resolved), "suffix": suffix},
+            )
+
+        # Protected file check
+        if resolved.name in PROTECTED_UNITY_FILES:
+            raise UnitySafetyError(
+                UnityErrorCode.PROTECTED_FILE_REJECTED,
+                f"Cannot modify or analyze protected project file '{resolved.name}'.",
+                {"path": str(resolved)},
+            )
+
+        # Protected directory check
+        for part in resolved.parts:
+            if part in PROTECTED_UNITY_DIRECTORIES:
+                raise UnitySafetyError(
+                    UnityErrorCode.PROTECTED_DIRECTORY_REJECTED,
+                    f"Script path '{resolved}' is inside protected directory '{part}'.",
+                    {"path": str(resolved), "directory": part},
+                )
+
+        if check_exists and not resolved.exists():
+            raise UnitySafetyError(
+                UnityErrorCode.SCRIPT_NOT_FOUND,
+                f"Target C# script file does not exist: '{resolved}'.",
+                {"path": str(resolved)},
+            )
+
+        return resolved
+
+    def validate_target_sha256(self, file_path: Path | str, expected_sha256: str) -> bool:
+        """
+        Verifies that the target file's current SHA-256 matches expected_sha256.
+        Raises UnitySafetyError(UnityErrorCode.STALE_TARGET) on mismatch.
+        """
+        resolved = Path(file_path).resolve()
+        if not resolved.exists():
+            raise UnitySafetyError(
+                UnityErrorCode.SCRIPT_NOT_FOUND,
+                f"Target file for hash verification not found: '{resolved}'.",
+            )
+        import hashlib
+        current_hash = hashlib.sha256(resolved.read_bytes()).hexdigest().lower()
+        exp = str(expected_sha256 or "").strip().lower()
+        if current_hash != exp:
+            raise UnitySafetyError(
+                UnityErrorCode.STALE_TARGET,
+                f"File SHA-256 mismatch for '{resolved.name}'. Current: {current_hash}, Expected: {exp}.",
+                {"path": str(resolved), "current_sha256": current_hash, "expected_sha256": exp},
+            )
+        return True
 
 
 # Global default instance

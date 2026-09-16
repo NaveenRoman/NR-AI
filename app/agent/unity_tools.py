@@ -11,12 +11,14 @@ import logging
 from pathlib import Path
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
+import uuid
 
 from app.memory.audit_logger import AuditLogger
 from app.agent.unity_safety import (
     ALLOWED_UNITY_TOOLS,
     ALLOWED_UNITY_BUILD_TOOLS,
     ALLOWED_UNITY_TEST_TOOLS,
+    ALLOWED_UNITY_AST_TOOLS,
     ALL_ALLOWED_UNITY_TOOLS,
     UnityErrorCode,
     UnitySafetyError,
@@ -41,6 +43,15 @@ from app.agent.unity_tests import (
     UnityTestManager,
     DEFAULT_UNITY_TEST_MANAGER,
     DEFAULT_TEST_TIMEOUT,
+)
+from app.agent.unity_ast import (
+    UnityScriptManager,
+    DEFAULT_UNITY_SCRIPT_MANAGER,
+    ASTModificationProposal,
+    ASTModificationType,
+    CSharpParser,
+    UnityScriptAnalyzer,
+    UnityASTModifier,
 )
 
 logger = logging.getLogger("NRAI.UnityTools")
@@ -83,16 +94,19 @@ class UnityToolRegistry:
         inspector: Optional[UnityProjectInspector] = None,
         build_manager: Optional[UnityBuildManager] = None,
         test_manager: Optional[UnityTestManager] = None,
+        ast_manager: Optional[UnityScriptManager] = None,
         audit_logger: Optional[AuditLogger] = None,
         workspace_root: Optional[Path] = None,
         include_build_tools: Optional[bool] = None,
         include_test_tools: Optional[bool] = None,
+        include_ast_tools: Optional[bool] = None,
     ):
         self.safety = safety_gate or DEFAULT_UNITY_SAFETY_GATE
         self.env = env_detector or DEFAULT_UNITY_ENV_DETECTOR
         self.inspector = inspector or DEFAULT_UNITY_PROJECT_INSPECTOR
         self.build = build_manager or DEFAULT_UNITY_BUILD_MANAGER
         self.tests = test_manager or DEFAULT_UNITY_TEST_MANAGER
+        self.ast = ast_manager or DEFAULT_UNITY_SCRIPT_MANAGER
         self.audit = audit_logger or AuditLogger()
         self.workspace_root = workspace_root or self.safety.workspace_root
 
@@ -102,6 +116,11 @@ class UnityToolRegistry:
         if include_test_tools is None:
             include_test_tools = (test_manager is not None) or (
                 inspector is None and env_detector is None and build_manager is None
+            )
+
+        if include_ast_tools is None:
+            include_ast_tools = (ast_manager is not None) or (
+                inspector is None and env_detector is None and build_manager is None and test_manager is None
             )
 
         self._handlers: Dict[str, Callable[[Dict[str, Any]], UnityToolResult]] = {
@@ -144,6 +163,19 @@ class UnityToolRegistry:
                 "unity.verify_test_artifact": self._tool_verify_test_artifact,
                 "unity.get_test_summary": self._tool_get_test_summary,
                 "unity.diagnose_test_failure": self._tool_diagnose_test_failure,
+            })
+
+        if include_ast_tools:
+            # Step 8 Phase 4: Unity C# Script Analysis & AST Modification
+            self._handlers.update({
+                "unity.parse_script_ast": self._tool_parse_script_ast,
+                "unity.analyze_script": self._tool_analyze_script,
+                "unity.propose_ast_modification": self._tool_propose_ast_modification,
+                "unity.apply_ast_modification": self._tool_apply_ast_modification,
+                "unity.verify_ast_integrity": self._tool_verify_ast_integrity,
+                "unity.rollback_script_modification": self._tool_rollback_script_modification,
+                "unity.get_script_symbols": self._tool_get_script_symbols,
+                "unity.validate_script_repair": self._tool_validate_script_repair,
             })
 
     def get_registered_tools(self) -> Set[str]:
@@ -711,6 +743,237 @@ class UnityToolRegistry:
             data=data,
             message=data["diagnostics"],
             verified=True,
+        )
+
+    # -------------------------------------------------------------------------
+    # Step 8 Phase 4: Script Analysis & AST Modification Tool Handlers
+    # -------------------------------------------------------------------------
+
+    def _tool_parse_script_ast(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Parses C# script into structured AST syntax tree."""
+        target_file = params.get("script_path") or params.get("path") or params.get("target_file")
+        if not target_file:
+            raise UnitySafetyError(UnityErrorCode.FILE_NOT_AUTHORIZED, "script_path or target_file is required.")
+        tree = self.ast.parse_script(target_file)
+        tree_dict = tree.to_dict()
+        types_count = len(tree.get_all_types())
+        return UnityToolResult(
+            tool="unity.parse_script_ast",
+            success=tree.is_valid,
+            data=tree_dict,
+            message=f"Parsed C# AST for '{Path(target_file).name}': {types_count} type(s), valid={tree.is_valid}.",
+            verified=tree.is_valid,
+        )
+
+    def _tool_analyze_script(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Analyzes C# script for syntax defects, compilation errors, and code smells."""
+        target_file = params.get("script_path") or params.get("path") or params.get("target_file")
+        if not target_file:
+            raise UnitySafetyError(UnityErrorCode.FILE_NOT_AUTHORIZED, "script_path or target_file is required.")
+        analysis = self.ast.analyze_script(target_file)
+        return UnityToolResult(
+            tool="unity.analyze_script",
+            success=True,
+            data=analysis,
+            message=f"Analyzed '{Path(target_file).name}': {analysis['error_count']} error(s), {analysis['warning_count']} warning(s).",
+            verified=True,
+        )
+
+    def _tool_propose_ast_modification(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Creates and validates a structured AST modification proposal."""
+        target_file = params.get("target_file") or params.get("script_path") or params.get("path")
+        exp_hash = params.get("expected_sha256") or params.get("target_sha256") or ""
+        mod_type = params.get("modification_type") or params.get("type")
+        target_type = params.get("target_type")
+        target_member = params.get("target_member")
+        new_content = params.get("new_node_content") or params.get("content") or params.get("replacement")
+        p_params = params.get("parameters") or {}
+        rationale = params.get("rationale") or params.get("reason") or ""
+        diagnostics = params.get("diagnostics_addressed") or []
+        attempts = int(params.get("attempt_count", 1))
+
+        if not target_file:
+            raise UnitySafetyError(UnityErrorCode.FILE_NOT_AUTHORIZED, "target_file is required.")
+        if not exp_hash:
+            raise UnitySafetyError(UnityErrorCode.MALFORMED_PROPOSAL, "expected_sha256 is required.")
+        if not mod_type:
+            raise UnitySafetyError(UnityErrorCode.MALFORMED_PROPOSAL, "modification_type is required.")
+
+        proposal = self.ast.propose_modification(
+            target_file=target_file,
+            expected_sha256=exp_hash,
+            modification_type=mod_type,
+            target_type=target_type,
+            target_member=target_member,
+            new_node_content=new_content,
+            parameters=p_params,
+            rationale=rationale,
+            diagnostics_addressed=diagnostics,
+            attempt_count=attempts,
+        )
+        return UnityToolResult(
+            tool="unity.propose_ast_modification",
+            success=True,
+            data=proposal.to_dict(),
+            message=f"Created AST proposal '{proposal.proposal_id}' ({proposal.modification_type.value}) for '{Path(target_file).name}'.",
+            verified=True,
+        )
+
+    def _tool_apply_ast_modification(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Applies a validated AST modification proposal with atomic backup and rollback."""
+        if "proposal" in params and isinstance(params["proposal"], dict):
+            p_dict = params["proposal"]
+            proposal = ASTModificationProposal(
+                proposal_id=p_dict.get("proposal_id", f"prop_{uuid.uuid4().hex[:8]}"),
+                target_file=p_dict["target_file"],
+                expected_sha256=p_dict["expected_sha256"],
+                modification_type=ASTModificationType(p_dict["modification_type"]),
+                target_type=p_dict.get("target_type"),
+                target_member=p_dict.get("target_member"),
+                new_node_content=p_dict.get("new_node_content"),
+                parameters=p_dict.get("parameters", {}),
+                rationale=p_dict.get("rationale", ""),
+                diagnostics_addressed=p_dict.get("diagnostics_addressed", []),
+                attempt_count=int(p_dict.get("attempt_count", 1)),
+            )
+        else:
+            target_file = params.get("target_file") or params.get("script_path") or params.get("path")
+            exp_hash = params.get("expected_sha256") or params.get("target_sha256") or ""
+            mod_type = params.get("modification_type") or params.get("type")
+            target_type = params.get("target_type")
+            target_member = params.get("target_member")
+            new_content = params.get("new_node_content") or params.get("content") or params.get("replacement")
+            p_params = params.get("parameters") or {}
+            rationale = params.get("rationale") or params.get("reason") or ""
+            diagnostics = params.get("diagnostics_addressed") or []
+            attempts = int(params.get("attempt_count", 1))
+
+            proposal = self.ast.propose_modification(
+                target_file=target_file,
+                expected_sha256=exp_hash,
+                modification_type=mod_type,
+                target_type=target_type,
+                target_member=target_member,
+                new_node_content=new_content,
+                parameters=p_params,
+                rationale=rationale,
+                diagnostics_addressed=diagnostics,
+                attempt_count=attempts,
+            )
+
+        validate_compile = params.get("validate_compile", True)
+        res = self.ast.apply_modification(proposal, validate_compile=validate_compile)
+        return UnityToolResult(
+            tool="unity.apply_ast_modification",
+            success=res.success,
+            data=res.to_dict(),
+            error=res.error,
+            error_code=res.error_code,
+            message=(
+                f"Successfully applied AST modification to '{Path(res.target_file).name}'."
+                if res.success
+                else f"AST modification failed and was rolled back: {res.error}"
+            ),
+            verified=res.success and res.ast_valid,
+        )
+
+    def _tool_verify_ast_integrity(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Verifies post-transformation AST syntax tree validity and structural integrity."""
+        target_file = params.get("script_path") or params.get("path") or params.get("target_file")
+        if not target_file:
+            raise UnitySafetyError(UnityErrorCode.FILE_NOT_AUTHORIZED, "target_file is required.")
+        exp_hash = params.get("expected_sha256")
+        if exp_hash:
+            self.safety.validate_target_sha256(target_file, exp_hash)
+
+        tree = self.ast.parse_script(target_file)
+        return UnityToolResult(
+            tool="unity.verify_ast_integrity",
+            success=tree.is_valid,
+            data={
+                "target_file": str(target_file),
+                "sha256": tree.sha256,
+                "is_valid": tree.is_valid,
+                "diagnostics": [d.to_dict() for d in tree.diagnostics],
+            },
+            error="AST contains syntax errors" if not tree.is_valid else None,
+            error_code=UnityErrorCode.AST_INTEGRITY_FAILED.value if not tree.is_valid else None,
+            message=f"AST integrity for '{Path(target_file).name}': valid={tree.is_valid}.",
+            verified=tree.is_valid,
+        )
+
+    def _tool_rollback_script_modification(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Restores a target file from its backup checkpoint and verifies post-rollback hash."""
+        target_file = params.get("target_file") or params.get("script_path")
+        checkpoint_path = params.get("checkpoint_path") or params.get("backup_path")
+        expected_sha = params.get("expected_original_sha256") or params.get("original_sha256")
+
+        if not target_file or not checkpoint_path or not expected_sha:
+            raise UnitySafetyError(
+                UnityErrorCode.MALFORMED_PROPOSAL,
+                "target_file, checkpoint_path, and expected_original_sha256 are required for rollback.",
+            )
+
+        ok = self.ast.rollback_modification(
+            target_file=target_file,
+            checkpoint_path=checkpoint_path,
+            expected_original_sha256=expected_sha,
+        )
+        return UnityToolResult(
+            tool="unity.rollback_script_modification",
+            success=ok,
+            data={"target_file": str(target_file), "restored_sha256": expected_sha},
+            message=f"Successfully rolled back '{Path(target_file).name}' to checkpoint.",
+            verified=ok,
+        )
+
+    def _tool_get_script_symbols(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Discovers C# symbols across an entire Unity project or a single script."""
+        script_path = params.get("script_path") or params.get("path")
+        project_path = params.get("project_path")
+
+        if script_path:
+            tree = self.ast.parse_script(script_path)
+            symbols = tree.get_all_symbols()
+            return UnityToolResult(
+                tool="unity.get_script_symbols",
+                success=True,
+                data={"script_path": str(script_path), "symbols": symbols, "count": len(symbols)},
+                message=f"Found {len(symbols)} symbol(s) in '{Path(script_path).name}'.",
+                verified=True,
+            )
+        elif project_path:
+            data = self.ast.get_project_symbols(project_path)
+            return UnityToolResult(
+                tool="unity.get_script_symbols",
+                success=True,
+                data=data,
+                message=f"Found symbols across {data['script_count']} script(s) in '{Path(project_path).name}'.",
+                verified=True,
+            )
+        else:
+            data = self.ast.get_project_symbols(self.safety.authorized_project)
+            return UnityToolResult(
+                tool="unity.get_script_symbols",
+                success=True,
+                data=data,
+                message=f"Found symbols across {data['script_count']} script(s) in authorized project.",
+                verified=True,
+            )
+
+    def _tool_validate_script_repair(self, params: Dict[str, Any]) -> UnityToolResult:
+        """Validates whether an applied repair resolved target diagnostics."""
+        target_file = params.get("target_file") or params.get("script_path")
+        if not target_file:
+            raise UnitySafetyError(UnityErrorCode.FILE_NOT_AUTHORIZED, "target_file is required.")
+        diagnostics = params.get("diagnostics_to_check") or params.get("diagnostics") or []
+        res = self.ast.validate_script_repair(target_file, diagnostics)
+        return UnityToolResult(
+            tool="unity.validate_script_repair",
+            success=res["is_valid"],
+            data=res,
+            message=f"Script repair validation for '{Path(target_file).name}': valid={res['is_valid']}, resolved={len(res['diagnostics_resolved'])}.",
+            verified=res["is_valid"],
         )
 
 
