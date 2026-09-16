@@ -185,7 +185,22 @@ ALLOWED_UNREAL_PHASE2_TOOLS: Set[str] = {
     "unreal.diagnose_build_failure",
 }
 
-ALL_ALLOWED_UNREAL_TOOLS: Set[str] = ALLOWED_UNREAL_PHASE1_TOOLS | ALLOWED_UNREAL_PHASE2_TOOLS
+ALLOWED_UNREAL_PHASE3_TOOLS: Set[str] = {
+    "unreal.validate_test_environment",
+    "unreal.validate_test_mode",
+    "unreal.run_test",
+    "unreal.capture_runtime_logs",
+    "unreal.parse_runtime_logs",
+    "unreal.detect_runtime_crashes",
+    "unreal.parse_test_results",
+    "unreal.verify_runtime_state",
+    "unreal.inspect_test_artifacts",
+    "unreal.diagnose_runtime_failure",
+}
+
+ALL_ALLOWED_UNREAL_TOOLS: Set[str] = (
+    ALLOWED_UNREAL_PHASE1_TOOLS | ALLOWED_UNREAL_PHASE2_TOOLS | ALLOWED_UNREAL_PHASE3_TOOLS
+)
 ALLOWED_UNREAL_TOOLS: Set[str] = ALL_ALLOWED_UNREAL_TOOLS
 
 # Supported Unreal Build Targets & Platforms
@@ -193,13 +208,27 @@ ALLOWED_UNREAL_CONFIGURATIONS: Set[str] = {"Development", "DebugGame", "Shipping
 ALLOWED_UNREAL_TARGET_TYPES: Set[str] = {"Editor", "Game"}
 ALLOWED_UNREAL_PLATFORMS: Set[str] = {"Win64"}
 
+# Supported Unreal Test Modes & Executable Classes
+ALLOWED_UNREAL_TEST_MODES: Set[str] = {"SmokeTest", "EditorTest", "Commandlet", "FunctionalTest", "Unit"}
+ALLOWED_UNREAL_TEST_PLATFORMS: Set[str] = {"Win64"}
+ALLOWED_UNREAL_TEST_CONFIGURATIONS: Set[str] = {"Development", "DebugGame", "Shipping"}
+ALLOWED_UNREAL_EXECUTABLE_NAMES: Set[str] = {
+    "UnrealEditor-Cmd.exe",
+    "UnrealEditor.exe",
+    "UnrealBuildTool.exe",
+    "RunUAT.bat",
+}
+
 # Timeout and operational limits
 BUILD_TIMEOUT_SECONDS: float = 300.0
 COMPILE_TIMEOUT_SECONDS: float = 120.0
+TEST_TIMEOUT_SECONDS: float = 180.0
 MAX_READ_LINES: int = 1000
 MAX_READ_BYTES: int = 500_000
 MAX_CAPTURED_OUTPUT_BYTES: int = 500_000
 MAX_FILE_SIZE_BYTES: int = 50_000_000
+MAX_TEST_LOG_BYTES: int = 500_000
+MAX_TEST_RESULT_BYTES: int = 10_000_000
 
 # Sensitive token patterns for automatic masking
 SENSITIVE_PATTERNS = [
@@ -267,6 +296,10 @@ class UnrealSafetyGate:
             self._emergency_stopped = False
             logger.info("[UnrealSafety] Emergency stop reset. Normal operations resumed.")
 
+    def clear_emergency_stop(self) -> None:
+        """Alias for reset_emergency_stop for API consistency."""
+        self.reset_emergency_stop()
+
     def is_emergency_stopped(self) -> bool:
         with self._stop_lock:
             return self._emergency_stopped
@@ -280,7 +313,7 @@ class UnrealSafetyGate:
     # Rate Limiting
     # -------------------------------------------------------------------------
 
-    def check_rate_limit(self) -> None:
+    def check_rate_limit(self, action: str = "") -> None:
         """Enforces sliding-window rate limiting on tool calls."""
         now = time.time()
         window_start = now - 60.0
@@ -495,6 +528,106 @@ class UnrealSafetyGate:
             )
 
         return target_name, target_type, configuration, platform
+
+    def validate_test_mode(self, test_mode: str) -> str:
+        """Validates that the test mode is explicitly allowed."""
+        if not test_mode or not isinstance(test_mode, str):
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_TEST_MODE,
+                "Test mode must be a non-empty string.",
+                {"test_mode": test_mode},
+            )
+        if test_mode not in ALLOWED_UNREAL_TEST_MODES:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_TEST_MODE,
+                f"Test mode '{test_mode}' is not allowed. Must be one of {sorted(list(ALLOWED_UNREAL_TEST_MODES))}",
+                {"test_mode": test_mode, "allowed": sorted(list(ALLOWED_UNREAL_TEST_MODES))},
+            )
+        return test_mode
+
+    def validate_test_filter(self, test_filter: Optional[str]) -> Optional[str]:
+        """Validates test filter string rejecting shell metacharacters and path traversal."""
+        if not test_filter:
+            return None
+        if not isinstance(test_filter, str):
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_TEST_FILTER,
+                "Test filter must be a string.",
+                {"test_filter": test_filter},
+            )
+        # Reject shell injection, command chaining, and file traversal characters
+        prohibited_chars = [";", "&", "|", "<", ">", "$", "`", "\n", "\r", "\\", "..", '"', "'"]
+        for char in prohibited_chars:
+            if char in test_filter:
+                raise UnrealSafetyError(
+                    UnrealErrorCode.INVALID_TEST_FILTER,
+                    f"Illegal character '{char}' in test filter: {test_filter}",
+                    {"test_filter": test_filter, "prohibited_character": char},
+                )
+        if not re.match(r"^[A-Za-z0-9_\.\*\+\-\:\/]+$", test_filter):
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_TEST_FILTER,
+                f"Test filter '{test_filter}' contains invalid characters. Must match safe identifier syntax.",
+                {"test_filter": test_filter},
+            )
+        return test_filter
+
+    def validate_test_output_path(self, output_path: Optional[Any], project_path: Optional[Path] = None) -> Optional[Path]:
+        """Validates that test output path is strictly within authorized workspace / project boundaries."""
+        if not output_path:
+            return None
+        out_p = Path(output_path).resolve() if not isinstance(output_path, Path) else output_path.resolve()
+
+        # Check path traversal in original string representation
+        if ".." in str(output_path):
+            raise UnrealSafetyError(
+                UnrealErrorCode.PATH_TRAVERSAL_DETECTED,
+                f"Path traversal ('..') detected in output path: {output_path}",
+                {"output_path": str(output_path)},
+            )
+
+        # Check workspace confinement
+        base_allowed = project_path.resolve() if project_path else self.workspace_root
+        if not (self._is_subpath(out_p, self.workspace_root) or (project_path and self._is_subpath(out_p, project_path))):
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_TEST_OUTPUT,
+                f"Output path '{out_p}' escapes authorized workspace boundary '{self.workspace_root}'",
+                {"output_path": str(out_p), "workspace_root": str(self.workspace_root)},
+            )
+        return out_p
+
+    def validate_test_parameters(
+        self,
+        test_mode: str = "SmokeTest",
+        test_filter: Optional[str] = None,
+        output_path: Optional[Any] = None,
+        configuration: str = "Development",
+        platform: str = "Win64",
+        project_path: Optional[Path] = None,
+    ) -> Tuple[str, Optional[str], Optional[Path], str, str]:
+        """Validates all test execution parameters against strict allowlists and boundaries."""
+        self.assert_not_emergency_stopped()
+        self.check_rate_limit("validate_test_parameters")
+
+        valid_mode = self.validate_test_mode(test_mode)
+        valid_filter = self.validate_test_filter(test_filter)
+        valid_out = self.validate_test_output_path(output_path, project_path=project_path)
+
+        if configuration not in ALLOWED_UNREAL_TEST_CONFIGURATIONS:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_BUILD_CONFIGURATION,
+                f"Test configuration '{configuration}' is not allowed. Must be one of {sorted(list(ALLOWED_UNREAL_TEST_CONFIGURATIONS))}",
+                {"configuration": configuration, "allowed": sorted(list(ALLOWED_UNREAL_TEST_CONFIGURATIONS))},
+            )
+
+        if platform not in ALLOWED_UNREAL_TEST_PLATFORMS:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_BUILD_PLATFORM,
+                f"Test platform '{platform}' is not allowed. Must be one of {sorted(list(ALLOWED_UNREAL_TEST_PLATFORMS))}",
+                {"platform": platform, "allowed": sorted(list(ALLOWED_UNREAL_TEST_PLATFORMS))},
+            )
+
+        return valid_mode, valid_filter, valid_out, configuration, platform
 
     @staticmethod
     def _is_subpath(child: Path, parent: Path) -> bool:

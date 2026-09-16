@@ -20,6 +20,11 @@ from app.agent.unreal_safety import (
     ALLOWED_UNREAL_CONFIGURATIONS,
     ALLOWED_UNREAL_TARGET_TYPES,
     ALLOWED_UNREAL_PLATFORMS,
+    ALLOWED_UNREAL_TEST_MODES,
+    ALLOWED_UNREAL_TEST_PLATFORMS,
+    ALLOWED_UNREAL_TEST_CONFIGURATIONS,
+    TEST_TIMEOUT_SECONDS,
+    MAX_TEST_LOG_BYTES,
     UnrealErrorCode,
     UnrealSafetyError,
     UnrealSafetyGate,
@@ -49,6 +54,26 @@ from app.agent.unreal_build import (
     DEFAULT_UNREAL_BUILD_VALIDATOR,
     DEFAULT_UNREAL_ARTIFACT_VERIFIER,
     DEFAULT_UNREAL_BUILD_RUNNER,
+)
+from app.agent.unreal_tests import (
+    UnrealTestEnvironmentValidator,
+    UnrealRuntimeLogParser,
+    UnrealTestReportParser,
+    UnrealTestRunner,
+    UnrealTestArtifactVerifier,
+    UnrealRuntimeResultVerifier,
+    UnrealTestExecutionResult,
+    UnrealRuntimeDiagnostic,
+    UnrealTestSummary,
+    UnrealTestCaseResult,
+    UnrealRuntimeIssueCategory,
+    UnrealRuntimeResultStatus,
+    DEFAULT_UNREAL_TEST_VALIDATOR,
+    DEFAULT_UNREAL_RUNTIME_PARSER,
+    DEFAULT_UNREAL_TEST_REPORT_PARSER,
+    DEFAULT_UNREAL_TEST_RUNNER,
+    DEFAULT_UNREAL_TEST_ARTIFACT_VERIFIER,
+    DEFAULT_UNREAL_RUNTIME_RESULT_VERIFIER,
 )
 
 logger = logging.getLogger("NRAI.UnrealTools")
@@ -95,6 +120,13 @@ class UnrealToolRegistry:
         build_validator: Optional[UnrealBuildEnvironmentValidator] = None,
         artifact_verifier: Optional[UnrealBuildArtifactVerifier] = None,
         include_build_tools: Optional[bool] = None,
+        test_runner: Optional[UnrealTestRunner] = None,
+        test_validator: Optional[UnrealTestEnvironmentValidator] = None,
+        test_artifact_verifier: Optional[UnrealTestArtifactVerifier] = None,
+        runtime_parser: Optional[UnrealRuntimeLogParser] = None,
+        report_parser: Optional[UnrealTestReportParser] = None,
+        runtime_verifier: Optional[UnrealRuntimeResultVerifier] = None,
+        include_test_tools: Optional[bool] = None,
     ):
         self.safety = safety_gate or DEFAULT_UNREAL_SAFETY_GATE
         self.env = env_detector or DEFAULT_UNREAL_ENV_DETECTOR
@@ -105,9 +137,22 @@ class UnrealToolRegistry:
         self.artifact_verifier = artifact_verifier or DEFAULT_UNREAL_ARTIFACT_VERIFIER
         self.runner = build_runner or DEFAULT_UNREAL_BUILD_RUNNER
 
+        self.test_validator = test_validator or DEFAULT_UNREAL_TEST_VALIDATOR
+        self.test_runner = test_runner or DEFAULT_UNREAL_TEST_RUNNER
+        self.test_artifact_verifier = test_artifact_verifier or DEFAULT_UNREAL_TEST_ARTIFACT_VERIFIER
+        self.runtime_parser = runtime_parser or DEFAULT_UNREAL_RUNTIME_PARSER
+        self.report_parser = report_parser or DEFAULT_UNREAL_TEST_REPORT_PARSER
+        self.runtime_verifier = runtime_verifier or DEFAULT_UNREAL_RUNTIME_RESULT_VERIFIER
+
         if include_build_tools is None:
             include_build_tools = (
                 (build_runner is not None or build_validator is not None or artifact_verifier is not None)
+                or (inspector is None and env_detector is None)
+            )
+
+        if include_test_tools is None:
+            include_test_tools = (
+                (test_runner is not None or test_validator is not None or test_artifact_verifier is not None)
                 or (inspector is None and env_detector is None)
             )
 
@@ -139,6 +184,21 @@ class UnrealToolRegistry:
                 "unreal.inspect_build_artifacts": self._tool_inspect_build_artifacts,
                 "unreal.get_supported_targets": self._tool_get_supported_targets,
                 "unreal.diagnose_build_failure": self._tool_diagnose_build_failure,
+            })
+
+        if include_test_tools:
+            # Step 9 Phase 3: Test & Runtime Intelligence Foundation
+            self._handlers.update({
+                "unreal.validate_test_environment": self._tool_validate_test_environment,
+                "unreal.validate_test_mode": self._tool_validate_test_mode,
+                "unreal.run_test": self._tool_run_test,
+                "unreal.capture_runtime_logs": self._tool_capture_runtime_logs,
+                "unreal.parse_runtime_logs": self._tool_parse_runtime_logs,
+                "unreal.detect_runtime_crashes": self._tool_detect_runtime_crashes,
+                "unreal.parse_test_results": self._tool_parse_test_results,
+                "unreal.verify_runtime_state": self._tool_verify_runtime_state,
+                "unreal.inspect_test_artifacts": self._tool_inspect_test_artifacts,
+                "unreal.diagnose_runtime_failure": self._tool_diagnose_runtime_failure,
             })
 
     def get_registered_tools(self) -> List[str]:
@@ -746,6 +806,307 @@ class UnrealToolRegistry:
             },
             verified=True,
             message=f"Diagnosed {len(diagnoses)} build issue(s).",
+        )
+
+    # -------------------------------------------------------------------------
+    # Step 9 Phase 3: Test & Runtime Intelligence Tool Handlers
+    # -------------------------------------------------------------------------
+
+    def _tool_validate_test_environment(self, project_path: str = "", **kwargs) -> UnrealToolResult:
+        """unreal.validate_test_environment: Deterministically validates pre-flight test environment prerequisites."""
+        target = project_path or str(self.safety.authorized_projects[0])
+        proj_dir = self.safety.validate_project_path(target)
+        val_result = self.test_validator.validate(proj_dir)
+        return UnrealToolResult(
+            tool="unreal.validate_test_environment",
+            success=val_result["status"] in ("READY", "PARTIALLY_READY"),
+            data=val_result,
+            verified=True,
+            message=val_result["message"],
+        )
+
+    def _tool_validate_test_mode(self, test_mode: str = "SmokeTest", **kwargs) -> UnrealToolResult:
+        """unreal.validate_test_mode: Validates whether a test mode is in the allowed test modes set."""
+        try:
+            valid_mode = self.safety.validate_test_mode(test_mode)
+            return UnrealToolResult(
+                tool="unreal.validate_test_mode",
+                success=True,
+                data={
+                    "test_mode": valid_mode,
+                    "allowed_modes": sorted(list(ALLOWED_UNREAL_TEST_MODES)),
+                },
+                verified=True,
+                message=f"Test mode '{valid_mode}' is valid and approved.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.validate_test_mode",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                data={"allowed_modes": sorted(list(ALLOWED_UNREAL_TEST_MODES))},
+                message=f"Invalid test mode: {se.message}",
+            )
+
+    def _tool_run_test(
+        self,
+        test_mode: str = "SmokeTest",
+        test_filter: str = "",
+        project_path: str = "",
+        output_path: str = "",
+        configuration: str = "Development",
+        platform: str = "Win64",
+        timeout_seconds: float = 180.0,
+        extra_flags: Optional[List[str]] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.run_test: Safely executes an Unreal test/runtime session using strictly shell=False."""
+        target = project_path or str(self.safety.authorized_projects[0])
+        proj_dir = self.safety.validate_project_path(target)
+        res = self.test_runner.run_test(
+            project_path=proj_dir,
+            test_mode=test_mode,
+            test_filter=test_filter if test_filter else None,
+            output_path=output_path if output_path else None,
+            configuration=configuration,
+            platform=platform,
+            timeout_seconds=timeout_seconds,
+            extra_flags=extra_flags,
+        )
+        return UnrealToolResult(
+            tool="unreal.run_test",
+            success=res.success,
+            data=res.to_dict(),
+            verified=res.verified,
+            error=res.error_message if not res.success else None,
+            message=f"Test execution status: {res.status.value}. Exit code: {res.exit_code}.",
+        )
+
+    def _tool_capture_runtime_logs(
+        self,
+        project_path: str = "",
+        max_lines: int = 1000,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.capture_runtime_logs: Bounded capture of the latest Unreal runtime logs from Saved/Logs."""
+        target = project_path or str(self.safety.authorized_projects[0])
+        proj_dir = self.safety.validate_project_path(target)
+        logs_dir = proj_dir / "Saved" / "Logs"
+
+        if not logs_dir.exists():
+            return UnrealToolResult(
+                tool="unreal.capture_runtime_logs",
+                success=True,
+                data={"logs": "", "lines_count": 0, "log_file": None},
+                verified=True,
+                message=f"No Saved/Logs directory found in '{proj_dir}'.",
+            )
+
+        log_files = sorted(logs_dir.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not log_files:
+            return UnrealToolResult(
+                tool="unreal.capture_runtime_logs",
+                success=True,
+                data={"logs": "", "lines_count": 0, "log_file": None},
+                verified=True,
+                message="No log files found in Saved/Logs.",
+            )
+
+        latest_log = log_files[0]
+        try:
+            with open(latest_log, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+            if len(lines) > max_lines:
+                lines = lines[-max_lines:]
+            content = "".join(lines)
+            if len(content) > MAX_TEST_LOG_BYTES:
+                content = content[:MAX_TEST_LOG_BYTES] + "\n... [LOG TRUNCATED BY SAFETY GATE]"
+            sanitized = redact_sensitive_data(content)
+            return UnrealToolResult(
+                tool="unreal.capture_runtime_logs",
+                success=True,
+                data={
+                    "logs": sanitized,
+                    "lines_count": len(lines),
+                    "log_file": str(latest_log),
+                },
+                verified=True,
+                message=f"Captured {len(lines)} line(s) from latest log '{latest_log.name}'.",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.capture_runtime_logs",
+                success=False,
+                error=str(e),
+                message=f"Failed to read log file: {e}",
+            )
+
+    def _tool_parse_runtime_logs(self, log_content: str = "", **kwargs) -> UnrealToolResult:
+        """unreal.parse_runtime_logs: Parses runtime log text across 22 categories into structured diagnostics."""
+        redacted = redact_sensitive_data(log_content)
+        parsed = self.runtime_parser.parse(redacted)
+        return UnrealToolResult(
+            tool="unreal.parse_runtime_logs",
+            success=True,
+            data=parsed,
+            verified=True,
+            message=parsed["summary"],
+        )
+
+    def _tool_detect_runtime_crashes(self, log_content: str = "", **kwargs) -> UnrealToolResult:
+        """unreal.detect_runtime_crashes: Extracts crashes, ensure failures, and assertion diagnostics."""
+        redacted = redact_sensitive_data(log_content)
+        crashes = self.runtime_parser.detect_crashes(redacted)
+        has_fatal = any(d.get("severity") in ("crash", "fatal") for d in crashes)
+        return UnrealToolResult(
+            tool="unreal.detect_runtime_crashes",
+            success=True,
+            data={
+                "crashes": crashes,
+                "count": len(crashes),
+                "has_fatal_crashes": has_fatal,
+            },
+            verified=True,
+            message=f"Detected {len(crashes)} crash/ensure/assertion event(s).",
+        )
+
+    def _tool_parse_test_results(
+        self,
+        stdout_content: str = "",
+        report_file: str = "",
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.parse_test_results: Parses test results from stdout or exported JSON reports."""
+        if report_file:
+            report_p = Path(report_file).resolve()
+            self.safety.validate_test_output_path(report_p)
+            cases, summary = self.report_parser.parse_json_report(report_p)
+        else:
+            cases, summary = self.report_parser.parse_stdout(stdout_content)
+
+        return UnrealToolResult(
+            tool="unreal.parse_test_results",
+            success=True,
+            data={
+                "summary": summary.to_dict(),
+                "cases": [c.to_dict() for c in cases],
+                "count": len(cases),
+            },
+            verified=True,
+            message=f"Parsed {len(cases)} test cases: {summary.passed} passed, {summary.failed} failed.",
+        )
+
+    def _tool_verify_runtime_state(
+        self,
+        status: str = "NOT_VERIFIED",
+        exit_code: int = 0,
+        tests_failed: int = 0,
+        has_crashes: bool = False,
+        model_claim_success: Optional[bool] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.verify_runtime_state: Evaluates runtime state against evidence precedence hierarchy."""
+        actual_success = (
+            not has_crashes
+            and exit_code == 0
+            and tests_failed == 0
+            and status in ("RUNTIME_SUCCEEDED", "TESTS_PASSED")
+        )
+
+        contradiction = False
+        rejection_reason = ""
+        if model_claim_success is not None:
+            if model_claim_success and not actual_success:
+                contradiction = True
+                rejection_reason = f"Model claim of success contradicts evidence: status={status}, exit_code={exit_code}, failed_tests={tests_failed}"
+            elif not model_claim_success and actual_success:
+                contradiction = True
+                rejection_reason = "Model claim of failure contradicts confirmed successful execution."
+
+        return UnrealToolResult(
+            tool="unreal.verify_runtime_state",
+            success=not contradiction,
+            data={
+                "actual_success": actual_success,
+                "status": status,
+                "contradiction_detected": contradiction,
+                "rejection_reason": rejection_reason,
+            },
+            verified=True,
+            message="Evidence verification complete: " + ("Evidence consistent." if not contradiction else rejection_reason),
+        )
+
+    def _tool_inspect_test_artifacts(
+        self,
+        project_path: str = "",
+        artifact_path: str = "",
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.inspect_test_artifacts: Inspects and SHA-256 hashes generated test/log artifacts."""
+        if artifact_path:
+            p = Path(artifact_path).resolve()
+            self.safety.validate_test_output_path(p)
+            art = self.test_artifact_verifier.verify_artifact(p)
+            artifacts = [art.to_dict()]
+        else:
+            target = project_path or str(self.safety.authorized_projects[0])
+            proj_dir = self.safety.validate_project_path(target)
+            scanned = self.test_artifact_verifier.scan_project_artifacts(proj_dir)
+            artifacts = [a.to_dict() for a in scanned]
+
+        return UnrealToolResult(
+            tool="unreal.inspect_test_artifacts",
+            success=True,
+            data={"artifacts": artifacts, "count": len(artifacts)},
+            verified=True,
+            message=f"Verified {len(artifacts)} test/log artifact(s).",
+        )
+
+    def _tool_diagnose_runtime_failure(self, log_content: str = "", **kwargs) -> UnrealToolResult:
+        """unreal.diagnose_runtime_failure: Formulates actionable root-cause recommendations for runtime errors."""
+        redacted = redact_sensitive_data(log_content)
+        parsed = self.runtime_parser.parse(redacted)
+        diagnoses = []
+        for diag in parsed["diagnostics"]:
+            cat = diag["category"]
+            rec = "Inspect runtime logs and check component initialization."
+            if cat == UnrealRuntimeIssueCategory.CRASH.value:
+                rec = "Address fatal crash or unhandled exception. Inspect callstack."
+            elif cat == UnrealRuntimeIssueCategory.ACCESS_VIOLATION.value:
+                rec = "Resolve null pointer dereference or invalid memory access (0xC0000005)."
+            elif cat == UnrealRuntimeIssueCategory.ENSURE_FAILURE.value:
+                rec = f"Investigate ensure condition failure: {diag['message']}."
+            elif cat == UnrealRuntimeIssueCategory.ASSERTION_FAILURE.value:
+                rec = f"Fix failing assertion check(): {diag['message']}."
+            elif cat == UnrealRuntimeIssueCategory.MISSING_ASSET.value:
+                rec = f"Verify asset file exists at referenced Content path: {diag['message']}."
+            elif cat == UnrealRuntimeIssueCategory.BLUEPRINT_RUNTIME_ERROR.value:
+                rec = f"Fix Blueprint runtime error: {diag['message']}. Check for Accessed None."
+            elif cat == UnrealRuntimeIssueCategory.PLUGIN_LOAD_FAILURE.value:
+                rec = f"Check plugin dependencies and descriptor syntax in Plugins/: {diag['message']}."
+            elif cat == UnrealRuntimeIssueCategory.RENDERER_INIT_FAILURE.value:
+                rec = "Use -nullrhi flag for headless execution or check GPU drivers."
+            elif cat == UnrealRuntimeIssueCategory.TIMEOUT.value:
+                rec = "Increase timeout threshold or investigate deadlocks."
+
+            diagnoses.append({
+                "category": cat,
+                "severity": diag["severity"],
+                "message": diag["message"],
+                "recommended_action": rec,
+            })
+
+        return UnrealToolResult(
+            tool="unreal.diagnose_runtime_failure",
+            success=True,
+            data={
+                "diagnoses": diagnoses,
+                "count": len(diagnoses),
+                "summary": parsed["summary"],
+            },
+            verified=True,
+            message=f"Diagnosed {len(diagnoses)} runtime issue(s).",
         )
 
 

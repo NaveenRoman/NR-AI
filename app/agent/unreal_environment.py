@@ -320,6 +320,10 @@ class UnrealEnvironmentDetector:
         instances.sort(key=lambda x: (x.version_major, x.version_minor, x.version_patch), reverse=True)
         return instances
 
+    def detect_installed_engines(self) -> List[UnrealEngineInstance]:
+        """Alias for detect_engines for API consistency."""
+        return self.detect_engines()
+
     def _scan_registry_for_engines(self, found_dirs: Set[Path]) -> None:
         """Queries Windows registry for registered Unreal Engine installations."""
         try:
