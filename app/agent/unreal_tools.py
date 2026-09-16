@@ -17,6 +17,9 @@ from app.memory.audit_logger import AuditLogger
 from app.agent.unreal_safety import (
     ALLOWED_UNREAL_TOOLS,
     ALL_ALLOWED_UNREAL_TOOLS,
+    ALLOWED_UNREAL_CONFIGURATIONS,
+    ALLOWED_UNREAL_TARGET_TYPES,
+    ALLOWED_UNREAL_PLATFORMS,
     UnrealErrorCode,
     UnrealSafetyError,
     UnrealSafetyGate,
@@ -30,6 +33,22 @@ from app.agent.unreal_environment import (
 from app.agent.unreal_project import (
     UnrealProjectInspector,
     DEFAULT_UNREAL_PROJECT_INSPECTOR,
+)
+from app.agent.unreal_build import (
+    UnrealBuildEnvironmentValidator,
+    UnrealBuildArtifactVerifier,
+    UnrealBuildRunner,
+    UnrealBuildResultVerifier,
+    UnrealBuildLogParser,
+    UnrealBuildResult,
+    UnrealBuildTargetInfo,
+    UnrealBuildDiagnostic,
+    UnrealBuildIssueCategory,
+    UnrealBuildEnvironmentStatus,
+    UnrealBuildResultStatus,
+    DEFAULT_UNREAL_BUILD_VALIDATOR,
+    DEFAULT_UNREAL_ARTIFACT_VERIFIER,
+    DEFAULT_UNREAL_BUILD_RUNNER,
 )
 
 logger = logging.getLogger("NRAI.UnrealTools")
@@ -72,12 +91,25 @@ class UnrealToolRegistry:
         inspector: Optional[UnrealProjectInspector] = None,
         audit_logger: Optional[AuditLogger] = None,
         workspace_root: Optional[Path] = None,
+        build_runner: Optional[UnrealBuildRunner] = None,
+        build_validator: Optional[UnrealBuildEnvironmentValidator] = None,
+        artifact_verifier: Optional[UnrealBuildArtifactVerifier] = None,
+        include_build_tools: Optional[bool] = None,
     ):
         self.safety = safety_gate or DEFAULT_UNREAL_SAFETY_GATE
         self.env = env_detector or DEFAULT_UNREAL_ENV_DETECTOR
         self.inspector = inspector or DEFAULT_UNREAL_PROJECT_INSPECTOR
         self.audit = audit_logger or AuditLogger()
         self.workspace_root = workspace_root or self.safety.workspace_root
+        self.build_validator = build_validator or DEFAULT_UNREAL_BUILD_VALIDATOR
+        self.artifact_verifier = artifact_verifier or DEFAULT_UNREAL_ARTIFACT_VERIFIER
+        self.runner = build_runner or DEFAULT_UNREAL_BUILD_RUNNER
+
+        if include_build_tools is None:
+            include_build_tools = (
+                (build_runner is not None or build_validator is not None or artifact_verifier is not None)
+                or (inspector is None and env_detector is None)
+            )
 
         # Handler dispatch map
         self._handlers: Dict[str, Callable[..., UnrealToolResult]] = {
@@ -95,6 +127,19 @@ class UnrealToolRegistry:
             "unreal.list_assets": self._tool_list_assets,
             "unreal.read_source_file": self._tool_read_source_file,
         }
+
+        if include_build_tools:
+            # Step 9 Phase 2: Compilation & Build Foundation
+            self._handlers.update({
+                "unreal.validate_build_environment": self._tool_validate_build_environment,
+                "unreal.validate_build_target": self._tool_validate_build_target,
+                "unreal.build_project": self._tool_build_project,
+                "unreal.parse_build_diagnostics": self._tool_parse_build_diagnostics,
+                "unreal.verify_build_result": self._tool_verify_build_result,
+                "unreal.inspect_build_artifacts": self._tool_inspect_build_artifacts,
+                "unreal.get_supported_targets": self._tool_get_supported_targets,
+                "unreal.diagnose_build_failure": self._tool_diagnose_build_failure,
+            })
 
     def get_registered_tools(self) -> List[str]:
         """Returns sorted list of all approved, registered Unreal developer tools."""
@@ -446,6 +491,261 @@ class UnrealToolRegistry:
             data=read_res,
             verified=True,
             message=f"Successfully read {read_res['lines_read']} lines from {read_res['relative_path']}.",
+        )
+
+    # -------------------------------------------------------------------------
+    # Tool Handlers (Phase 2: Compilation & Build Foundation)
+    # -------------------------------------------------------------------------
+
+    def _tool_validate_build_environment(self, project_path: str = "", **kwargs) -> UnrealToolResult:
+        """unreal.validate_build_environment: Validates host engine, UBT, .NET runtime, and project prerequisites."""
+        target = project_path or str(self.safety.authorized_projects[0])
+        res = self.build_validator.validate_build_environment(target)
+        return UnrealToolResult(
+            tool="unreal.validate_build_environment",
+            success=True,
+            data=res,
+            verified=True,
+            message=f"Build environment status: {res['status']}. {res['summary']}",
+        )
+
+    def _tool_validate_build_target(
+        self,
+        project_path: str = "",
+        target_name: str = "",
+        target_type: str = "Editor",
+        configuration: str = "Development",
+        platform: str = "Win64",
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.validate_build_target: Validates build target name, configuration, and platform allowlists."""
+        target = project_path or str(self.safety.authorized_projects[0])
+        t_name, t_type, config, plat = self.safety.validate_build_target(
+            target, target_name, target_type, configuration, platform
+        )
+        target_info = UnrealBuildTargetInfo(target_name=t_name, target_type=t_type, configuration=config, platform=plat)
+        return UnrealToolResult(
+            tool="unreal.validate_build_target",
+            success=True,
+            data=target_info.to_dict(),
+            verified=True,
+            message=f"Target '{t_name}' ({t_type}, {config}, {plat}) is valid and approved.",
+        )
+
+    def _tool_build_project(
+        self,
+        project_path: str = "",
+        target_name: Optional[str] = None,
+        target_type: str = "Editor",
+        configuration: str = "Development",
+        platform: str = "Win64",
+        timeout_seconds: float = 300.0,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.build_project: Safe, bounded execution of Unreal project compilation via UnrealBuildTool."""
+        target = project_path or str(self.safety.authorized_projects[0])
+        build_res = self.runner.build_project(
+            project_path=target,
+            target_name=target_name,
+            target_type=target_type,
+            configuration=configuration,
+            platform=platform,
+            timeout_seconds=timeout_seconds,
+        )
+        return UnrealToolResult(
+            tool="unreal.build_project",
+            success=build_res.success,
+            data=build_res.to_dict(),
+            error=build_res.error_summary if not build_res.success else None,
+            error_code=build_res.status.value if not build_res.success else None,
+            verified=build_res.verified,
+            message=f"Build finished with status {build_res.status.value} (exit_code={build_res.exit_code}, errors={build_res.error_count}, warnings={build_res.warning_count}).",
+        )
+
+    def _tool_parse_build_diagnostics(self, log_content: str = "", **kwargs) -> UnrealToolResult:
+        """unreal.parse_build_diagnostics: Parses raw build log into structured diagnostics across 17 categories."""
+        redacted = redact_sensitive_data(log_content)
+        parsed = UnrealBuildLogParser.parse_log(redacted)
+        return UnrealToolResult(
+            tool="unreal.parse_build_diagnostics",
+            success=True,
+            data={
+                "errors": [e.to_dict() for e in parsed["errors"]],
+                "warnings": [w.to_dict() for w in parsed["warnings"]],
+                "error_count": parsed["error_count"],
+                "warning_count": parsed["warning_count"],
+                "summary": parsed["summary"],
+            },
+            verified=True,
+            message=f"Parsed {parsed['error_count']} error(s) and {parsed['warning_count']} warning(s).",
+        )
+
+    def _tool_verify_build_result(
+        self,
+        build_result: Optional[Dict[str, Any]] = None,
+        model_claim_success: Optional[bool] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.verify_build_result: Applies strict evidence precedence to verify build outcomes against model claims."""
+        if not build_result:
+            return UnrealToolResult(
+                tool="unreal.verify_build_result",
+                success=False,
+                error="build_result dictionary is required.",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+            )
+
+        status_str = build_result.get("status", UnrealBuildResultStatus.BUILD_FAILED.value)
+        try:
+            status_enum = UnrealBuildResultStatus(status_str)
+        except ValueError:
+            status_enum = UnrealBuildResultStatus.BUILD_FAILED
+
+        errors_reconstructed = []
+        for e in build_result.get("errors", []):
+            cat_str = e.get("category", UnrealBuildIssueCategory.UNKNOWN_BUILD_FAILURE.value)
+            try:
+                cat_enum = UnrealBuildIssueCategory(cat_str)
+            except ValueError:
+                cat_enum = UnrealBuildIssueCategory.UNKNOWN_BUILD_FAILURE
+            errors_reconstructed.append(
+                UnrealBuildDiagnostic(
+                    category=cat_enum,
+                    severity=e.get("severity", "error"),
+                    file=e.get("file", ""),
+                    line=e.get("line", 1),
+                    column=e.get("column", 1),
+                    code=e.get("code", ""),
+                    message=e.get("message", ""),
+                    source_evidence=e.get("source_evidence", ""),
+                    raw_line=e.get("raw_line", ""),
+                    confidence=e.get("confidence", 1.0),
+                )
+            )
+
+        artifacts_reconstructed = [
+            UnrealBuildArtifactInfo(
+                name=a.get("name", ""),
+                path=a.get("path", ""),
+                size_bytes=a.get("size_bytes", 0),
+                sha256=a.get("sha256", ""),
+                is_file=a.get("is_file", True),
+                exists=a.get("exists", True),
+            )
+            for a in build_result.get("artifacts", [])
+        ]
+
+        res_obj = UnrealBuildResult(
+            success=build_result.get("success", False),
+            status=status_enum,
+            exit_code=build_result.get("exit_code", -1),
+            duration_seconds=build_result.get("duration_seconds", 0.0),
+            target_name=build_result.get("target_name", ""),
+            configuration=build_result.get("configuration", "Development"),
+            platform=build_result.get("platform", "Win64"),
+            errors=errors_reconstructed,
+            warnings=[],
+            artifacts=artifacts_reconstructed,
+            verified=build_result.get("verified", False),
+        )
+
+        verification = UnrealBuildResultVerifier.verify(res_obj, model_claim_success=model_claim_success)
+        return UnrealToolResult(
+            tool="unreal.verify_build_result",
+            success=True,
+            data=verification,
+            verified=True,
+            message=f"Verified build status: {verification['status']} (evidence precedence enforced).",
+        )
+
+    def _tool_inspect_build_artifacts(
+        self,
+        project_path: str = "",
+        target_name: str = "",
+        configuration: str = "Development",
+        platform: str = "Win64",
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.inspect_build_artifacts: Bounded discovery and verification of artifacts in Binaries/Win64 with SHA-256."""
+        target = project_path or str(self.safety.authorized_projects[0])
+        t_name = target_name or Path(target).name
+        artifacts = self.artifact_verifier.verify_artifacts(target, t_name, configuration, platform)
+        return UnrealToolResult(
+            tool="unreal.inspect_build_artifacts",
+            success=True,
+            data={"artifacts": [a.to_dict() for a in artifacts], "count": len(artifacts)},
+            verified=True,
+            message=f"Found {len(artifacts)} build artifact(s) in Binaries/{platform}.",
+        )
+
+    def _tool_get_supported_targets(self, project_path: str = "", **kwargs) -> UnrealToolResult:
+        """unreal.get_supported_targets: Lists project targets, allowed configurations, and platforms."""
+        target = project_path or str(self.safety.authorized_projects[0])
+        proj_dir = self.safety.validate_project_path(target)
+        targets_found: List[Dict[str, Any]] = []
+        source_dir = proj_dir / "Source"
+        if source_dir.is_dir():
+            for t_file in source_dir.glob("*.Target.cs"):
+                name = t_file.name.replace(".Target.cs", "")
+                t_type = "Editor" if "Editor" in name else "Game"
+                targets_found.append({
+                    "name": name,
+                    "type": t_type,
+                    "target_file": str(t_file),
+                })
+        return UnrealToolResult(
+            tool="unreal.get_supported_targets",
+            success=True,
+            data={
+                "targets": targets_found,
+                "allowed_configurations": sorted(list(ALLOWED_UNREAL_CONFIGURATIONS)),
+                "allowed_target_types": sorted(list(ALLOWED_UNREAL_TARGET_TYPES)),
+                "allowed_platforms": sorted(list(ALLOWED_UNREAL_PLATFORMS)),
+            },
+            verified=True,
+            message=f"Discovered {len(targets_found)} target(s) for project.",
+        )
+
+    def _tool_diagnose_build_failure(self, log_content: str = "", **kwargs) -> UnrealToolResult:
+        """unreal.diagnose_build_failure: Provides diagnostic categorization and root-cause analysis for build errors."""
+        redacted = redact_sensitive_data(log_content)
+        parsed = UnrealBuildLogParser.parse_log(redacted)
+        diagnoses = []
+        for err in parsed["errors"]:
+            rec = "Check compiler logs and file syntax."
+            if err.category == UnrealBuildIssueCategory.DOTNET_RUNTIME_MISSING:
+                rec = "Install the required host .NET desktop runtime (10.0.7) to allow UnrealBuildTool to execute."
+            elif err.category == UnrealBuildIssueCategory.MISSING_HEADER:
+                rec = f"Verify header file '{err.source_evidence}' exists and is added to PublicIncludePaths in .Build.cs."
+            elif err.category == UnrealBuildIssueCategory.CPP_COMPILE_ERROR:
+                rec = f"Resolve C++ compilation error {err.code} at line {err.line} in {err.file}."
+            elif err.category == UnrealBuildIssueCategory.LINKER_ERROR:
+                rec = f"Resolve linker symbol error {err.code}. Check module dependencies in .Build.cs."
+            elif err.category == UnrealBuildIssueCategory.UHT_ERROR:
+                rec = f"Fix UHT reflection macro usage in {err.file}. Ensure GENERATED_BODY() is present and macros are well-formed."
+            elif err.category == UnrealBuildIssueCategory.BUILD_CS_ERROR:
+                rec = f"Fix C# syntax/reference error in build rules file {err.file}."
+            elif err.category == UnrealBuildIssueCategory.TARGET_CS_ERROR:
+                rec = f"Fix C# syntax/reference error in target rules file {err.file}."
+            diagnoses.append({
+                "category": err.category.value,
+                "file": err.file,
+                "line": err.line,
+                "code": err.code,
+                "message": err.message,
+                "recommended_action": rec,
+            })
+        return UnrealToolResult(
+            tool="unreal.diagnose_build_failure",
+            success=True,
+            data={
+                "diagnoses": diagnoses,
+                "count": len(diagnoses),
+                "primary_category": diagnoses[0]["category"] if diagnoses else "NO_ERRORS",
+                "summary": parsed["summary"],
+            },
+            verified=True,
+            message=f"Diagnosed {len(diagnoses)} build issue(s).",
         )
 
 

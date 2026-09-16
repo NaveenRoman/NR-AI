@@ -56,8 +56,12 @@ class UnrealErrorCode(str, Enum):
     TEST_TIMEOUT = "TEST_TIMEOUT"
     STALE_TARGET = "STALE_TARGET"
     INVALID_BUILD_TARGET = "INVALID_BUILD_TARGET"
+    INVALID_BUILD_CONFIGURATION = "INVALID_BUILD_CONFIGURATION"
+    INVALID_BUILD_PLATFORM = "INVALID_BUILD_PLATFORM"
     INVALID_BUILD_OUTPUT = "INVALID_BUILD_OUTPUT"
     BUILD_ARTIFACT_MISSING = "BUILD_ARTIFACT_MISSING"
+    DOTNET_RUNTIME_MISSING = "DOTNET_RUNTIME_MISSING"
+    BUILD_ENVIRONMENT_FAILURE = "BUILD_ENVIRONMENT_FAILURE"
     INVALID_TEST_MODE = "INVALID_TEST_MODE"
     INVALID_TEST_FILTER = "INVALID_TEST_FILTER"
     INVALID_TEST_OUTPUT = "INVALID_TEST_OUTPUT"
@@ -170,13 +174,31 @@ ALLOWED_UNREAL_PHASE1_TOOLS: Set[str] = {
     "unreal.read_source_file",
 }
 
-ALLOWED_UNREAL_TOOLS: Set[str] = ALLOWED_UNREAL_PHASE1_TOOLS
-ALL_ALLOWED_UNREAL_TOOLS: Set[str] = ALLOWED_UNREAL_PHASE1_TOOLS
+ALLOWED_UNREAL_PHASE2_TOOLS: Set[str] = {
+    "unreal.validate_build_environment",
+    "unreal.validate_build_target",
+    "unreal.build_project",
+    "unreal.parse_build_diagnostics",
+    "unreal.verify_build_result",
+    "unreal.inspect_build_artifacts",
+    "unreal.get_supported_targets",
+    "unreal.diagnose_build_failure",
+}
 
-# File size & operational limits
+ALL_ALLOWED_UNREAL_TOOLS: Set[str] = ALLOWED_UNREAL_PHASE1_TOOLS | ALLOWED_UNREAL_PHASE2_TOOLS
+ALLOWED_UNREAL_TOOLS: Set[str] = ALL_ALLOWED_UNREAL_TOOLS
+
+# Supported Unreal Build Targets & Platforms
+ALLOWED_UNREAL_CONFIGURATIONS: Set[str] = {"Development", "DebugGame", "Shipping"}
+ALLOWED_UNREAL_TARGET_TYPES: Set[str] = {"Editor", "Game"}
+ALLOWED_UNREAL_PLATFORMS: Set[str] = {"Win64"}
+
+# Timeout and operational limits
+BUILD_TIMEOUT_SECONDS: float = 300.0
+COMPILE_TIMEOUT_SECONDS: float = 120.0
 MAX_READ_LINES: int = 1000
 MAX_READ_BYTES: int = 500_000
-MAX_CAPTURED_OUTPUT_BYTES: int = 100_000
+MAX_CAPTURED_OUTPUT_BYTES: int = 500_000
 MAX_FILE_SIZE_BYTES: int = 50_000_000
 
 # Sensitive token patterns for automatic masking
@@ -409,6 +431,70 @@ class UnrealSafetyGate:
                 )
 
         return resolved
+
+    def validate_build_target(
+        self,
+        project_path: str | Path,
+        target_name: str,
+        target_type: str = "Editor",
+        configuration: str = "Development",
+        platform: str = "Win64",
+    ) -> Tuple[str, str, str, str]:
+        """
+        Validates that requested build parameters are safe, conform to allowlists,
+        and do not contain command injection or path traversal tokens.
+        Returns normalized (target_name, target_type, configuration, platform).
+        """
+        self.assert_not_emergency_stopped()
+        self.validate_project_path(project_path)
+
+        if not target_name or not isinstance(target_name, str):
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_BUILD_TARGET,
+                "Build target name must be a non-empty string.",
+                {"target_name": target_name},
+            )
+
+        # Prohibit shell injection, command chaining, and path traversal characters
+        prohibited_chars = [";", "&", "|", "<", ">", "$", "`", "\n", "\r", "\\", "/", "..", '"', "'"]
+        for char in prohibited_chars:
+            if char in target_name:
+                raise UnrealSafetyError(
+                    UnrealErrorCode.INVALID_BUILD_TARGET,
+                    f"Illegal character '{char}' in build target name: {target_name}",
+                    {"target_name": target_name, "prohibited_character": char},
+                )
+
+        # Target name alphanumeric/underscore validation
+        if not re.match(r"^[A-Za-z0-9_]+$", target_name):
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_BUILD_TARGET,
+                f"Target name '{target_name}' contains invalid characters. Must be alphanumeric or underscore.",
+                {"target_name": target_name},
+            )
+
+        if target_type not in ALLOWED_UNREAL_TARGET_TYPES:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_BUILD_TARGET,
+                f"Target type '{target_type}' is not allowed. Must be one of {sorted(list(ALLOWED_UNREAL_TARGET_TYPES))}",
+                {"target_type": target_type, "allowed": sorted(list(ALLOWED_UNREAL_TARGET_TYPES))},
+            )
+
+        if configuration not in ALLOWED_UNREAL_CONFIGURATIONS:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_BUILD_CONFIGURATION,
+                f"Build configuration '{configuration}' is not allowed. Must be one of {sorted(list(ALLOWED_UNREAL_CONFIGURATIONS))}",
+                {"configuration": configuration, "allowed": sorted(list(ALLOWED_UNREAL_CONFIGURATIONS))},
+            )
+
+        if platform not in ALLOWED_UNREAL_PLATFORMS:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_BUILD_PLATFORM,
+                f"Build platform '{platform}' is not allowed. Must be one of {sorted(list(ALLOWED_UNREAL_PLATFORMS))}",
+                {"platform": platform, "allowed": sorted(list(ALLOWED_UNREAL_PLATFORMS))},
+            )
+
+        return target_name, target_type, configuration, platform
 
     @staticmethod
     def _is_subpath(child: Path, parent: Path) -> bool:
