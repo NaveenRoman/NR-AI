@@ -1,0 +1,15 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "TestPlugin",
+    "Description": "Deterministic Test Plugin",
+    "Category": "Testing",
+    "Modules": [
+        {
+            "Name": "TestPlugin",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ]
+}

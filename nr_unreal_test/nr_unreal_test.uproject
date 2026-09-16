@@ -1,0 +1,19 @@
+{
+    "FileVersion": 3,
+    "EngineAssociation": "5.8",
+    "Category": "",
+    "Description": "NR-AI Deterministic Unreal Test Project Fixture",
+    "Modules": [
+        {
+            "Name": "nr_unreal_test",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ],
+    "Plugins": [
+        {
+            "Name": "TestPlugin",
+            "Enabled": true
+        }
+    ]
+}
