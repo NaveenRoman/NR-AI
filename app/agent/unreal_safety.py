@@ -19,7 +19,7 @@ from pathlib import Path
 import re
 import threading
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 logger = logging.getLogger("NRAI.UnrealSafety")
 
@@ -81,6 +81,19 @@ class UnrealErrorCode(str, Enum):
     EVIDENCE_VERIFICATION_FAILED = "EVIDENCE_VERIFICATION_FAILED"
     WORKFLOW_CANCELLED = "WORKFLOW_CANCELLED"
     INVALID_PARAMETER = "INVALID_PARAMETER"
+    FILE_NOT_FOUND = "FILE_NOT_FOUND"
+    TARGET_NOT_FOUND = "TARGET_NOT_FOUND"
+    SYMBOL_NOT_FOUND = "SYMBOL_NOT_FOUND"
+    AMBIGUOUS_TARGET = "AMBIGUOUS_TARGET"
+    INVALID_OPERATION = "INVALID_OPERATION"
+    INVALID_PROPOSAL = "INVALID_PROPOSAL"
+    PROHIBITED_TOKEN = "PROHIBITED_TOKEN"
+    SENSITIVE_CONTENT = "SENSITIVE_CONTENT"
+    STRUCTURE_VALIDATION_FAILED = "STRUCTURE_VALIDATION_FAILED"
+    WRITE_FAILED = "WRITE_FAILED"
+    ATOMIC_REPLACE_FAILED = "ATOMIC_REPLACE_FAILED"
+    HASH_VERIFICATION_FAILED = "HASH_VERIFICATION_FAILED"
+    MODEL_PROPOSAL_REJECTED = "MODEL_PROPOSAL_REJECTED"
 
 
 class UnrealSafetyError(Exception):
@@ -198,10 +211,68 @@ ALLOWED_UNREAL_PHASE3_TOOLS: Set[str] = {
     "unreal.diagnose_runtime_failure",
 }
 
+ALLOWED_UNREAL_PHASE4_TOOLS: Set[str] = {
+    "unreal.inspect_cpp_source",
+    "unreal.list_cpp_symbols",
+    "unreal.inspect_cpp_class",
+    "unreal.inspect_cpp_method",
+    "unreal.find_cpp_symbol",
+    "unreal.inspect_reflection_metadata",
+    "unreal.inspect_inheritance",
+    "unreal.list_blueprint_assets",
+    "unreal.inspect_blueprint_metadata",
+    "unreal.validate_cpp_change",
+    "unreal.propose_cpp_change",
+    "unreal.apply_cpp_change",
+    "unreal.rollback_cpp_change",
+    "unreal.verify_source_change",
+}
+
 ALL_ALLOWED_UNREAL_TOOLS: Set[str] = (
-    ALLOWED_UNREAL_PHASE1_TOOLS | ALLOWED_UNREAL_PHASE2_TOOLS | ALLOWED_UNREAL_PHASE3_TOOLS
+    ALLOWED_UNREAL_PHASE1_TOOLS
+    | ALLOWED_UNREAL_PHASE2_TOOLS
+    | ALLOWED_UNREAL_PHASE3_TOOLS
+    | ALLOWED_UNREAL_PHASE4_TOOLS
 )
 ALLOWED_UNREAL_TOOLS: Set[str] = ALL_ALLOWED_UNREAL_TOOLS
+
+# Supported Unreal Source Extensions & Modification Limits
+ALLOWED_UNREAL_SOURCE_EXTENSIONS: Set[str] = {".h", ".hpp", ".cpp", ".inl"}
+ALLOWED_UNREAL_MODIFICATION_OPERATIONS: Set[str] = {
+    "ADD_INCLUDE",
+    "REMOVE_INCLUDE",
+    "ADD_METHOD",
+    "REPLACE_METHOD_BODY",
+    "REPLACE_SOURCE_RANGE",
+    "ADD_MEMBER_PROPERTY",
+    "ADD_ENUM_ENTRY",
+}
+MAX_SOURCE_FILE_BYTES: int = 1_000_000
+MAX_PATCH_BYTES: int = 100_000
+MAX_CHANGED_LINES: int = 500
+MAX_FILES_PER_OPERATION: int = 5
+MAX_REPAIR_ATTEMPTS: int = 2
+
+# Prohibited tokens in source proposals to prevent code execution injection
+PROHIBITED_SOURCE_TOKENS: Set[str] = {
+    "cmd.exe",
+    "powershell",
+    "pwsh",
+    "bash",
+    "sh",
+    "/bin/sh",
+    "subprocess",
+    "os.system",
+    "eval(",
+    "exec(",
+    "__import__",
+    "Invoke-Expression",
+    "rundll32",
+    "certutil",
+    "nc.exe",
+    "curl",
+    "wget",
+}
 
 # Supported Unreal Build Targets & Platforms
 ALLOWED_UNREAL_CONFIGURATIONS: Set[str] = {"Development", "DebugGame", "Shipping"}
@@ -628,6 +699,214 @@ class UnrealSafetyGate:
             )
 
         return valid_mode, valid_filter, valid_out, configuration, platform
+
+    @property
+    def default_project(self) -> Path:
+        return self.authorized_projects[0] if self.authorized_projects else self.workspace_root
+
+    def validate_source_file_path(
+        self,
+        path: Union[str, Path],
+        project_path: Optional[Union[str, Path]] = None,
+        must_exist: bool = False,
+    ) -> Path:
+        """
+        Validates that a C++ source/header file path is authorized and within bounds.
+        """
+        self.assert_not_emergency_stopped()
+        self.check_rate_limit("validate_source_file_path")
+
+        if not path:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_PARAMETER,
+                "Source file path cannot be empty.",
+            )
+
+        raw_str = str(path).replace("\\", "/")
+
+        # Check path traversal
+        if ".." in raw_str:
+            raise UnrealSafetyError(
+                UnrealErrorCode.PATH_TRAVERSAL_DETECTED,
+                f"Path traversal detected in source path: {path}",
+                {"path": raw_str},
+            )
+
+        if raw_str.startswith("//") or raw_str.startswith("\\\\"):
+            raise UnrealSafetyError(
+                UnrealErrorCode.UNC_PATH_REJECTED,
+                f"UNC paths are prohibited: {path}",
+                {"path": raw_str},
+            )
+
+        p = Path(path).resolve()
+
+        # Check workspace confinement
+        allowed_bases = [Path(project_path).resolve()] if project_path else self.authorized_projects
+        is_in_ws = self._is_subpath(p, self.workspace_root)
+        is_in_proj = any(self._is_subpath(p, b) for b in allowed_bases)
+        if not (is_in_ws or is_in_proj):
+            raise UnrealSafetyError(
+                UnrealErrorCode.FILE_NOT_AUTHORIZED,
+                f"Source path '{p}' is outside authorized boundaries.",
+                {"path": str(p), "workspace_root": str(self.workspace_root)},
+            )
+
+        # Check protected files/directories before extension check
+        if p.name in PROTECTED_UNREAL_FILES or p.suffix.lower() in {".uproject", ".uplugin"}:
+            raise UnrealSafetyError(
+                UnrealErrorCode.PROTECTED_FILE_REJECTED,
+                f"File '{p.name}' is a protected file and cannot be modified or accessed.",
+                {"file": p.name},
+            )
+
+        for part in p.parts:
+            if part in PROTECTED_UNREAL_DIRECTORIES:
+                raise UnrealSafetyError(
+                    UnrealErrorCode.PROTECTED_FILE_REJECTED,
+                    f"Directory '{part}' is protected.",
+                    {"part": part, "path": str(p)},
+                )
+
+        # Check extension
+        ext = p.suffix.lower()
+        if ext not in ALLOWED_UNREAL_SOURCE_EXTENSIONS:
+            raise UnrealSafetyError(
+                UnrealErrorCode.FILE_NOT_AUTHORIZED,
+                f"File extension '{ext}' is not an authorized C++ source extension. Allowed: {sorted(list(ALLOWED_UNREAL_SOURCE_EXTENSIONS))}",
+                {"extension": ext, "allowed": sorted(list(ALLOWED_UNREAL_SOURCE_EXTENSIONS))},
+            )
+
+        # Check file existence and size limits
+        if p.is_file():
+            if p.stat().st_size > MAX_SOURCE_FILE_BYTES:
+                raise UnrealSafetyError(
+                    UnrealErrorCode.FILE_TOO_LARGE,
+                    f"Source file size ({p.stat().st_size} bytes) exceeds maximum limit of {MAX_SOURCE_FILE_BYTES} bytes.",
+                    {"file_size": p.stat().st_size, "max_bytes": MAX_SOURCE_FILE_BYTES},
+                )
+        elif must_exist:
+            raise UnrealSafetyError(
+                UnrealErrorCode.FILE_NOT_FOUND,
+                f"Target source file does not exist: {p}",
+                {"path": str(p)},
+            )
+
+        return p
+
+    def validate_patch_content(self, patch_content: str) -> None:
+        """
+        Validates patch content bounds, prohibited tokens, and structural safety.
+        """
+        self.assert_not_emergency_stopped()
+        self.check_rate_limit("validate_patch_content")
+
+        if patch_content is None:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_PARAMETER,
+                "Patch content cannot be None.",
+            )
+
+        byte_size = len(patch_content.encode("utf-8"))
+        if byte_size > MAX_PATCH_BYTES:
+            raise UnrealSafetyError(
+                UnrealErrorCode.PATCH_TOO_LARGE,
+                f"Patch size ({byte_size} bytes) exceeds maximum allowable patch limit ({MAX_PATCH_BYTES} bytes).",
+                {"byte_size": byte_size, "max_bytes": MAX_PATCH_BYTES},
+            )
+
+        line_count = len(patch_content.splitlines())
+        if line_count > MAX_CHANGED_LINES:
+            raise UnrealSafetyError(
+                UnrealErrorCode.TOO_MANY_LINES_CHANGED,
+                f"Patch line count ({line_count} lines) exceeds maximum limit of {MAX_CHANGED_LINES} lines.",
+                {"line_count": line_count, "max_lines": MAX_CHANGED_LINES},
+            )
+
+        # Prohibited tokens check
+        lower_content = patch_content.lower()
+        for token in PROHIBITED_SOURCE_TOKENS:
+            if token.lower() in lower_content:
+                raise UnrealSafetyError(
+                    UnrealErrorCode.PROHIBITED_TOKEN,
+                    f"Prohibited execution token detected in modification content: '{token}'",
+                    {"prohibited_token": token},
+                )
+
+    def validate_proposal_payload(
+        self,
+        proposal: Dict[str, Any],
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> None:
+        """
+        Validates a structured modification proposal against the schema.
+        """
+        self.assert_not_emergency_stopped()
+        self.check_rate_limit("validate_proposal_payload")
+
+        if not isinstance(proposal, dict):
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_PROPOSAL,
+                "Proposal must be a JSON/dict object.",
+            )
+
+        version = proposal.get("proposal_version")
+        if version is not None and version != "1.0":
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_PROPOSAL,
+                f"Unsupported proposal_version '{version}'. Only version '1.0' is supported.",
+                {"proposal_version": version},
+            )
+
+        # Operation check
+        op = str(proposal.get("operation", ""))
+        if not op:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_PROPOSAL,
+                "Missing required proposal field: 'operation'",
+                {"missing_field": "operation"},
+            )
+        if op not in ALLOWED_UNREAL_MODIFICATION_OPERATIONS:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_OPERATION,
+                f"Unsupported modification operation '{op}'. Allowed: {sorted(list(ALLOWED_UNREAL_MODIFICATION_OPERATIONS))}",
+                {"operation": op, "allowed": sorted(list(ALLOWED_UNREAL_MODIFICATION_OPERATIONS))},
+            )
+
+        # Target file check
+        target_f = proposal.get("target_file") or proposal.get("file_path")
+        if not target_f:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_PROPOSAL,
+                "Missing required proposal field: 'target_file'",
+                {"missing_field": "target_file"},
+            )
+
+        # Expected SHA check
+        if "expected_sha256" not in proposal or proposal["expected_sha256"] is None:
+            raise UnrealSafetyError(
+                UnrealErrorCode.INVALID_PROPOSAL,
+                "Missing required proposal field: 'expected_sha256'",
+                {"missing_field": "expected_sha256"},
+            )
+
+        # Validate target file path
+        self.validate_source_file_path(target_f, project_path=project_path, must_exist=False)
+
+        # Validate replacement content
+        rep = str(proposal.get("replacement") if proposal.get("replacement") is not None else proposal.get("content", ""))
+        self.validate_patch_content(rep)
+
+        # Check for command/shell injection words in metadata fields
+        for fld in ["operation", "rationale"]:
+            val = str(proposal.get(fld, "")).lower()
+            for dangerous in ["cmd.exe", "powershell", "subprocess", "os.system", "/bin/sh", "bash -c"]:
+                if dangerous in val:
+                    raise UnrealSafetyError(
+                        UnrealErrorCode.PROHIBITED_TOKEN,
+                        f"Prohibited command token '{dangerous}' in proposal field '{fld}'",
+                        {"field": fld, "token": dangerous},
+                    )
 
     @staticmethod
     def _is_subpath(child: Path, parent: Path) -> bool:

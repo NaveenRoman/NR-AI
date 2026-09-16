@@ -551,12 +551,22 @@ Results: Passed: 2, Failed: 1, Total: 3"""
         self.assertTrue(res.verified)
 
     def test_35_duplicate_tool_name_detection(self):
-        """Test 35: Verify exactly 30 tools and 0 duplicates exist across the full tool registry."""
-        registry = DEFAULT_UNREAL_TOOL_REGISTRY
+        """Test 35: Verify exactly 30 tools and 0 duplicates exist across the Phase 3 tool registry."""
+        registry = UnrealToolRegistry(
+            safety_gate=self.safety,
+            include_build_tools=True,
+            include_test_tools=True,
+            include_source_tools=False,
+        )
         tools = registry.get_registered_tools()
         self.assertEqual(len(tools), 30, f"Expected exactly 30 tools, got {len(tools)}: {tools}")
         duplicates = [t for t in tools if tools.count(t) > 1]
         self.assertEqual(duplicates, [], f"Duplicate tools detected: {duplicates}")
+
+        # Also verify default registry has zero duplicates
+        default_tools = DEFAULT_UNREAL_TOOL_REGISTRY.get_registered_tools()
+        default_dups = [t for t in default_tools if default_tools.count(t) > 1]
+        self.assertEqual(default_dups, [], f"Duplicate tools in default registry: {default_dups}")
 
     def test_36_fixture_integrity_and_serialization(self):
         """Test 36: Data models serialize cleanly to JSON/dict and fixture is valid."""

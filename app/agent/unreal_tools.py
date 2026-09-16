@@ -6,7 +6,9 @@ Enforces strict allowlists, parameter validation, rate limiting, and audit loggi
 """
 
 from dataclasses import dataclass, field
+import hashlib
 import json
+import os
 import logging
 from pathlib import Path
 import time
@@ -54,6 +56,20 @@ from app.agent.unreal_build import (
     DEFAULT_UNREAL_BUILD_VALIDATOR,
     DEFAULT_UNREAL_ARTIFACT_VERIFIER,
     DEFAULT_UNREAL_BUILD_RUNNER,
+)
+from app.agent.unreal_source import (
+    UnrealCppAnalyzer,
+    UnrealBlueprintInspector,
+    UnrealSourceModifier,
+    UnrealModificationProposal,
+    UnrealModificationBackup,
+    UnrealModificationResult,
+    UnrealCppFileAnalysis,
+    UnrealClassSymbol,
+    UnrealMethodSymbol,
+    DEFAULT_UNREAL_CPP_ANALYZER,
+    DEFAULT_UNREAL_BP_INSPECTOR,
+    DEFAULT_UNREAL_SOURCE_MODIFIER,
 )
 from app.agent.unreal_tests import (
     UnrealTestEnvironmentValidator,
@@ -127,6 +143,10 @@ class UnrealToolRegistry:
         report_parser: Optional[UnrealTestReportParser] = None,
         runtime_verifier: Optional[UnrealRuntimeResultVerifier] = None,
         include_test_tools: Optional[bool] = None,
+        cpp_analyzer: Optional[UnrealCppAnalyzer] = None,
+        bp_inspector: Optional[UnrealBlueprintInspector] = None,
+        source_modifier: Optional[UnrealSourceModifier] = None,
+        include_source_tools: Optional[bool] = None,
     ):
         self.safety = safety_gate or DEFAULT_UNREAL_SAFETY_GATE
         self.env = env_detector or DEFAULT_UNREAL_ENV_DETECTOR
@@ -150,9 +170,19 @@ class UnrealToolRegistry:
                 or (inspector is None and env_detector is None)
             )
 
+        self.cpp_analyzer = cpp_analyzer or DEFAULT_UNREAL_CPP_ANALYZER
+        self.bp_inspector = bp_inspector or DEFAULT_UNREAL_BP_INSPECTOR
+        self.source_modifier = source_modifier or DEFAULT_UNREAL_SOURCE_MODIFIER
+
         if include_test_tools is None:
             include_test_tools = (
                 (test_runner is not None or test_validator is not None or test_artifact_verifier is not None)
+                or (inspector is None and env_detector is None)
+            )
+
+        if include_source_tools is None:
+            include_source_tools = (
+                (cpp_analyzer is not None or bp_inspector is not None or source_modifier is not None)
                 or (inspector is None and env_detector is None)
             )
 
@@ -199,6 +229,25 @@ class UnrealToolRegistry:
                 "unreal.verify_runtime_state": self._tool_verify_runtime_state,
                 "unreal.inspect_test_artifacts": self._tool_inspect_test_artifacts,
                 "unreal.diagnose_runtime_failure": self._tool_diagnose_runtime_failure,
+            })
+
+        if include_source_tools:
+            # Step 9 Phase 4: C++ / Blueprint Intelligence & Safe Modification Foundation
+            self._handlers.update({
+                "unreal.inspect_cpp_source": self._tool_inspect_cpp_source,
+                "unreal.list_cpp_symbols": self._tool_list_cpp_symbols,
+                "unreal.inspect_cpp_class": self._tool_inspect_cpp_class,
+                "unreal.inspect_cpp_method": self._tool_inspect_cpp_method,
+                "unreal.find_cpp_symbol": self._tool_find_cpp_symbol,
+                "unreal.inspect_reflection_metadata": self._tool_inspect_reflection_metadata,
+                "unreal.inspect_inheritance": self._tool_inspect_inheritance,
+                "unreal.list_blueprint_assets": self._tool_list_blueprint_assets,
+                "unreal.inspect_blueprint_metadata": self._tool_inspect_blueprint_metadata,
+                "unreal.validate_cpp_change": self._tool_validate_cpp_change,
+                "unreal.propose_cpp_change": self._tool_propose_cpp_change,
+                "unreal.apply_cpp_change": self._tool_apply_cpp_change,
+                "unreal.rollback_cpp_change": self._tool_rollback_cpp_change,
+                "unreal.verify_source_change": self._tool_verify_source_change,
             })
 
     def get_registered_tools(self) -> List[str]:
@@ -1108,6 +1157,749 @@ class UnrealToolRegistry:
             verified=True,
             message=f"Diagnosed {len(diagnoses)} runtime issue(s).",
         )
+
+
+
+    # =========================================================================
+    # Step 9 Phase 4 Tool Handlers: C++ / Blueprint Intelligence & Safe Modification
+    # =========================================================================
+
+    def _tool_inspect_cpp_source(
+        self,
+        file_path: str = "",
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.inspect_cpp_source: Analyzes C++ header/source structure and extracts symbols."""
+        if not file_path:
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_source",
+                success=False,
+                error="file_path parameter is required",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="file_path parameter is required.",
+            )
+        try:
+            fp = self.safety.validate_source_file_path(file_path, project_path)
+            analysis = self.cpp_analyzer.analyze_file(fp)
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_source",
+                success=True,
+                data=analysis.to_dict(),
+                verified=True,
+                message=f"Analyzed {fp.name}: {len(analysis.classes)} classes, {len(analysis.methods)} methods, {len(analysis.properties)} properties.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_source",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected source inspection: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_source",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message=f"Failed to inspect C++ source: {e}",
+            )
+
+    def _tool_list_cpp_symbols(
+        self,
+        file_path: str = "",
+        symbol_type: Optional[str] = None,
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.list_cpp_symbols: Lists symbols from a C++ source file with optional type filtering."""
+        if not file_path:
+            return UnrealToolResult(
+                tool="unreal.list_cpp_symbols",
+                success=False,
+                error="file_path parameter is required",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="file_path parameter is required.",
+            )
+        try:
+            fp = self.safety.validate_source_file_path(file_path, project_path)
+            analysis = self.cpp_analyzer.analyze_file(fp)
+            symbols = []
+            st = (symbol_type or "").lower().strip()
+            if not st or st in ("class", "classes"):
+                for c in analysis.classes:
+                    symbols.append({"type": "class", "name": c.name, "line": c.location.line, "declaration": c.declaration_signature})
+            if not st or st in ("method", "methods", "function", "functions"):
+                for m in analysis.methods:
+                    symbols.append({"type": "method", "name": m.name, "class": m.class_name, "line": m.location.line, "signature": m.signature})
+            if not st or st in ("property", "properties", "field", "fields"):
+                for p in analysis.properties:
+                    symbols.append({"type": "property", "name": p.name, "class": p.class_name, "line": p.location.line, "type_name": p.type_name})
+            if not st or st in ("enum", "enums"):
+                for e in analysis.enums:
+                    symbols.append({"type": "enum", "name": e.name, "line": e.location.line, "entries": e.entries})
+            if not st or st in ("macro", "macros", "reflection"):
+                for r in analysis.reflection_macros:
+                    symbols.append({"type": "reflection_macro", "macro_type": r.macro_type, "target": r.target_name, "line": r.location.line})
+
+            return UnrealToolResult(
+                tool="unreal.list_cpp_symbols",
+                success=True,
+                data={"file_path": str(fp), "symbols": symbols, "count": len(symbols), "filter": symbol_type},
+                verified=True,
+                message=f"Extracted {len(symbols)} symbol(s) from {fp.name}.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.list_cpp_symbols",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected listing symbols: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.list_cpp_symbols",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message=f"Failed to list C++ symbols: {e}",
+            )
+
+    def _tool_inspect_cpp_class(
+        self,
+        file_path: str = "",
+        class_name: str = "",
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.inspect_cpp_class: Inspects a specific C++ class and its methods and properties."""
+        if not file_path or not class_name:
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_class",
+                success=False,
+                error="file_path and class_name parameters are required",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="file_path and class_name parameters are required.",
+            )
+        try:
+            fp = self.safety.validate_source_file_path(file_path, project_path)
+            analysis = self.cpp_analyzer.analyze_file(fp)
+            target_cls = None
+            for c in analysis.classes:
+                if c.name == class_name:
+                    target_cls = c
+                    break
+            if not target_cls:
+                return UnrealToolResult(
+                    tool="unreal.inspect_cpp_class",
+                    success=False,
+                    error=f"Class '{class_name}' not found in {fp.name}",
+                    error_code=UnrealErrorCode.SYMBOL_NOT_FOUND.value,
+                    message=f"Class '{class_name}' was not found in {fp.name}.",
+                )
+            c_dict = target_cls.to_dict()
+            c_dict["methods"] = [m.to_dict() for m in analysis.methods if m.class_name == class_name]
+            c_dict["properties"] = [p.to_dict() for p in analysis.properties if p.class_name == class_name]
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_class",
+                success=True,
+                data=c_dict,
+                verified=True,
+                message=f"Class {class_name} inspected ({len(c_dict['methods'])} methods, {len(c_dict['properties'])} properties).",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_class",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected class inspection: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_class",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message=f"Failed to inspect C++ class: {e}",
+            )
+
+    def _tool_inspect_cpp_method(
+        self,
+        file_path: str = "",
+        class_name: str = "",
+        method_name: str = "",
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.inspect_cpp_method: Inspects a specific method within a C++ class or file."""
+        if not file_path or not method_name:
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_method",
+                success=False,
+                error="file_path and method_name parameters are required",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="file_path and method_name parameters are required.",
+            )
+        try:
+            fp = self.safety.validate_source_file_path(file_path, project_path)
+            analysis = self.cpp_analyzer.analyze_file(fp)
+            target_m = None
+            for m in analysis.methods:
+                if (not class_name or m.class_name == class_name) and m.name == method_name:
+                    target_m = m
+                    break
+            if not target_m:
+                return UnrealToolResult(
+                    tool="unreal.inspect_cpp_method",
+                    success=False,
+                    error=f"Method '{method_name}' not found in {class_name or fp.name}",
+                    error_code=UnrealErrorCode.SYMBOL_NOT_FOUND.value,
+                    message=f"Method '{method_name}' was not found.",
+                )
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_method",
+                success=True,
+                data=target_m.to_dict(),
+                verified=True,
+                message=f"Method {target_m.class_name}::{target_m.name} inspected.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_method",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected method inspection: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.inspect_cpp_method",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message=f"Failed to inspect C++ method: {e}",
+            )
+
+    def _tool_find_cpp_symbol(
+        self,
+        symbol_name: str = "",
+        project_path: Optional[str] = None,
+        search_headers: bool = True,
+        search_sources: bool = True,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.find_cpp_symbol: Searches for a symbol name across all C++ files in project Source/."""
+        if not symbol_name:
+            return UnrealToolResult(
+                tool="unreal.find_cpp_symbol",
+                success=False,
+                error="symbol_name parameter is required",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="symbol_name parameter is required.",
+            )
+        try:
+            target_proj = project_path or str(self.safety.authorized_projects[0])
+            proj_dir = self.safety.validate_project_path(target_proj)
+            source_dir = proj_dir / "Source"
+            matches = []
+            if source_dir.is_dir():
+                exts = []
+                if search_headers:
+                    exts.extend([".h", ".hpp"])
+                if search_sources:
+                    exts.extend([".cpp", ".inl"])
+                for root, _, files in os.walk(source_dir):
+                    for f in sorted(files):
+                        p = Path(root) / f
+                        if p.suffix.lower() in exts:
+                            try:
+                                an = self.cpp_analyzer.analyze_file(p)
+                                rel_path = str(p.relative_to(proj_dir))
+                                for c in an.classes:
+                                    if symbol_name.lower() in c.name.lower():
+                                        matches.append({"type": "class", "name": c.name, "file": rel_path, "line": c.location.line})
+                                for m in an.methods:
+                                    if symbol_name.lower() in m.name.lower():
+                                        matches.append({"type": "method", "name": f"{m.class_name}::{m.name}", "file": rel_path, "line": m.location.line})
+                                for pr in an.properties:
+                                    if symbol_name.lower() in pr.name.lower():
+                                        matches.append({"type": "property", "name": f"{pr.class_name}::{pr.name}", "file": rel_path, "line": pr.location.line})
+                                for en in an.enums:
+                                    if symbol_name.lower() in en.name.lower():
+                                        matches.append({"type": "enum", "name": en.name, "file": rel_path, "line": en.location.line})
+                            except Exception:
+                                continue
+            return UnrealToolResult(
+                tool="unreal.find_cpp_symbol",
+                success=True,
+                data={"symbol_name": symbol_name, "matches": matches, "count": len(matches)},
+                verified=True,
+                message=f"Found {len(matches)} match(es) for '{symbol_name}'.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.find_cpp_symbol",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected symbol search: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.find_cpp_symbol",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message=f"Failed to find C++ symbol: {e}",
+            )
+
+    def _tool_inspect_reflection_metadata(
+        self,
+        file_path: str = "",
+        target_name: Optional[str] = None,
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.inspect_reflection_metadata: Extracts Unreal reflection macros (UCLASS, UFUNCTION, etc.)."""
+        if not file_path:
+            return UnrealToolResult(
+                tool="unreal.inspect_reflection_metadata",
+                success=False,
+                error="file_path parameter is required",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="file_path parameter is required.",
+            )
+        try:
+            fp = self.safety.validate_source_file_path(file_path, project_path)
+            analysis = self.cpp_analyzer.analyze_file(fp)
+            macros = [
+                m.to_dict() for m in analysis.reflection_macros
+                if not target_name or (m.target_name and m.target_name.lower() == target_name.lower())
+            ]
+            return UnrealToolResult(
+                tool="unreal.inspect_reflection_metadata",
+                success=True,
+                data={"file_path": str(fp), "reflection_macros": macros, "count": len(macros), "target_filter": target_name},
+                verified=True,
+                message=f"Extracted {len(macros)} reflection macro(s) from {fp.name}.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.inspect_reflection_metadata",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected reflection inspection: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.inspect_reflection_metadata",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message=f"Failed to inspect reflection metadata: {e}",
+            )
+
+    def _tool_inspect_inheritance(
+        self,
+        file_path: str = "",
+        class_name: Optional[str] = None,
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.inspect_inheritance: Inspects class inheritance and checks for UObject/AActor bases."""
+        if not file_path:
+            return UnrealToolResult(
+                tool="unreal.inspect_inheritance",
+                success=False,
+                error="file_path parameter is required",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="file_path parameter is required.",
+            )
+        try:
+            fp = self.safety.validate_source_file_path(file_path, project_path)
+            analysis = self.cpp_analyzer.analyze_file(fp)
+            hierarchies = []
+            for c in analysis.classes:
+                if not class_name or c.name == class_name:
+                    is_uobj = any("UObject" in b or "AActor" in b or "APawn" in b or "ACharacter" in b for b in c.base_classes)
+                    is_act = any("AActor" in b or "APawn" in b or "ACharacter" in b for b in c.base_classes)
+                    hierarchies.append({
+                        "class_name": c.name,
+                        "base_classes": c.base_classes,
+                        "is_uobject": is_uobj,
+                        "is_actor": is_act,
+                        "declaration": c.declaration_signature,
+                        "file_path": str(fp),
+                    })
+            return UnrealToolResult(
+                tool="unreal.inspect_inheritance",
+                success=True,
+                data={"hierarchies": hierarchies, "count": len(hierarchies), "file_path": str(fp)},
+                verified=True,
+                message=f"Inspected inheritance for {len(hierarchies)} class(es).",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.inspect_inheritance",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected inheritance inspection: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.inspect_inheritance",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message=f"Failed to inspect inheritance: {e}",
+            )
+
+    def _tool_list_blueprint_assets(
+        self,
+        project_path: Optional[str] = None,
+        subfolder: Optional[str] = None,
+        limit: int = 100,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.list_blueprint_assets: Discovers Blueprint assets in project Content/ directory."""
+        try:
+            target_proj = project_path or str(self.safety.authorized_projects[0])
+            assets = self.bp_inspector.list_blueprint_assets(target_proj, subfolder=subfolder, limit=limit)
+            return UnrealToolResult(
+                tool="unreal.list_blueprint_assets",
+                success=True,
+                data={"assets": [a.to_dict() for a in assets], "count": len(assets), "limit": limit},
+                verified=True,
+                message=f"Discovered {len(assets)} Blueprint asset(s).",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.list_blueprint_assets",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected Blueprint asset listing: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.list_blueprint_assets",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message=f"Failed to list Blueprint assets: {e}",
+            )
+
+    def _tool_inspect_blueprint_metadata(
+        self,
+        asset_path: str = "",
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.inspect_blueprint_metadata: Inspects safe metadata of a Blueprint .uasset file."""
+        if not asset_path:
+            return UnrealToolResult(
+                tool="unreal.inspect_blueprint_metadata",
+                success=False,
+                error="asset_path parameter is required",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="asset_path parameter is required.",
+            )
+        try:
+            target_proj = project_path or str(self.safety.authorized_projects[0])
+            info = self.bp_inspector.inspect_blueprint(asset_path, target_proj)
+            return UnrealToolResult(
+                tool="unreal.inspect_blueprint_metadata",
+                success=True,
+                data=info.to_dict(),
+                verified=True,
+                message=f"Inspected metadata for Blueprint asset {info.asset_name}.",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.inspect_blueprint_metadata",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected Blueprint metadata inspection: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.inspect_blueprint_metadata",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message=f"Failed to inspect Blueprint metadata: {e}",
+            )
+
+    def _tool_validate_cpp_change(
+        self,
+        file_path: str = "",
+        operation: str = "",
+        content: str = "",
+        target_symbol: str = "",
+        expected_sha256: str = "",
+        start_line: int = 0,
+        end_line: int = 0,
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.validate_cpp_change: Validates a proposed C++ modification against safety policies."""
+        payload = {
+            "file_path": file_path,
+            "operation": operation,
+            "content": content,
+            "target_symbol": target_symbol,
+            "expected_sha256": expected_sha256,
+            "start_line": start_line,
+            "end_line": end_line,
+        }
+        try:
+            self.safety.validate_proposal_payload(payload, project_path)
+            prop = UnrealModificationProposal.from_dict(payload)
+            val = self.source_modifier.validate_proposal(prop)
+            return UnrealToolResult(
+                tool="unreal.validate_cpp_change",
+                success=val["valid"],
+                data=val,
+                error=val.get("error"),
+                error_code=val.get("error_code"),
+                verified=True,
+                message=val.get("message") or (val.get("error") if not val["valid"] else "Proposal is valid."),
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.validate_cpp_change",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected proposal: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.validate_cpp_change",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PROPOSAL.value,
+                message=f"Failed to validate C++ change: {e}",
+            )
+
+    def _tool_propose_cpp_change(
+        self,
+        file_path: str = "",
+        operation: str = "",
+        content: str = "",
+        target_symbol: str = "",
+        expected_sha256: str = "",
+        start_line: int = 0,
+        end_line: int = 0,
+        metadata: Optional[Dict[str, Any]] = None,
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.propose_cpp_change: Constructs and validates a bounded C++ modification proposal."""
+        payload = {
+            "file_path": file_path,
+            "operation": operation,
+            "content": content,
+            "target_symbol": target_symbol,
+            "expected_sha256": expected_sha256,
+            "start_line": start_line,
+            "end_line": end_line,
+            "metadata": metadata or {},
+        }
+        try:
+            self.safety.validate_proposal_payload(payload, project_path)
+            prop = UnrealModificationProposal.from_dict(payload)
+            val = self.source_modifier.validate_proposal(prop)
+            if not val["valid"]:
+                return UnrealToolResult(
+                    tool="unreal.propose_cpp_change",
+                    success=False,
+                    error=val.get("error"),
+                    error_code=val.get("error_code") or UnrealErrorCode.INVALID_PROPOSAL.value,
+                    data=val,
+                    message=f"Proposal rejected: {val.get('error')}",
+                )
+            return UnrealToolResult(
+                tool="unreal.propose_cpp_change",
+                success=True,
+                data=prop.to_dict(),
+                verified=True,
+                message=f"Created proposal {prop.proposal_id} ({prop.operation.value}).",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.propose_cpp_change",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected proposal creation: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.propose_cpp_change",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.INVALID_PROPOSAL.value,
+                message=f"Failed to propose C++ change: {e}",
+            )
+
+    def _tool_apply_cpp_change(
+        self,
+        proposal: Optional[Dict[str, Any]] = None,
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.apply_cpp_change: Applies a verified, atomic modification to a C++ file with backup."""
+        payload = dict(proposal) if proposal else dict(kwargs)
+        try:
+            self.safety.validate_proposal_payload(payload, project_path)
+            prop = UnrealModificationProposal.from_dict(payload)
+            res = self.source_modifier.apply_modification(prop)
+            return UnrealToolResult(
+                tool="unreal.apply_cpp_change",
+                success=res.success,
+                data=res.to_dict(),
+                error=res.error_message,
+                error_code=res.error_code,
+                verified=res.success,
+                message=f"Applied modification to {res.target_path} (backup: {res.backup_id})." if res.success else f"Failed to apply: {res.error_message}",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.apply_cpp_change",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected applying modification: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.apply_cpp_change",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.WRITE_FAILED.value,
+                message=f"Failed to apply C++ modification: {e}",
+            )
+
+    def _tool_rollback_cpp_change(
+        self,
+        backup_id: Optional[str] = None,
+        backup_path: Optional[str] = None,
+        target_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.rollback_cpp_change: Restores a C++ source file from a verified backup."""
+        try:
+            bp = Path(backup_path) if backup_path else None
+            tp = Path(target_path) if target_path else None
+            res = self.source_modifier.rollback_modification(backup_id=backup_id, backup_path=bp, target_path=tp)
+            return UnrealToolResult(
+                tool="unreal.rollback_cpp_change",
+                success=res.success,
+                data=res.to_dict(),
+                error=res.error_message,
+                error_code=res.error_code,
+                verified=res.success,
+                message=f"Rolled back {res.target_path} to backup {res.backup_id}." if res.success else f"Rollback failed: {res.error_message}",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.rollback_cpp_change",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected rollback: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.rollback_cpp_change",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.ROLLBACK_FAILED.value,
+                message=f"Failed to rollback C++ modification: {e}",
+            )
+
+    def _tool_verify_source_change(
+        self,
+        file_path: str = "",
+        expected_sha256: Optional[str] = None,
+        check_syntax: bool = True,
+        project_path: Optional[str] = None,
+        **kwargs,
+    ) -> UnrealToolResult:
+        """unreal.verify_source_change: Verifies SHA-256 integrity and balanced syntax after modifications."""
+        if not file_path:
+            return UnrealToolResult(
+                tool="unreal.verify_source_change",
+                success=False,
+                error="file_path parameter is required",
+                error_code=UnrealErrorCode.INVALID_PARAMETER.value,
+                message="file_path parameter is required.",
+            )
+        try:
+            fp = self.safety.validate_source_file_path(file_path, project_path)
+            if not fp.exists():
+                return UnrealToolResult(
+                    tool="unreal.verify_source_change",
+                    success=False,
+                    error=f"Source file {fp} does not exist",
+                    error_code=UnrealErrorCode.FILE_NOT_FOUND.value,
+                    message=f"File {fp.name} does not exist.",
+                )
+            data = fp.read_bytes()
+            actual_sha = hashlib.sha256(data).hexdigest()
+            sha_match = True
+            if expected_sha256:
+                sha_match = (actual_sha.lower() == expected_sha256.lower())
+            syntax_valid = True
+            syntax_err = None
+            if check_syntax:
+                text = data.decode("utf-8", errors="replace")
+                syntax_valid, syntax_err = self.cpp_analyzer.verify_balanced_syntax(text)
+            success = sha_match and syntax_valid
+            err_msg = None
+            if not sha_match:
+                err_msg = f"SHA-256 mismatch: expected {expected_sha256}, got {actual_sha}"
+            elif not syntax_valid:
+                err_msg = f"Syntax check failed: {syntax_err}"
+            return UnrealToolResult(
+                tool="unreal.verify_source_change",
+                success=success,
+                data={
+                    "file_path": str(fp),
+                    "sha256": actual_sha,
+                    "expected_sha256": expected_sha256,
+                    "sha_matches": sha_match,
+                    "syntax_valid": syntax_valid,
+                    "syntax_error": syntax_err,
+                },
+                error=err_msg,
+                error_code=UnrealErrorCode.VERIFICATION_FAILED.value if not success else None,
+                verified=True,
+                message="Source verification passed." if success else f"Source verification failed: {err_msg}",
+            )
+        except UnrealSafetyError as se:
+            return UnrealToolResult(
+                tool="unreal.verify_source_change",
+                success=False,
+                error=se.message,
+                error_code=se.code.value,
+                message=f"Safety check rejected source verification: {se.message}",
+            )
+        except Exception as e:
+            return UnrealToolResult(
+                tool="unreal.verify_source_change",
+                success=False,
+                error=str(e),
+                error_code=UnrealErrorCode.VERIFICATION_FAILED.value,
+                message=f"Failed to verify source change: {e}",
+            )
 
 
 # Global default tool registry
