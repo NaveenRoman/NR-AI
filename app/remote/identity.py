@@ -285,3 +285,12 @@ class PairingManager:
             dev.shared_secret_hash = hashlib.sha256(new_secret_hex.encode("utf-8")).hexdigest()
             self._device_secrets[device_id] = new_secret_hex
             return new_secret_hex
+
+    def initiate_pairing(self, device_id: str, device_name: str = "Android Companion") -> str:
+        """Helper to register device in unpaired state and generate pairing code."""
+        self.register_device(device_id, device_name, "Android", "1.0")
+        return self.generate_pairing_code(target_device_id=device_id)
+
+    def is_paired(self, device_id: str) -> bool:
+        """Alias for is_device_paired."""
+        return self.is_device_paired(device_id)

@@ -201,18 +201,28 @@ REMOTE_ACTION_ALLOWLIST: Dict[str, RemoteActionDefinition] = {
 # Mapping of convenient shorthand names to full RemoteActionType strings
 ACTION_ALIASES: Dict[str, str] = {
     "open_app": RemoteActionType.OPEN_APP.value,
+    "open app": RemoteActionType.OPEN_APP.value,
     "list_windows": RemoteActionType.LIST_WINDOWS.value,
+    "list windows": RemoteActionType.LIST_WINDOWS.value,
     "focus_window": RemoteActionType.FOCUS_WINDOW.value,
+    "focus window": RemoteActionType.FOCUS_WINDOW.value,
     "inspect_screen": RemoteActionType.INSPECT_SCREEN.value,
+    "inspect screen": RemoteActionType.INSPECT_SCREEN.value,
     "find_text": RemoteActionType.FIND_TEXT.value,
+    "find text": RemoteActionType.FIND_TEXT.value,
     "click_target": RemoteActionType.CLICK_TARGET.value,
+    "click target": RemoteActionType.CLICK_TARGET.value,
     "double_click": RemoteActionType.DOUBLE_CLICK.value,
+    "double click": RemoteActionType.DOUBLE_CLICK.value,
     "type_text": RemoteActionType.TYPE_TEXT.value,
+    "type text": RemoteActionType.TYPE_TEXT.value,
     "press_key": RemoteActionType.PRESS_KEY.value,
+    "press key": RemoteActionType.PRESS_KEY.value,
     "hotkey": RemoteActionType.HOTKEY.value,
     "scroll": RemoteActionType.SCROLL.value,
     "verify": RemoteActionType.VERIFY.value,
     "run_workflow": RemoteActionType.RUN_WORKFLOW.value,
+    "run workflow": RemoteActionType.RUN_WORKFLOW.value,
     "workflow": RemoteActionType.RUN_WORKFLOW.value,
 }
 

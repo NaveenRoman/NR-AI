@@ -115,7 +115,12 @@ class SessionManager:
             self._sessions[session_id] = session
             return True, "SESSION_CREATED", session
 
-    def validate_session(self, session_id: str, device_id: str) -> Tuple[bool, str, Optional[Session]]:
+    def validate_session(
+        self,
+        session_id: str,
+        device_id: str,
+        current_time: Optional[float] = None,
+    ) -> Tuple[bool, str, Optional[Session]]:
         """
         Validate active session existence, matching device, and expiration.
         """
@@ -133,7 +138,7 @@ class SessionManager:
                 self._sessions.pop(session_id, None)
                 return False, "DEVICE_REVOKED", None
 
-            now = time.time()
+            now = current_time if current_time is not None else time.time()
             if session.is_expired(now):
                 self._sessions.pop(session_id, None)
                 return False, "SESSION_EXPIRED", None
@@ -197,6 +202,14 @@ class SessionManager:
             for sid in to_delete:
                 del self._sessions[sid]
             return len(to_delete)
+
+    def revoke_session(self, session_id: str) -> bool:
+        """Revoke a specific active session."""
+        with self._lock:
+            if session_id in self._sessions:
+                del self._sessions[session_id]
+                return True
+            return False
 
     def cleanup_expired(self) -> int:
         with self._lock:

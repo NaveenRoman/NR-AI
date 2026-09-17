@@ -130,6 +130,8 @@ class VoiceCommandSession:
 
     def transition_to(self, new_state: VoiceSessionState, reason: str = "") -> None:
         with self.lock:
+            if self.state == new_state:
+                return
             allowed = VALID_VOICE_TRANSITIONS.get(self.state, set())
             if new_state not in allowed:
                 raise VoiceSessionError(
@@ -335,8 +337,13 @@ class VoiceSessionManager:
         stt_msg = ""
         transcript = ""
         for attempt in range(MAX_TRANSCRIPTION_ATTEMPTS):
-            session.transcription_attempts += 1
-            stt_ok, stt_msg, transcript = self.stt_provider.transcribe(audio_req)
+            raw_res = self.stt_provider.transcribe(audio_req)
+            if isinstance(raw_res, tuple) and len(raw_res) == 3:
+                stt_ok, stt_msg, transcript = raw_res
+            else:
+                stt_ok = bool(getattr(raw_res, "success", False))
+                stt_msg = str(getattr(raw_res, "error_code", "") or getattr(raw_res, "message", ""))
+                transcript = getattr(raw_res, "transcript", "")
             if stt_ok and transcript is not None:
                 break
 
@@ -378,7 +385,8 @@ class VoiceSessionManager:
         if intent.intent_type == VoiceIntentType.EMERGENCY_STOP:
             if self.emergency_controller:
                 self.emergency_controller.trigger(triggered_by="VOICE", reason="VOICE_EMERGENCY_STOP_TRIGGERED")
-            session.transition_to(VoiceSessionState.STOPPED, "EMERGENCY_STOP")
+            if not session.is_terminal():
+                session.transition_to(VoiceSessionState.STOPPED, "EMERGENCY_STOP")
             if self.telemetry_event_fn:
                 self.telemetry_event_fn("VOICE_COMPLETED", {"session_id": session_id, "action": "EMERGENCY_STOP"})
             return VoiceResponse(

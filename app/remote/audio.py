@@ -1,4 +1,4 @@
-﻿"""
+"""
 NR-AI Audio Request Protocol & Validation Engine.
 Step 10 Phase 3 — Phone Voice Command & Secure Audio Pipeline.
 """
@@ -60,9 +60,16 @@ class AudioRequest:
     channels: int
     duration_ms: float
     payload_size: int
-    checksum: str
-    audio_bytes: bytes
+    checksum: str = ""
+    audio_bytes: bytes = b""
     metadata: Dict[str, Any] = field(default_factory=dict)
+    payload_checksum: Optional[str] = None
+
+    def __post_init__(self):
+        if self.payload_checksum and not self.checksum:
+            self.checksum = self.payload_checksum
+        elif self.checksum and not self.payload_checksum:
+            self.payload_checksum = self.checksum
 
     def to_metadata_dict(self) -> Dict[str, Any]:
         """
@@ -128,11 +135,11 @@ class VoiceResponse:
 def create_audio_request(
     session_id: str,
     device_id: str,
-    audio_format: AudioFormat,
-    sample_rate: int,
-    channels: int,
-    duration_ms: float,
-    audio_bytes: bytes,
+    audio_format: Any = AudioFormat.WAV,
+    sample_rate: int = 16000,
+    channels: int = 1,
+    duration_ms: float = 1000.0,
+    audio_bytes: bytes = b"",
     nonce: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     timestamp: Optional[float] = None,

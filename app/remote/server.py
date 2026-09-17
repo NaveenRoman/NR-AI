@@ -73,6 +73,19 @@ from app.remote.remote_action_session import (
     RemoteActionSessionManager,
     RemoteActionState,
 )
+from app.remote.companion_client_contract import (
+    CompanionNotification,
+    CompanionUIState,
+    ConfirmationDialogPayload,
+    TTSResponseContract,
+    sanitize_tts_response,
+)
+from app.remote.companion_orchestrator import (
+    CompanionCommandResult,
+    CompanionOrchestrator,
+    CompanionOrchestratorState,
+)
+from app.remote.companion_resilience import CompanionResilienceManager
 
 logger = logging.getLogger("NRAI.SecureServer")
 
@@ -106,6 +119,8 @@ class SecureGateway:
         remote_action_session_manager: Optional[RemoteActionSessionManager] = None,
         remote_action_rate_limiter: Optional[RemoteActionRateLimiter] = None,
         computer_agent: Optional[Any] = None,
+        companion_orchestrator: Optional[CompanionOrchestrator] = None,
+        companion_resilience: Optional[CompanionResilienceManager] = None,
     ):
         self.companion = companion
         self.pairing_manager = pairing_manager or PairingManager()
@@ -136,6 +151,18 @@ class SecureGateway:
             emergency_controller=self.emergency_stop,
             rate_limiter=self.remote_action_rate_limiter,
             audit_logger=self.audit_logger,
+        )
+        self.companion_resilience = companion_resilience or CompanionResilienceManager()
+        self.companion_orchestrator = companion_orchestrator or CompanionOrchestrator(
+            session_manager=self.session_manager,
+            stream_session_manager=self.stream_manager,
+            voice_session_manager=self.voice_session_manager,
+            remote_action_session_manager=self.remote_action_session_manager,
+            telemetry_hub=None,
+            emergency_controller=self.emergency_stop,
+            resilience_manager=self.companion_resilience,
+            audit_logger=self.audit_logger,
+            computer_agent=comp_agent,
         )
 
     def handle_pairing_request(self, body: Dict[str, Any], client_ip: str) -> SecureResponse:
@@ -637,6 +664,43 @@ class SecureGateway:
                 return {"status": "NOT_FOUND"}
             return sess.to_dict()
 
+        elif action == "companion.command":
+            res = self.companion_orchestrator.process_command(
+                session_id=req.session_id,
+                device_id=req.device_id,
+                command_text=req.payload.get("command_text") or req.payload.get("command"),
+                action_payload=req.payload.get("action_payload"),
+                cached_target=req.payload.get("cached_target"),
+                current_time=req.timestamp,
+            )
+            return res.to_dict()
+
+        elif action == "companion.state":
+            st = self.companion_orchestrator.get_state(req.device_id)
+            return {
+                "device_id": req.device_id,
+                "state": st.value,
+                "emergency_stop": self.emergency_stop.is_active(),
+            }
+
+        elif action == "companion.emergency_stop":
+            reason = str(req.payload.get("reason", "Companion emergency stop triggered"))
+            return self.companion_orchestrator.trigger_emergency_stop(req.device_id, reason=reason)
+
+        elif action == "companion.confirm":
+            aid = str(req.payload.get("action_id", "")).strip()
+            token = str(req.payload.get("confirmation_token", "")).strip()
+            conf = bool(req.payload.get("confirmed", True))
+            res = self.companion_orchestrator.confirm_action(
+                session_id=req.session_id,
+                device_id=req.device_id,
+                action_id=aid,
+                confirmation_token=token,
+                confirmed=conf,
+                current_time=req.timestamp,
+            )
+            return res.to_dict()
+
         raise ValueError(f"Unhandled action: {action}")
 
 
@@ -648,7 +712,7 @@ class SecureDashboardServer:
 
     def __init__(
         self,
-        gateway: SecureGateway,
+        gateway: Optional[SecureGateway] = None,
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,
     ):
@@ -786,6 +850,25 @@ class SecureDashboardServer:
                         self._send_response(404, "application/json", json.dumps({"error": "SESSION_NOT_FOUND"}).encode("utf-8"))
                         return
                     self._send_response(200, "application/json", json.dumps(act_sess.to_dict()).encode("utf-8"))
+
+                # Phase 5: Secure companion state GET endpoint
+                elif parsed.path == "/api/v2/secure/companion/state":
+                    params = urllib.parse.parse_qs(parsed.query)
+                    session_id = params.get("session_id", [""])[0]
+                    device_id = params.get("device_id", [""])[0]
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess:
+                        self._send_response(403, "application/json", json.dumps({"error": "REMOTE_AUTH_REQUIRED"}).encode("utf-8"))
+                        return
+                    st = gateway_ref.companion_orchestrator.get_state(device_id)
+                    data = {
+                        "device_id": device_id,
+                        "session_id": session_id,
+                        "state": st.value,
+                        "emergency_stop": gateway_ref.emergency_stop.is_active(),
+                        "timestamp": time.time(),
+                    }
+                    self._send_response(200, "application/json", json.dumps(data).encode("utf-8"))
 
                 else:
                     self._send_response(404, "text/plain", b"Not Found")
@@ -1062,6 +1145,47 @@ class SecureDashboardServer:
                     ok, c_msg = gateway_ref.remote_action_session_manager.cancel_action(session_id, reason)
                     code = 200 if ok else 400
                     self._send_response(code, "application/json", json.dumps({"status": "CANCELLED" if ok else "ERROR", "message": c_msg}).encode("utf-8"))
+
+                # Phase 5: Secure companion command endpoint
+                elif parsed.path == "/api/v2/secure/companion/command":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess:
+                        self._send_response(403, "application/json", json.dumps({"error": "REMOTE_AUTH_REQUIRED", "status": "DENIED"}).encode("utf-8"))
+                        return
+                    cmd_text = data.get("command_text") or data.get("command")
+                    act_payload = data.get("action_payload")
+                    cached_target = data.get("cached_target")
+                    res = gateway_ref.companion_orchestrator.process_command(
+                        session_id=session_id,
+                        device_id=device_id,
+                        command_text=cmd_text,
+                        action_payload=act_payload,
+                        cached_target=cached_target,
+                    )
+                    code = 200 if res.status in ("SUCCESS", "AWAITING_CONFIRMATION") else (403 if res.status in ("DENIED", "STOPPED") else 400)
+                    self._send_response(code, "application/json", json.dumps(res.to_dict()).encode("utf-8"))
+
+                # Phase 5: Secure companion emergency stop endpoint
+                elif parsed.path == "/api/v2/secure/companion/emergency_stop":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    reason = str(data.get("reason", "Operator Emergency Stop via companion endpoint"))
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess:
+                        self._send_response(403, "application/json", json.dumps({"error": "REMOTE_AUTH_REQUIRED"}).encode("utf-8"))
+                        return
+                    res_stop = gateway_ref.companion_orchestrator.trigger_emergency_stop(device_id, reason=reason)
+                    self._send_response(200, "application/json", json.dumps(res_stop).encode("utf-8"))
 
                 # 5. Legacy Android Companion /api/command POST
                 elif parsed.path in ("/api/command", "/command"):

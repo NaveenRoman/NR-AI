@@ -176,6 +176,24 @@ from app.remote.remote_action_session import (
     RemoteActionStateError,
     VALID_TRANSITIONS as VALID_REMOTE_ACTION_TRANSITIONS,
 )
+from app.remote.companion_client_contract import (
+    CompanionNotification,
+    CompanionUIState,
+    ConfirmationDialogPayload,
+    TTSResponseContract,
+    sanitize_tts_response,
+)
+from app.remote.companion_resilience import (
+    CompanionResilienceManager,
+    DeviceConnectionRecord,
+)
+from app.remote.companion_orchestrator import (
+    CompanionCommandResult,
+    CompanionOrchestrator,
+    CompanionOrchestratorState,
+    CompanionStateError,
+    VALID_ORCHESTRATOR_TRANSITIONS,
+)
 
 __all__ = [
     # Identity & Pairing
@@ -361,4 +379,28 @@ __all__ = [
     "REMOTE_VERIFICATION_FAILED",
     "REMOTE_STOPPED",
     "REMOTE_SESSION_EXPIRED",
+    # Step 10 Phase 5: Companion UX & Orchestration
+    "CompanionUIState",
+    "CompanionNotification",
+    "ConfirmationDialogPayload",
+    "TTSResponseContract",
+    "sanitize_tts_response",
+    "CompanionResilienceManager",
+    "DeviceConnectionRecord",
+    "CompanionCommandResult",
+    "CompanionOrchestrator",
+    "CompanionOrchestratorState",
+    "CompanionStateError",
+    "VALID_ORCHESTRATOR_TRANSITIONS",
+    "HEARTBEAT_INTERVAL_SECONDS",
+    "CONNECTION_TIMEOUT_SECONDS",
+    "MAX_RECONNECT_ATTEMPTS",
+    "RECONNECT_WINDOW_SECONDS",
+    "RECONNECT_GRACE_PERIOD_SECONDS",
+    "MAX_TTS_RESPONSE_CHARS",
+    "COMPANION_ORCHESTRATOR_TIMEOUT_SECONDS",
+    "COMPANION_RECONNECT_EXCEEDED",
+    "COMPANION_HEARTBEAT_TIMEOUT",
+    "COMPANION_DEGRADED_MODE",
+    "COMPANION_INVALID_STATE",
 ]

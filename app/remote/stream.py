@@ -203,6 +203,11 @@ class StreamSession:
         """Mark connection loss and transition to RECONNECTING state."""
         self.transition_to(StreamState.RECONNECTING, reason="CONNECTION_LOST")
 
+    @property
+    def fps(self) -> float:
+        return self.target_fps
+
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "stream_id": self.stream_id,
@@ -305,6 +310,18 @@ class StreamManager:
 
             self._streams[stream_id] = stream
             return True, "STREAM_CREATED", stream
+
+    def start_stream(
+        self,
+        session_id: str,
+        device_id: str,
+        fps: float = DEFAULT_FPS,
+        **kwargs: Any,
+    ) -> Tuple[bool, str, Optional[StreamSession]]:
+        """Alias for create_stream accepting (session_id, device_id)."""
+        target_fps = kwargs.get("target_fps", fps)
+        return self.create_stream(device_id=device_id, session_id=session_id, target_fps=target_fps)
+
 
     def produce_frame(self, stream_id: str) -> Tuple[bool, str, Optional[StreamFrame]]:
         """

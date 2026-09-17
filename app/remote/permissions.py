@@ -58,6 +58,10 @@ ACTION_SCOPE_MAP: Dict[str, PhonePermissionScope] = {
     "stream.resume": PhonePermissionScope.READ_SCREEN_STREAM,
     "stream.frame": PhonePermissionScope.READ_SCREEN_STREAM,
     "stream.status": PhonePermissionScope.READ_TELEMETRY,
+    "companion.command": PhonePermissionScope.SEND_COMMAND,
+    "companion.state": PhonePermissionScope.READ_STATUS,
+    "companion.emergency_stop": PhonePermissionScope.EMERGENCY_STOP,
+    "companion.confirm": PhonePermissionScope.APPROVED_COMPUTER_ACTION,
 }
 
 # Strictly prohibited actions / command patterns

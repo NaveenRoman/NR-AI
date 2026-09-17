@@ -237,7 +237,22 @@ class VoiceIntentParser:
                     risk_level="LOW",
                 )
 
-        # 8. Default fallback to UNKNOWN for unrecognized phrases
+        # 8. Check if speech maps to an approved computer action alias
+        from app.remote.remote_actions import ACTION_ALIASES
+        for alias, act_type in ACTION_ALIASES.items():
+            if normalized == alias or normalized.startswith(alias + " "):
+                return VoiceIntent(
+                    intent_id=intent_id,
+                    text=raw_text,
+                    normalized_text=normalized,
+                    intent_type=VoiceIntentType.ACTION_APPROVED,
+                    confidence=0.95,
+                    requires_confirmation=False,
+                    risk_level="LOW",
+                    parameters={"action": act_type},
+                )
+
+        # 9. Default fallback to UNKNOWN for unrecognized phrases
         return VoiceIntent(
             intent_id=intent_id,
             text=raw_text,

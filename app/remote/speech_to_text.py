@@ -1,4 +1,4 @@
-﻿"""
+"""
 NR-AI Speech-to-Text Bridge & Provider Abstraction.
 Step 10 Phase 3 — Phone Voice Command & Secure Audio Pipeline.
 
@@ -107,6 +107,15 @@ class DevelopmentSpeechToTextProvider(SpeechToTextProvider):
                 end_idx = raw.find(b":END", idx)
                 if end_idx != -1:
                     extracted = raw[idx:end_idx].decode("utf-8", errors="replace")
+                    return True, "TRANSCRIPTION_SUCCEEDED", extracted
+            elif b"TEXT:" in raw:
+                idx = raw.find(b"TEXT:") + len(b"TEXT:")
+                end_idx = raw.find(b"\x00", idx)
+                if end_idx != -1:
+                    extracted = raw[idx:end_idx].decode("utf-8", errors="replace").strip()
+                else:
+                    extracted = raw[idx:].decode("utf-8", errors="replace").strip()
+                if extracted:
                     return True, "TRANSCRIPTION_SUCCEEDED", extracted
         except Exception:
             pass

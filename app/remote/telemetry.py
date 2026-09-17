@@ -255,3 +255,5 @@ class TelemetryDispatcher:
         with self._lock:
             self._session_buffers.pop(session_id, None)
             self._session_sequences.pop(session_id, None)
+
+TelemetryHub = TelemetryDispatcher
