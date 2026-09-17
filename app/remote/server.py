@@ -20,8 +20,11 @@ from app.remote.audit import SecurityAuditLogger
 from app.remote.auth import SessionManager
 from app.remote.config import (
     ALLOWED_HOSTS,
+    DEFAULT_FPS,
     DEFAULT_HOST,
     DEFAULT_PORT,
+    MAX_FRAME_HEIGHT,
+    MAX_FRAME_WIDTH,
     MAX_REQUEST_BYTES,
     PROHIBITED_HOSTS,
 )
@@ -37,6 +40,10 @@ from app.remote.protocol import (
     parse_and_validate_request,
 )
 from app.remote.rate_limiter import RateLimiter
+from app.remote.frame import FrameEncoding, StreamFrame
+from app.remote.screen_capture import MockScreenCaptureEngine, ScreenCaptureEngine
+from app.remote.stream import StreamManager, StreamSession, StreamState
+from app.remote.telemetry import TelemetryDispatcher, TelemetryEvent, TelemetryEventType
 from app.remote.transport import SecureTransport, TransportSecurityMode
 
 logger = logging.getLogger("NRAI.SecureServer")
@@ -61,6 +68,9 @@ class SecureGateway:
         rate_limiter: Optional[RateLimiter] = None,
         emergency_stop: Optional[EmergencyStopController] = None,
         audit_logger: Optional[SecurityAuditLogger] = None,
+        telemetry_dispatcher: Optional[TelemetryDispatcher] = None,
+        stream_manager: Optional[StreamManager] = None,
+        capture_engine: Optional[ScreenCaptureEngine] = None,
         transport_mode: TransportSecurityMode = TransportSecurityMode.ENCRYPTED_SESSION,
     ):
         self.companion = companion
@@ -70,6 +80,11 @@ class SecureGateway:
         self.emergency_stop = emergency_stop or EmergencyStopController()
         self.audit_logger = audit_logger or SecurityAuditLogger()
         self.transport = SecureTransport(mode=transport_mode)
+        self.telemetry_dispatcher = telemetry_dispatcher or TelemetryDispatcher()
+        self.stream_manager = stream_manager or StreamManager(
+            capture_engine=capture_engine,
+            emergency_stop=self.emergency_stop,
+        )
 
     def handle_pairing_request(self, body: Dict[str, Any], client_ip: str) -> SecureResponse:
         device_id = str(body.get("device_id", "")).strip()
@@ -408,6 +423,75 @@ class SecureGateway:
         elif action == "emergency.status":
             return self.emergency_stop.get_status().to_dict()
 
+        elif action in ("telemetry.read", "telemetry.subscribe"):
+            since_seq = int(req.payload.get("since_sequence", 0))
+            events = self.telemetry_dispatcher.get_events(req.session_id, since_sequence=since_seq)
+            return {
+                "events": [e.to_dict() for e in events],
+                "latest_sequence": self.telemetry_dispatcher.get_latest_sequence(req.session_id),
+            }
+
+        elif action == "stream.start":
+            fps = float(req.payload.get("target_fps", DEFAULT_FPS))
+            w = int(req.payload.get("max_width", MAX_FRAME_WIDTH))
+            h = int(req.payload.get("max_height", MAX_FRAME_HEIGHT))
+            enc_str = str(req.payload.get("encoding", "JPEG")).upper()
+            try:
+                enc = FrameEncoding(enc_str)
+            except ValueError:
+                enc = FrameEncoding.JPEG
+
+            ok, msg, stream = self.stream_manager.create_stream(
+                device_id=req.device_id,
+                session_id=req.session_id,
+                target_fps=fps,
+                max_width=w,
+                max_height=h,
+                encoding=enc,
+            )
+            if not ok or not stream:
+                raise ValueError(f"Failed to create stream: {msg}")
+            return stream.to_dict()
+
+        elif action == "stream.stop":
+            stream_id = str(req.payload.get("stream_id", "")).strip()
+            ok, msg = self.stream_manager.stop_stream(stream_id, req.session_id)
+            if not ok:
+                raise ValueError(f"Failed to stop stream: {msg}")
+            return {"stream_id": stream_id, "status": "STOPPED"}
+
+        elif action == "stream.pause":
+            stream_id = str(req.payload.get("stream_id", "")).strip()
+            ok, msg = self.stream_manager.pause_stream(stream_id, req.session_id)
+            if not ok:
+                raise ValueError(f"Failed to pause stream: {msg}")
+            return {"stream_id": stream_id, "status": "PAUSED"}
+
+        elif action == "stream.resume":
+            stream_id = str(req.payload.get("stream_id", "")).strip()
+            ok, msg = self.stream_manager.resume_stream(stream_id, req.session_id)
+            if not ok:
+                raise ValueError(f"Failed to resume stream: {msg}")
+            return {"stream_id": stream_id, "status": "ACTIVE"}
+
+        elif action == "stream.frame":
+            stream_id = str(req.payload.get("stream_id", "")).strip()
+            # If queue is empty, attempt to produce a frame
+            stream = self.stream_manager.get_stream(stream_id)
+            if stream and stream.queue.get_stats()["queued_frames"] == 0:
+                self.stream_manager.produce_frame(stream_id)
+            ok, msg, frame = self.stream_manager.get_next_frame(stream_id, req.session_id)
+            if not ok or not frame:
+                return {"status": "NO_FRAME", "reason": msg}
+            return frame.to_dict()
+
+        elif action == "stream.status":
+            stream_id = str(req.payload.get("stream_id", "")).strip()
+            stream = self.stream_manager.get_stream(stream_id)
+            if not stream:
+                return {"status": "NOT_FOUND"}
+            return stream.to_dict()
+
         raise ValueError(f"Unhandled action: {action}")
 
 
@@ -485,6 +569,43 @@ class SecureDashboardServer:
                     payload = json.dumps(status.to_dict(), indent=2).encode("utf-8")
                     self._send_response(200, "application/json", payload)
 
+                # Phase 2: Secure telemetry polling endpoint
+                elif parsed.path == "/api/v2/secure/telemetry":
+                    params = urllib.parse.parse_qs(parsed.query)
+                    session_id = params.get("session_id", [""])[0]
+                    device_id = params.get("device_id", [""])[0]
+                    since_seq = int(params.get("since_sequence", [0])[0])
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or PhonePermissionScope.READ_TELEMETRY not in sess.scopes:
+                        self._send_response(403, "application/json", json.dumps({"error": "TELEMETRY_ACCESS_DENIED"}).encode("utf-8"))
+                        return
+                    events = gateway_ref.telemetry_dispatcher.get_events(session_id, since_sequence=since_seq)
+                    payload = json.dumps({
+                        "events": [e.to_dict() for e in events],
+                        "latest_sequence": gateway_ref.telemetry_dispatcher.get_latest_sequence(session_id),
+                    }).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
+                # Phase 2: Secure stream frame pull endpoint
+                elif parsed.path == "/api/v2/secure/stream/frame":
+                    params = urllib.parse.parse_qs(parsed.query)
+                    stream_id = params.get("stream_id", [""])[0]
+                    session_id = params.get("session_id", [""])[0]
+                    device_id = params.get("device_id", [""])[0]
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or PhonePermissionScope.READ_SCREEN_STREAM not in sess.scopes:
+                        self._send_response(403, "application/json", json.dumps({"error": "STREAM_ACCESS_DENIED"}).encode("utf-8"))
+                        return
+                    stream = gateway_ref.stream_manager.get_stream(stream_id)
+                    if stream and stream.queue.get_stats()["queued_frames"] == 0:
+                        gateway_ref.stream_manager.produce_frame(stream_id)
+                    ok, msg, frame = gateway_ref.stream_manager.get_next_frame(stream_id, session_id)
+                    if not ok or not frame:
+                        self._send_response(204, "application/json", b"{}")
+                        return
+                    payload = frame.to_json().encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
                 else:
                     self._send_response(404, "text/plain", b"Not Found")
 
@@ -537,6 +658,70 @@ class SecureDashboardServer:
                     )
                     payload = json.dumps(status.to_dict()).encode("utf-8")
                     self._send_response(200, "application/json", payload)
+
+                # Phase 2: Secure stream start route
+                elif parsed.path == "/api/v2/secure/stream/start":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or PhonePermissionScope.READ_SCREEN_STREAM not in sess.scopes:
+                        self._send_response(403, "application/json", json.dumps({"error": "STREAM_PERMISSION_DENIED"}).encode("utf-8"))
+                        return
+                    fps = float(data.get("target_fps", DEFAULT_FPS))
+                    w = int(data.get("max_width", MAX_FRAME_WIDTH))
+                    h = int(data.get("max_height", MAX_FRAME_HEIGHT))
+                    enc_str = str(data.get("encoding", "JPEG")).upper()
+                    try:
+                        enc = FrameEncoding(enc_str)
+                    except ValueError:
+                        enc = FrameEncoding.JPEG
+                    ok, s_msg, stream = gateway_ref.stream_manager.create_stream(device_id, session_id, target_fps=fps, max_width=w, max_height=h, encoding=enc)
+                    if not ok or not stream:
+                        self._send_response(400, "application/json", json.dumps({"error": s_msg}).encode("utf-8"))
+                        return
+                    gateway_ref.audit_logger.log_event("STREAM_STARTED", "SUCCESS", device_id=device_id, session_id=session_id, client_ip=client_ip, metadata={"stream_id": stream.stream_id, "fps": fps, "res": f"{w}x{h}"})
+                    self._send_response(200, "application/json", json.dumps(stream.to_dict()).encode("utf-8"))
+
+                # Phase 2: Secure stream stop route
+                elif parsed.path == "/api/v2/secure/stream/stop":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    stream_id = str(data.get("stream_id", "")).strip()
+                    session_id = str(data.get("session_id", "")).strip()
+                    ok, msg = gateway_ref.stream_manager.stop_stream(stream_id, session_id)
+                    gateway_ref.audit_logger.log_event("STREAM_STOPPED", "SUCCESS" if ok else "DENIED", session_id=session_id, client_ip=client_ip, metadata={"stream_id": stream_id})
+                    code = 200 if ok else 400
+                    self._send_response(code, "application/json", json.dumps({"status": "STOPPED" if ok else "ERROR", "message": msg}).encode("utf-8"))
+
+                # Phase 2: Secure stream pause route
+                elif parsed.path == "/api/v2/secure/stream/pause":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    stream_id = str(data.get("stream_id", "")).strip()
+                    session_id = str(data.get("session_id", "")).strip()
+                    ok, msg = gateway_ref.stream_manager.pause_stream(stream_id, session_id)
+                    code = 200 if ok else 400
+                    self._send_response(code, "application/json", json.dumps({"status": "PAUSED" if ok else "ERROR", "message": msg}).encode("utf-8"))
+
+                # Phase 2: Secure stream resume route
+                elif parsed.path == "/api/v2/secure/stream/resume":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    stream_id = str(data.get("stream_id", "")).strip()
+                    session_id = str(data.get("session_id", "")).strip()
+                    ok, msg = gateway_ref.stream_manager.resume_stream(stream_id, session_id)
+                    code = 200 if ok else 400
+                    self._send_response(code, "application/json", json.dumps({"status": "ACTIVE" if ok else "ERROR", "message": msg}).encode("utf-8"))
 
                 # 5. Legacy Android Companion /api/command POST
                 elif parsed.path in ("/api/command", "/command"):

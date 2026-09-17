@@ -44,6 +44,23 @@ class SecureRequest:
         )
         return canonical
 
+    def sign(self, secret: Any) -> str:
+        """
+        Compute HMAC-SHA256 signature using canonical string representation.
+        Accepts hex string or raw bytes.
+        """
+        import hmac
+        if isinstance(secret, str):
+            secret_bytes = bytes.fromhex(secret)
+        elif isinstance(secret, bytes):
+            secret_bytes = secret
+        else:
+            raise TypeError("Secret must be str or bytes")
+
+        canonical = self.compute_canonical_string()
+        self.signature = hmac.new(secret_bytes, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+        return self.signature
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "request_id": self.request_id,

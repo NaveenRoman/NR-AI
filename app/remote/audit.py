@@ -60,6 +60,10 @@ class AuditRecord:
     client_ip: Optional[str] = None
     safe_metadata: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def metadata(self) -> Dict[str, Any]:
+        return self.safe_metadata
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "timestamp": self.timestamp,

@@ -16,6 +16,8 @@ class PhonePermissionScope(str, Enum):
     VOICE_COMMAND = "VOICE_COMMAND"
     APPROVED_COMPUTER_ACTION = "APPROVED_COMPUTER_ACTION"
     EMERGENCY_STOP = "EMERGENCY_STOP"
+    READ_TELEMETRY = "READ_TELEMETRY"
+    READ_SCREEN_STREAM = "READ_SCREEN_STREAM"
 
 
 # Default scopes assigned to a newly paired companion device
@@ -25,6 +27,7 @@ DEFAULT_COMPANION_SCOPES: Set[PhonePermissionScope] = {
     PhonePermissionScope.SEND_COMMAND,
     PhonePermissionScope.VOICE_COMMAND,
     PhonePermissionScope.EMERGENCY_STOP,
+    PhonePermissionScope.READ_TELEMETRY,
 }
 
 # Action to required scope mapping
@@ -36,6 +39,14 @@ ACTION_SCOPE_MAP: Dict[str, PhonePermissionScope] = {
     "action.approved_execute": PhonePermissionScope.APPROVED_COMPUTER_ACTION,
     "emergency.stop": PhonePermissionScope.EMERGENCY_STOP,
     "emergency.status": PhonePermissionScope.READ_STATUS,
+    "telemetry.read": PhonePermissionScope.READ_TELEMETRY,
+    "telemetry.subscribe": PhonePermissionScope.READ_TELEMETRY,
+    "stream.start": PhonePermissionScope.READ_SCREEN_STREAM,
+    "stream.stop": PhonePermissionScope.READ_SCREEN_STREAM,
+    "stream.pause": PhonePermissionScope.READ_SCREEN_STREAM,
+    "stream.resume": PhonePermissionScope.READ_SCREEN_STREAM,
+    "stream.frame": PhonePermissionScope.READ_SCREEN_STREAM,
+    "stream.status": PhonePermissionScope.READ_TELEMETRY,
 }
 
 # Strictly prohibited actions / command patterns
@@ -58,6 +69,15 @@ PROHIBITED_ACTIONS: Set[str] = {
     "filesystem_delete",
     "disk.format",
     "reg.edit",
+    # Step 10 Phase 2: Prohibited remote computer control in observation layer
+    "remote.click",
+    "remote.type",
+    "remote.mouse_move",
+    "remote.key_press",
+    "remote.input",
+    "mouse_click",
+    "key_event",
+    "desktop_control",
 }
 
 # Substring patterns prohibited within command texts or payloads
@@ -147,6 +167,32 @@ class ModelIsolationGate:
     Ensures that Large Language Models (LLMs) cannot execute actions, shell commands,
     network calls, or ADB instructions directly. Models are strictly advisory.
     """
+
+    @classmethod
+    def is_model_authorized(cls, action_or_resource: str) -> Tuple[bool, str]:
+        """
+        Check whether an LLM model is authorized to directly access or execute
+        an action or resource. Models are strictly advisory and cannot directly
+        capture screens, start/stop streams, execute shell, or access sockets/queues.
+        """
+        clean = (action_or_resource or "").strip().lower()
+        if not clean:
+            return False, "EMPTY_ACTION_OR_RESOURCE"
+
+        # Check prohibited action list
+        if clean in PROHIBITED_ACTIONS:
+            return False, f"Prohibited action: '{clean}' cannot be executed directly by model."
+
+        # Model is blocked from direct screen capture, stream, socket, queue, shell, adb
+        blocked_keywords = (
+            "capture", "stream", "socket", "queue", "shell", "powershell",
+            "cmd", "adb", "pixel", "network", "bind", "listen"
+        )
+        for kw in blocked_keywords:
+            if kw in clean:
+                return False, f"Prohibited action: model cannot access '{kw}' directly."
+
+        return True, "AUTHORIZED_ADVISORY_ONLY"
 
     @staticmethod
     def sanitize_model_proposal(proposal: Dict[str, any]) -> Tuple[bool, str, Dict[str, any]]:

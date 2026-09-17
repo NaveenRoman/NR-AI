@@ -41,3 +41,21 @@ DEVICE_SECRET_BYTES: int = 32 # 256 bits
 SESSION_KEY_BYTES: int = 32   # 256 bits (AES-256)
 AES_GCM_NONCE_BYTES: int = 12 # 96 bits for AES-GCM IV
 AES_GCM_TAG_BYTES: int = 16   # 128 bits auth tag
+
+# Step 10 Phase 2 — Telemetry & Streaming Bounds
+MAX_TELEMETRY_EVENT_BYTES: int = 32768   # 32 KB limit per telemetry event
+MAX_TELEMETRY_PAYLOAD_BYTES: int = 16384 # 16 KB limit for event payload
+MAX_FRAME_WIDTH: int = 1920              # Max horizontal resolution
+MAX_FRAME_HEIGHT: int = 1080             # Max vertical resolution
+MAX_FRAME_BYTES: int = 524288            # 512 KB limit per compressed frame
+DEFAULT_FPS: float = 10.0                # Default streaming framerate
+MAX_FRAMES_PER_SECOND: float = 30.0      # Maximum allowable FPS
+MIN_FRAMES_PER_SECOND: float = 1.0       # Minimum allowable FPS
+MAX_QUEUED_FRAMES: int = 5               # Maximum frames held in backpressure queue
+MAX_QUEUE_BYTES: int = 2097152           # 2 MB total memory ceiling for pending frames
+MAX_STREAM_LIFETIME_SECONDS: int = 7200  # 2 hours maximum stream lifetime
+STREAM_INACTIVITY_TIMEOUT_SECONDS: int = 30 # 30s before stream marked reconnecting/stale
+MAX_RECONNECT_ATTEMPTS: int = 3          # Max 3 reconnect attempts before stream termination
+MAX_RECONNECT_WINDOW_SECONDS: int = 60   # 60s window to reconnect
+MAX_CONCURRENT_STREAMS_PER_DEVICE: int = 1 # Max 1 active screen stream per device
+MAX_GLOBAL_CONCURRENT_STREAMS: int = 5    # Max 5 active screen streams across all devices
