@@ -99,6 +99,7 @@ class RateLimitExceededError(AndroidSafetyError):
 # -----------------------------------------------------------------------------
 
 AUTHORIZED_PROJECT_PATH = Path(r"C:\NR-AI\nr_android_test").resolve()
+DEV_PROJECTS_ROOT = Path(r"C:\NR-AI\dev_projects").resolve()
 AUTHORIZED_PACKAGE_NAME = "com.nrai.test"
 
 AUTHORIZED_DEVICE_SERIALS: Set[str] = {
@@ -136,6 +137,10 @@ ALLOWED_ANDROID_TOOLS: Set[str] = {
     "android.launch_app",
     "android.capture_log",
     "android.verify_app",
+}
+
+ALLOWED_COMPANION_DEV_TOOLS: Set[str] = {
+    "android.create_project",
 }
 
 ALLOWED_ANDROID_UI_OPERATIONS: Set[str] = {
@@ -259,6 +264,7 @@ TOOL_RISK_MAP: Dict[str, RiskLevel] = {
     "android.launch_app": RiskLevel.MEDIUM,
     "android.capture_log": RiskLevel.LOW,
     "android.verify_app": RiskLevel.LOW,
+    "android.create_project": RiskLevel.MEDIUM,
 }
 
 
@@ -338,18 +344,19 @@ class AndroidSafetyGate:
     # -------------------------------------------------------------------------
 
     def validate_tool_name(self, tool_name: str) -> None:
-        """Ensures tool is in the approved 15-tool allowlist."""
+        """Ensures tool is in the approved tool allowlists."""
         self.check_emergency_stop()
-        if not tool_name or tool_name not in ALLOWED_ANDROID_TOOLS:
+        if not tool_name or (tool_name not in ALLOWED_ANDROID_TOOLS and tool_name not in ALLOWED_COMPANION_DEV_TOOLS):
             raise AndroidSafetyError(
                 AndroidErrorCode.ACTION_NOT_ALLOWED,
                 f"Tool '{tool_name}' is not in the authorized Android tool allowlist.",
             )
 
     def validate_project_path(self, project_path: Optional[Union[str, Path]]) -> Path:
-        """
+        r"""
         Validates that the project directory resolves strictly inside or to
-        the authorized project path C:\\NR-AI\\nr_android_test.
+        the authorized project path C:\NR-AI\nr_android_test or a sandboxed
+        project subdirectory under C:\NR-AI\dev_projects.
         """
         self.check_emergency_stop()
         if not project_path:
@@ -363,10 +370,21 @@ class AndroidSafetyGate:
                 f"Invalid project path specification: {e}",
             )
 
-        if resolved != self.authorized_project:
+        is_authorized = False
+        if resolved == self.authorized_project:
+            is_authorized = True
+        else:
+            try:
+                resolved.relative_to(DEV_PROJECTS_ROOT)
+                if resolved != DEV_PROJECTS_ROOT:
+                    is_authorized = True
+            except ValueError:
+                pass
+
+        if not is_authorized:
             raise AndroidSafetyError(
                 AndroidErrorCode.PROJECT_NOT_AUTHORIZED,
-                f"Project path '{resolved}' is not authorized. Only '{self.authorized_project}' is authorized.",
+                f"Project path '{resolved}' is not authorized. Only '{self.authorized_project}' or subdirectories inside '{DEV_PROJECTS_ROOT}' are authorized.",
             )
 
         if not resolved.exists() or not resolved.is_dir():
@@ -418,7 +436,7 @@ class AndroidSafetyGate:
     def validate_apk_path(self, apk_path: Union[str, Path]) -> Path:
         """
         Validates that the APK belongs to the authorized project's build output boundary
-        and is named or structured for com.nrai.test.
+        or a sandboxed project's build output under DEV_PROJECTS_ROOT.
         """
         self.check_emergency_stop()
         try:
@@ -429,11 +447,24 @@ class AndroidSafetyGate:
                 f"Invalid APK path specification: {e}",
             )
 
-        # Must reside strictly within authorized project build output directory
+        # Must reside strictly within authorized project build output directory or dev_projects
         expected_build_dir = (self.authorized_project / "app" / "build").resolve()
+        is_authorized_build = False
         try:
             resolved.relative_to(expected_build_dir)
+            is_authorized_build = True
         except ValueError:
+            pass
+
+        if not is_authorized_build:
+            try:
+                resolved.relative_to(DEV_PROJECTS_ROOT)
+                if "build" in resolved.parts:
+                    is_authorized_build = True
+            except ValueError:
+                pass
+
+        if not is_authorized_build:
             raise AndroidSafetyError(
                 AndroidErrorCode.APK_NOT_AUTHORIZED,
                 f"APK path '{resolved}' is outside the authorized project build directory '{expected_build_dir}'.",

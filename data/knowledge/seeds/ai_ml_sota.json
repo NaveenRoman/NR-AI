@@ -1,0 +1,328 @@
+[
+  {
+    "node_id": "ai-arch-transformer-attention",
+    "domain": "ai_ml",
+    "topic": "deep_learning_architectures",
+    "title": "The Transformer Architecture and Scaled Dot-Product Attention",
+    "content": "Introduced by Vaswani et al. in 'Attention Is All You Need' (2017), the Transformer replaces recurrent and convolutional architectures with stacked multi-head self-attention mechanisms, allowing parallel computation across entire sequence lengths. Scaled Dot-Product Attention is computed as: Attention(Q, K, V) = softmax((Q K^T) / sqrt(d_k)) V, where Q (Queries), K (Keys), and V (Values) are linear projections of token embeddings, and sqrt(d_k) prevents vanishing gradients in the softmax. Rotary Position Embeddings (RoPE) and Grouped-Query Attention (GQA) are standard in modern decoder-only foundation models.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Attention Is All You Need (NeurIPS 2017)",
+        "url": "https://arxiv.org/abs/1706.03762",
+        "publisher": "NeurIPS / Google Brain",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "transformer",
+      "attention",
+      "nlp",
+      "deep_learning",
+      "vaswani",
+      "rope",
+      "gqa"
+    ],
+    "temporal_anchor": "2017"
+  },
+  {
+    "node_id": "ai-post-training-rlhf-dpo",
+    "domain": "ai_ml",
+    "topic": "llm_post_training",
+    "title": "LLM Alignment: SFT, RLHF, and Direct Preference Optimization (DPO)",
+    "content": "Following self-supervised pre-training on massive text corpora, Large Language Models undergo post-training alignment for instruction-following, safety, and helpfulness. 1) Supervised Fine-Tuning (SFT) trains the model on curated demonstration prompts and answers; 2) Reinforcement Learning from Human Feedback (RLHF) trains a separate Reward Model on pairwise human preference ratings, followed by Proximal Policy Optimization (PPO) with a KL-divergence penalty to maximize reward without drifting from the base policy; 3) Direct Preference Optimization (DPO, Rafailov et al., 2023) analytically derives the optimal policy without training an explicit reward model or running complex reinforcement learning loops.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Direct Preference Optimization: Your Language Model is Secretly a Reward Model",
+        "url": "https://arxiv.org/abs/2305.18290",
+        "publisher": "NeurIPS 2023 / Stanford University",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "rlhf",
+      "dpo",
+      "sft",
+      "alignment",
+      "post_training",
+      "llms"
+    ],
+    "temporal_anchor": "2022-2024"
+  },
+  {
+    "node_id": "ai-inference-flashattention-quant",
+    "domain": "ai_ml",
+    "topic": "llm_inference_systems",
+    "title": "LLM Inference Acceleration: FlashAttention, PagedAttention, and Quantization",
+    "content": "Inference optimization addresses the quadratic memory and I/O bandwidth bottlenecks of autoregressive transformer decoding: 1) FlashAttention (Dao et al., 2022) tiles attention computation into GPU SRAM blocks to minimize High Bandwidth Memory (HBM) read/writes, achieving 2-4x speedups without approximation; 2) PagedAttention (vLLM, Kwon et al., 2023) applies virtual memory paging concepts to the Key-Value (KV) cache, eliminating internal memory fragmentation and enabling near-optimal GPU memory utilization; 3) Post-Training Quantization (AWQ, GPTQ, FP8, INT4) compresses weight and activation tensors from FP16/BF16 down to 8-bit or 4-bit precision, reducing memory footprint by 50-75% with minimal perplexity degradation.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness",
+        "url": "https://arxiv.org/abs/2205.14135",
+        "publisher": "NeurIPS 2022 / Stanford University",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "flashattention",
+      "pagedattention",
+      "vllm",
+      "quantization",
+      "fp8",
+      "inference"
+    ],
+    "temporal_anchor": "2022-2024"
+  },
+  {
+    "node_id": "ai-sota-frontier-landscape",
+    "domain": "ai_ml",
+    "topic": "frontier_models",
+    "title": "Frontier AI Foundation Models Ecosystem (2024\u20132026)",
+    "content": "The global frontier AI ecosystem is defined by three primary tiers: 1) Major Proprietary Cloud Providers: OpenAI (GPT-4o, o1/o3 reasoning models), Google DeepMind (Gemini 1.5 Pro/Flash, Gemini 2.0/3.0 series featuring multi-million token context windows and multimodal native tokens), and Anthropic (Claude 3.5/3.7 Sonnet featuring advanced code synthesis and computer use capabilities); 2) Leading Open-Weight Ecosystems: Meta's Llama family (Llama 3, 3.1, 3.3 up to 405B parameters), DeepSeek (DeepSeek V3 and DeepSeek R1 reasoning models with multi-head latent attention and mixture-of-experts architectures), Mistral AI (Mistral Large, Mixtral 8x22B), and Alibaba Qwen (Qwen 2.5 Coder/VL); 3) Reasoning Paradigms: Test-time compute scaling (spending more inference tokens on chain-of-thought exploration and self-correction to solve complex math, coding, and science problems).",
+    "epistemic_type": "CURRENT_INFORMATION",
+    "confidence": 0.95,
+    "sources": [
+      {
+        "name": "Artificial Intelligence Index Report 2024",
+        "publisher": "Stanford Institute for Human-Centered Artificial Intelligence (HAI)",
+        "reliability_weight": 0.96,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "frontier_models",
+      "gemini",
+      "gpt4",
+      "claude",
+      "llama",
+      "deepseek",
+      "reasoning"
+    ],
+    "temporal_anchor": "2024-2026"
+  },
+  {
+    "node_id": "ai-agents-react-tool-use",
+    "domain": "ai_ml",
+    "topic": "ai_agents",
+    "title": "Autonomous AI Agents: ReAct Pattern, Tool Use, and Sandboxing",
+    "content": "Autonomous AI agents combine foundation models with external tools, memory systems, and planning frameworks. The ReAct (Reasoning + Acting, Yao et al., 2022) paradigm prompts the model to interleave thought generation with action execution (e.g. 'Thought: I need to query the database. Action: execute_sql(...) -> Observation: result -> Thought: Now I can answer'). Robust agentic architectures incorporate: 1) Deterministic Tool Registries with schema-validated parameter contracts; 2) Sandboxed execution environments with strict process isolation and network egress rules; 3) Multi-agent communication protocols (e.g. Architect, Coder, Critic, Auditor); 4) Verification loops where agents compile code and run unit tests before declaring success.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "ReAct: Synergizing Reasoning and Acting in Language Models (ICLR 2023)",
+        "url": "https://arxiv.org/abs/2210.03629",
+        "publisher": "ICLR 2023 / Princeton University & Google Research",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "ai_agents",
+      "react_pattern",
+      "tool_calling",
+      "multi_agent",
+      "sandboxing"
+    ],
+    "temporal_anchor": "2022-present"
+  },
+  {
+    "node_id": "ai-theory-agi-asi-projections",
+    "domain": "ai_ml",
+    "topic": "agi_asi_theory",
+    "title": "Artificial General Intelligence (AGI) and Superintelligence (ASI) Trajectories",
+    "content": "Artificial General Intelligence (AGI) is defined as autonomous AI systems possessing the cognitive flexibility to match or surpass human capability across virtually all economically and intellectually valuable tasks. Artificial Superintelligence (ASI, Nick Bostrom) refers to an intelligence that greatly exceeds human cognitive performance in virtually all domains, including scientific creativity, general wisdom, and social skills. Key open questions include: whether scaling transformer models alone yields AGI, or if novel paradigms (neuro-symbolic integration, continuous online learning, causal reasoning) are strictly required. Predicted timelines among AI researchers and institutions range widely from the late 2020s to several decades away, with safety researchers emphasizing alignment, value lock-in, and recursive self-improvement governance.",
+    "epistemic_type": "SPECULATION_PREDICTION",
+    "confidence": 0.7,
+    "sources": [
+      {
+        "name": "Superintelligence: Paths, Dangers, Strategies",
+        "publisher": "Oxford University Press",
+        "reliability_weight": 0.85,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "agi",
+      "asi",
+      "superintelligence",
+      "ai_alignment",
+      "speculation",
+      "future_tech"
+    ],
+    "temporal_anchor": "2026+"
+  },
+  {
+    "node_id": "ai-history-symbolic-expert-systems",
+    "domain": "ai_ml",
+    "topic": "ai_foundations",
+    "title": "Foundations of Artificial Intelligence: Symbolic AI, Expert Systems, and AI Winters",
+    "content": "The field of Artificial Intelligence was founded at the Dartmouth Summer Research Project in 1956 by John McCarthy, Marvin Minsky, Nathaniel Rochester, and Claude Shannon. Early research focused on Symbolic AI ('Good Old-Fashioned AI' / GOFAI), logic programming (LISP, Prolog), heuristic search (A*), and automated theorem proving. The 1970s and 1980s saw the commercial rise of Expert Systems (MYCIN, XCON) using rule-based inference engines ('IF condition THEN action'). However, brittle edge cases, the inability to learn from raw sensory data, and overpromised capabilities triggered the 'AI Winters' (funding freezes and reduced public interest) until statistical machine learning and neural networks resurged.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Artificial Intelligence: A Modern Approach",
+        "publisher": "Stuart Russell, Peter Norvig, Pearson",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "symbolic_ai",
+      "expert_systems",
+      "ai_winter",
+      "dartmouth_workshop",
+      "john_mccarthy",
+      "gofai"
+    ],
+    "temporal_anchor": "1956-1990s"
+  },
+  {
+    "node_id": "ai-ann-backpropagation",
+    "domain": "ai_ml",
+    "topic": "neural_networks",
+    "title": "Artificial Neural Networks, Perceptrons, and Backpropagation",
+    "content": "Artificial neural networks originate from Frank Rosenblatt's 1958 Perceptron, a single-layer linear classifier whose limitations were analyzed by Minsky and Papert in 1969. The breakthrough enabling deep multi-layer networks was the backpropagation algorithm, popularized in 1986 by David Rumelhart, Geoffrey Hinton, and Ronald Williams. Backpropagation applies the calculus chain rule backwards from the loss function through each network layer, computing partial derivatives (gradients) with respect to every weight and bias, which are updated via Gradient Descent (SGD, Adam, AdamW). Non-linear activation functions (ReLU, GELU, Swish) resolve vanishing gradients and enable deep representation learning.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Learning representations by back-propagating errors",
+        "publisher": "Nature (Rumelhart, Hinton, Williams)",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "neural_networks",
+      "backpropagation",
+      "geoffrey_hinton",
+      "gradient_descent",
+      "perceptrons",
+      "deep_learning"
+    ],
+    "temporal_anchor": "1986"
+  },
+  {
+    "node_id": "ai-vision-cnns-resnet",
+    "domain": "ai_ml",
+    "topic": "computer_vision",
+    "title": "Convolutional Neural Networks (CNNs), Spatial Convolutions, and ResNet",
+    "content": "Convolutional Neural Networks (CNNs) process grid-structured data (images) using shift-invariant spatial filters that share weights across locations, inspired by Hubel and Wiesel's biological visual cortex experiments. Pioneered by Yann LeCun in 1989 (LeNet-5 for zip code digit recognition), CNNs surged in 2012 with AlexNet. As networks deepened, training suffered from the degradation problem (vanishing/exploding gradients). In 2015, Kaiming He et al. introduced Residual Networks (ResNet), using identity shortcut connections (residual skips: F(x) + x) that allow gradients to flow unimpeded through hundreds of layers, establishing modern computer vision foundations.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Deep Residual Learning for Image Recognition (CVPR 2016)",
+        "publisher": "Kaiming He et al., Microsoft Research",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "cnns",
+      "computer_vision",
+      "resnet",
+      "yann_lecun",
+      "kaiming_he",
+      "convolutions"
+    ],
+    "temporal_anchor": "1989-2015"
+  },
+  {
+    "node_id": "ai-sequences-rnns-lstms",
+    "domain": "ai_ml",
+    "topic": "sequence_modeling",
+    "title": "Recurrent Neural Networks (RNNs) and Long Short-Term Memory (LSTM)",
+    "content": "Recurrent Neural Networks (RNNs) model sequential temporal data by passing hidden state vectors forward through time. Standard RNNs suffer from vanishing and exploding gradients when backpropagating through long time steps. In 1997, Sepp Hochreiter and J\u00fcrgen Schmidhuber introduced Long Short-Term Memory (LSTM) networks, introducing an internal constant error carousel (cell state) regulated by input, forget, and output gating mechanisms. LSTMs and Gated Recurrent Units (GRUs) powered speech recognition and machine translation until the Transformer architecture introduced parallel self-attention in 2017.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Long Short-Term Memory",
+        "publisher": "Neural Computation (Hochreiter & Schmidhuber)",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "rnns",
+      "lstms",
+      "sequence_modeling",
+      "schmidhuber",
+      "nlp",
+      "gated_units"
+    ],
+    "temporal_anchor": "1997"
+  },
+  {
+    "node_id": "ai-reasoning-test-time-compute",
+    "domain": "ai_ml",
+    "topic": "reasoning_models",
+    "title": "Test-Time Compute Scaling and Reasoning Foundation Models",
+    "content": "Test-time compute scaling is an AI paradigm where foundation models spend additional compute during inference rather than merely relying on pre-training parameters. Pioneered by OpenAI's o1/o3 series and corroborated by DeepSeek R1 and Gemini reasoning systems, reasoning models generate extended internal Chain-of-Thought (CoT) tokens, evaluate alternative solution paths, detect errors, and perform self-correction before producing the final response. This breakthrough establishes a new scaling law orthogonal to pre-training data and parameter count, achieving state-of-the-art performance in complex competitive mathematics, Olympiad programming, and scientific reasoning.",
+    "epistemic_type": "CURRENT_INFORMATION",
+    "confidence": 0.98,
+    "sources": [
+      {
+        "name": "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning",
+        "publisher": "DeepSeek AI",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      },
+      {
+        "name": "Learning to Reason with LLMs",
+        "publisher": "OpenAI Research",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "reasoning_models",
+      "test_time_compute",
+      "chain_of_thought",
+      "deepseek_r1",
+      "o1",
+      "inference_scaling"
+    ],
+    "temporal_anchor": "2024-2026"
+  },
+  {
+    "node_id": "ai-model-gpt-6-astra",
+    "domain": "ai_ml",
+    "topic": "frontier_models",
+    "title": "GPT-6 Astra Model Status and Verification",
+    "content": "GPT-6 Astra is a hypothetical frontier AI model identifier configured in NR-AI's model registry (assigned to the highest intelligence tier with a 200,000 token context window). However, on the live OpenAI API, GPT-6 Astra is NOT an active, publicly released, or verified endpoint (returning HTTP 404 model_not_found or HTTP 429 quota exhaustion). Factually, OpenAI has not deployed or announced architectural specifications for a model named GPT-6 Astra. Claims regarding its autonomous capabilities, parameter scale, or release dates are strictly unverified speculation. NR-AI enforces epistemic honesty by classifying GPT-6 Astra as an unverified registry placeholder and falling back to verified live providers like Google Gemini.",
+    "epistemic_type": "SPECULATION_PREDICTION",
+    "confidence": 0.85,
+    "sources": [
+      {
+        "name": "NR-AI Model Registry & API Probe Verification",
+        "publisher": "NR-AI Runtime Audit",
+        "reliability_weight": 1.0,
+        "source_type": "primary"
+      }
+    ],
+    "tags": [
+      "gpt_6_astra",
+      "gpt6",
+      "gpt_6",
+      "astra",
+      "openai",
+      "frontier_models",
+      "unverified",
+      "speculation",
+      "model_registry"
+    ],
+    "temporal_anchor": "2026"
+  }
+]

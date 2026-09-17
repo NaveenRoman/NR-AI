@@ -9,6 +9,7 @@ telemetry updates, and Text-To-Speech response contracts into a cohesive mobile 
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
+import re
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
@@ -55,6 +56,9 @@ from app.remote.remote_action_session import RemoteActionSessionManager
 from app.remote.stream import StreamManager
 from app.remote.telemetry import TelemetryHub
 from app.remote.voice_session import VoiceIntentType, VoiceSessionManager
+from app.remote.companion_agent_bridge import CompanionAgentBridge
+from app.remote.dev_intent import DevelopmentIntentParser
+from app.agent.news_agent import NewsAgent
 
 StreamSessionManager = StreamManager
 
@@ -268,6 +272,15 @@ class CompanionOrchestrator:
         self.audit_logger = audit_logger or SecurityAuditLogger()
         self.computer_agent = computer_agent
 
+        self.bridge = CompanionAgentBridge(
+            emergency_controller=self.emergency_controller,
+            audit_logger=self.audit_logger,
+            computer_agent=self.computer_agent,
+        )
+        self.news_agent = NewsAgent()
+        from app.knowledge.engine import UniversalKnowledgeEngine
+        self.knowledge_engine = UniversalKnowledgeEngine(auto_seed=True)
+
         self._states: Dict[str, CompanionOrchestratorState] = {}  # device_id -> state
         self._lock = threading.Lock()
 
@@ -470,6 +483,180 @@ class CompanionOrchestrator:
         # If voice maps to a scoped computer action or natural query
         return self._route_intent_or_query(sess, transcript, intent_val, voice_res.to_dict(), None, start_t, now)
 
+    def _is_news_query(self, text: str) -> bool:
+        cleaned = (text or "").lower().strip()
+        news_keywords = [
+            "news", "headlines", "headline", "what is the news", "what is the current news",
+            "current news", "latest news", "today news", "todays news", "news today",
+            "what's happening", "whats happening", "daily briefing", "breaking news",
+            "top stories", "top story"
+        ]
+        return any(k in cleaned for k in news_keywords)
+
+    def _emit_progress(self, device_id: str, session_id: str, percent: int, stage_label: str, status: str = "IN_PROGRESS") -> None:
+        """Emits granular progress telemetry updates if telemetry hub is available."""
+        if not self.telemetry_hub:
+            return
+        payload = {
+            "percent": percent,
+            "stage": stage_label,
+            "status": status,
+            "timestamp": time.time(),
+        }
+        try:
+            if hasattr(self.telemetry_hub, "emit_event"):
+                self.telemetry_hub.emit_event(
+                    device_id=device_id,
+                    session_id=session_id,
+                    event_type="PROGRESS_UPDATE",
+                    payload=payload,
+                )
+            elif hasattr(self.telemetry_hub, "create_and_publish_event"):
+                self.telemetry_hub.create_and_publish_event(
+                    device_id=device_id,
+                    session_id=session_id,
+                    event_type="PROGRESS_UPDATE",
+                    payload=payload,
+                )
+        except Exception as te:
+            logger.debug(f"[CompanionOrchestrator] Progress emit skipped: {te}")
+
+    def _handle_news_query(
+        self,
+        sess: Any,
+        query_text: str,
+        start_t: float,
+        now: float,
+    ) -> CompanionCommandResult:
+        """Fetches and formats real, verified live news headlines using NewsAgent."""
+        self.transition_state(sess.device_id, CompanionOrchestratorState.EVALUATING_ACTION, "Fetching live news")
+        self._emit_progress(sess.device_id, sess.session_id, 20, "Connecting to verified news feeds")
+
+        query_lower = (query_text or "").lower()
+        if "tech" in query_lower:
+            category = "Technology"
+        elif "ai" in query_lower or "artificial intelligence" in query_lower:
+            category = "AI"
+        elif "india" in query_lower:
+            category = "India"
+        elif "business" in query_lower or "finance" in query_lower:
+            category = "Business"
+        elif "science" in query_lower:
+            category = "Science"
+        elif "gaming" in query_lower or "games" in query_lower:
+            category = "Gaming"
+        else:
+            category = "World"
+
+        self._emit_progress(sess.device_id, sess.session_id, 50, f"Retrieving {category} headlines")
+
+        try:
+            items = self.news_agent.fetch_category(category, limit=3)
+            if not items and category != "World":
+                items = self.news_agent.fetch_category("World", limit=3)
+        except Exception as ne:
+            logger.warning(f"News fetch error: {ne}")
+            items = []
+
+        if not items:
+            self._emit_progress(sess.device_id, sess.session_id, 50, "News retrieval unavailable", status="FAILED")
+            self.transition_state(sess.device_id, CompanionOrchestratorState.FAILED, "News retrieval unavailable")
+            return self._build_result(
+                session_id=sess.session_id,
+                device_id=sess.device_id,
+                command_type="NEWS",
+                status="FAILED",
+                success=False,
+                error_code="NEWS_UNAVAILABLE",
+                message="[FAILED | NEWS] Live news retrieval unavailable.",
+                start_t=start_t,
+                speech_text="Live news retrieval is currently unavailable.",
+            )
+
+        self._emit_progress(sess.device_id, sess.session_id, 85, "Formatting news summary")
+
+        headline_lines = []
+        speech_parts = ["Here are today's top headlines:"]
+        for idx, item in enumerate(items, 1):
+            pub = item.publisher or item.source
+            headline_lines.append(f"{idx}. {item.headline} ({pub})")
+            speech_parts.append(f"{idx}. {item.headline} from {pub}.")
+
+        msg_body = "\n".join(headline_lines)
+        formatted_message = f"Top Headlines ({category}):\n\n{msg_body}"
+        speech_text = " ".join(speech_parts)
+
+        self._emit_progress(sess.device_id, sess.session_id, 100, "News briefing delivered", status="COMPLETED")
+        self.transition_state(sess.device_id, CompanionOrchestratorState.REPORTING_RESPONSE, "News reported")
+        self.transition_state(sess.device_id, CompanionOrchestratorState.IDLE_CONNECTED, "Ready")
+
+        return self._build_result(
+            session_id=sess.session_id,
+            device_id=sess.device_id,
+            command_type="NEWS",
+            status="SUCCESS",
+            success=True,
+            message=formatted_message,
+            data={"category": category, "headlines": [it.to_dict() for it in items]},
+            start_t=start_t,
+            speech_text=speech_text,
+        )
+
+    def _is_knowledge_query(self, text: str) -> bool:
+        """Detects if incoming text command is a knowledge, science, history, or research question."""
+        if not text or not text.strip():
+            return False
+        c_low = text.lower().strip()
+
+        # Conversational continuity and follow-up queries take precedence over knowledge keywords
+        from app.brain.companion import NRCompanion
+        if NRCompanion._is_conversation_reference(c_low):
+            return False
+
+        knowledge_prefixes = (
+            "what is", "what are", "who was", "who is", "who were",
+            "tell me about", "explain", "how does", "how do", "why does",
+            "why is", "when did", "when was", "compare", "difference between",
+            "history of", "theory of", "algorithm for", "principles of"
+        )
+        if any(c_low.startswith(pfx + " ") or c_low == pfx or f" {pfx} " in f" {c_low} " for pfx in knowledge_prefixes):
+            return True
+        return False
+
+    def _handle_knowledge_query(
+        self,
+        sess: Any,
+        query_text: str,
+        start_t: float,
+        now: float,
+    ) -> CompanionCommandResult:
+        """Handles epistemic knowledge retrieval and autonomous research."""
+        self.transition_state(sess.device_id, CompanionOrchestratorState.EXECUTING_ACTION, "Consulting Universal Knowledge Store")
+        self._emit_progress(sess.device_id, sess.session_id, 25, "Searching Universal Knowledge Store")
+
+        card = self.knowledge_engine.query_companion_card(query_text)
+        self._emit_progress(sess.device_id, sess.session_id, 85, "Synthesizing epistemic attribution")
+
+        badge_tag = card.get("badge", {}).get("tag", "[VERIFIED FACT]")
+        display_msg = f"{badge_tag}\n\n{card['display_text']}"
+        speech_text = card.get("speech_text", card["display_text"])
+
+        self._emit_progress(sess.device_id, sess.session_id, 100, "Knowledge verified", status="COMPLETED")
+        self.transition_state(sess.device_id, CompanionOrchestratorState.REPORTING_RESPONSE, "Knowledge reported")
+        self.transition_state(sess.device_id, CompanionOrchestratorState.IDLE_CONNECTED, "Ready")
+
+        return self._build_result(
+            session_id=sess.session_id,
+            device_id=sess.device_id,
+            command_type="KNOWLEDGE",
+            status="SUCCESS",
+            success=True,
+            message=display_msg,
+            data=card,
+            start_t=start_t,
+            speech_text=speech_text,
+        )
+
     def _handle_text_command(
         self,
         sess: Any,
@@ -536,6 +723,49 @@ class CompanionOrchestrator:
                 speech_text="NR-AI system is online and operational.",
             )
 
+        # Check if text is a news / current events query
+        if self._is_news_query(cleaned):
+            return self._handle_news_query(sess, cleaned, start_t, now)
+
+        # Check if text is a knowledge / science / history inquiry
+        if self._is_knowledge_query(cleaned):
+            return self._handle_knowledge_query(sess, cleaned, start_t, now)
+
+        # Check if text is a specialized development workflow command (Priority before simple app launch)
+        if DevelopmentIntentParser.is_development_command(cleaned):
+            self.transition_state(sess.device_id, CompanionOrchestratorState.EXECUTING_ACTION, "Executing development workflow")
+            dev_intent = DevelopmentIntentParser.parse_intent(cleaned)
+            dev_res = self.bridge.dispatch(
+                intent=dev_intent,
+                session_id=sess.session_id,
+                device_id=sess.device_id,
+                start_t=start_t,
+            )
+            if dev_res.status == "STOPPED":
+                self.transition_state(sess.device_id, CompanionOrchestratorState.STOPPED, "Emergency stop during dev workflow")
+            elif dev_res.success:
+                self.transition_state(sess.device_id, CompanionOrchestratorState.REPORTING_RESPONSE, "Dev workflow completed")
+                self.transition_state(sess.device_id, CompanionOrchestratorState.IDLE_CONNECTED, "Ready")
+            else:
+                self.transition_state(sess.device_id, CompanionOrchestratorState.FAILED, f"Dev workflow failed: {dev_res.message}")
+            return dev_res
+
+        # Check if text is an application launch command: "open <app>", "launch <app>", "start <app>"
+        if cleaned_lower.startswith(("open ", "launch ", "start ")):
+            app_target = re.sub(r"^(?:open|launch|start)\s+", "", cleaned, flags=re.IGNORECASE).strip().rstrip(".?!")
+            if app_target.lower().startswith("app "):
+                app_target = app_target[4:].strip()
+            if app_target:
+                action_req_data = {
+                    "action_id": f"ACT-{int(now*1000)}",
+                    "session_id": sess.session_id,
+                    "device_id": sess.device_id,
+                    "action_type": RemoteActionType.OPEN_APP.value,
+                    "parameters": {"app_name": app_target},
+                    "timestamp": now,
+                }
+                return self._handle_action_payload(sess, action_req_data, cached_target, start_t, now)
+
         # Check if text maps directly to an approved tool name or alias
         mapped_action = None
         for alias, act_type in ACTION_ALIASES.items():
@@ -579,10 +809,12 @@ class CompanionOrchestrator:
     ) -> CompanionCommandResult:
         """Dispatches an action payload through Phase 4 allowlist, safety, confirmation, and execution."""
         self.transition_state(sess.device_id, CompanionOrchestratorState.EVALUATING_ACTION, "Evaluating action")
+        self._emit_progress(sess.device_id, sess.session_id, 15, "Evaluating computer action")
 
         # Validate schema
         valid, err_code, action_req = validate_remote_action_request(action_payload, current_time=now)
         if not valid or not action_req:
+            self._emit_progress(sess.device_id, sess.session_id, 15, f"Validation failed: {err_code}", status="FAILED")
             self.transition_state(sess.device_id, CompanionOrchestratorState.FAILED, f"Validation failed: {err_code}")
             return self._build_result(
                 session_id=sess.session_id,
@@ -595,6 +827,8 @@ class CompanionOrchestrator:
                 start_t=start_t,
                 speech_text=f"Action request was invalid: {err_code}.",
             )
+
+        self._emit_progress(sess.device_id, sess.session_id, 35, f"Processing {action_req.action_type}")
 
         # Process through RemoteActionSessionManager
         act_res: RemoteActionResult = self.remote_action_session_manager.process_action_request(
@@ -629,11 +863,14 @@ class CompanionOrchestrator:
             )
 
         if act_res.success:
+            self._emit_progress(sess.device_id, sess.session_id, 65, "Executing action on desktop")
             self.transition_state(sess.device_id, CompanionOrchestratorState.EXECUTING_ACTION, "Executing")
+            self._emit_progress(sess.device_id, sess.session_id, 85, "Verifying window visibility")
             self.transition_state(sess.device_id, CompanionOrchestratorState.VERIFYING_RESULT, "Verifying")
             self.transition_state(sess.device_id, CompanionOrchestratorState.REPORTING_RESPONSE, "Reporting")
             self.transition_state(sess.device_id, CompanionOrchestratorState.IDLE_CONNECTED, "Ready")
-            speech = f"Successfully executed {act_res.action_type}."
+            self._emit_progress(sess.device_id, sess.session_id, 100, f"Successfully executed {act_res.action_type}", status="COMPLETED")
+            speech = act_res.message or f"Successfully executed {act_res.action_type}."
             return self._build_result(
                 session_id=sess.session_id,
                 device_id=sess.device_id,
@@ -646,8 +883,9 @@ class CompanionOrchestrator:
                 speech_text=speech,
             )
         else:
+            self._emit_progress(sess.device_id, sess.session_id, 75, f"Execution failed: {act_res.message}", status="FAILED")
             self.transition_state(sess.device_id, CompanionOrchestratorState.FAILED, f"Execution failed: {act_res.error}")
-            speech = f"Action {act_res.action_type} failed: {act_res.message}"
+            speech = act_res.message or f"Action {act_res.action_type} failed: {act_res.error}"
             return self._build_result(
                 session_id=sess.session_id,
                 device_id=sess.device_id,
@@ -674,6 +912,18 @@ class CompanionOrchestrator:
         """Routes recognized voice intent to appropriate query or action."""
         intent_val = intent_type.value if hasattr(intent_type, "value") else str(intent_type)
         if intent_val in (
+            VoiceIntentType.NEWS_QUERY.value,
+            "NEWS_QUERY",
+        ) or self._is_news_query(transcript):
+            return self._handle_news_query(sess, transcript, start_t, now)
+
+        if intent_val in (
+            VoiceIntentType.KNOWLEDGE_QUERY.value,
+            "KNOWLEDGE_QUERY",
+        ) or self._is_knowledge_query(transcript):
+            return self._handle_knowledge_query(sess, transcript, start_t, now)
+
+        if intent_val in (
             VoiceIntentType.SYSTEM_TIME.value,
             VoiceIntentType.STATUS_QUERY.value,
             VoiceIntentType.TOOLCHAIN_STATUS.value,
@@ -684,6 +934,28 @@ class CompanionOrchestrator:
             return self._handle_text_command(sess, transcript, cached_target, start_t, now)
 
         if intent_val in (VoiceIntentType.ACTION_APPROVED.value, "ACTION_APPROVED"):
+            # Check if intent has an app_name parameter or transcript is an open command
+            parsed_params = dict(extra_data.get("parameters") or {})
+            app_target = parsed_params.get("app_name")
+            if not app_target:
+                for prefix in ("open ", "launch ", "start "):
+                    if transcript.lower().strip().startswith(prefix):
+                        app_target = re.sub(r"^(?:open|launch|start)\s+", "", transcript.strip(), flags=re.IGNORECASE).strip().rstrip(".?!")
+                        if app_target.lower().startswith("app "):
+                            app_target = app_target[4:].strip()
+                        break
+
+            if app_target:
+                action_payload = {
+                    "action_id": f"VOICE-ACT-{int(now*1000)}",
+                    "session_id": sess.session_id,
+                    "device_id": sess.device_id,
+                    "action_type": RemoteActionType.OPEN_APP.value,
+                    "parameters": {"app_name": app_target},
+                    "timestamp": now,
+                }
+                return self._handle_action_payload(sess, action_payload, cached_target, start_t, now)
+
             # Map transcript to action if possible
             for alias, act_type in ACTION_ALIASES.items():
                 if alias in transcript.lower():

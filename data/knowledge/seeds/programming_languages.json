@@ -1,0 +1,287 @@
+[
+  {
+    "node_id": "prog-java",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "Java Programming Language History, Disambiguation, and Evolution",
+    "content": "In technology and computer science, Java refers to the ubiquitous high-level object-oriented programming language and platform created at Sun Microsystems and managed by Oracle. (Disambiguation: In geography, Java is an island of Indonesia and the most populous island in the world; in slang, 'java' also refers to coffee). Java the programming language was created in June 1991 by James Gosling, Mike Sheridan, and Patrick Naughton at Sun Microsystems, originally named 'Oak' and aimed at interactive television. Officially released as Java 1.0 in May 1995, its defining philosophy was 'Write Once, Run Anywhere' (WORA), achieved by compiling source code to platform-independent bytecode executed by a Java Virtual Machine (JVM). In the 1990s (Java 1.0 to 1.2), Java was known for browser Applets, AWT/Swing GUI components, and automatic garbage collection. Over the subsequent decades, Java evolved dramatically: Java 5 (2004) introduced generics, annotations, and enums; Oracle acquired Sun in 2010; Java 8 (2014) introduced functional programming with lambda expressions and the Streams API; and starting with Java 9 (2017), the platform adopted a strict 6-month release cadence. Modern Java (Java 17 and Java 21 LTS) differs radically from 1990s Java, featuring virtual threads (Project Loom) for high-throughput lightweight concurrency, records (immutable data carriers), sealed classes, pattern matching for switch, modular encapsulation (Project Jigsaw), and garbage collectors like ZGC delivering sub-millisecond pauses for cloud-native microservices.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Java Language Specification",
+        "publisher": "Oracle / Addison-Wesley",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      },
+      {
+        "name": "The Java Programming Language",
+        "publisher": "James Gosling, Sun Microsystems",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "java",
+      "programming",
+      "jvm",
+      "james_gosling",
+      "bytecode",
+      "virtual_threads",
+      "1990s",
+      "sun_microsystems",
+      "object_oriented",
+      "java_island",
+      "indonesia",
+      "disambiguation"
+    ],
+    "temporal_anchor": "1995-present"
+  },
+  {
+    "node_id": "prog-c",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "C Programming Language History and Evolution",
+    "content": "The C programming language was developed between 1969 and 1973 by Dennis Ritchie at Bell Laboratories for the Unix operating system on the DEC PDP-11. Derived from Ken Thompson's B language and BCPL, C combined low-level memory addressability with structured control flow. The 1978 publication of 'The C Programming Language' by Brian Kernighan and Dennis Ritchie (K&R C) served as the informal specification until ANSI standardized it in 1989 (ANSI C / C89, ratified as ISO C90). Major revisions include C99 (variable-length arrays, inline functions), C11 (formalized memory model and multithreading), C17 (defect fixes), and C23 (modern type inference with 'auto', bit-precise integers). C remains the bedrock of modern systems programming, powering the Linux, Windows, and macOS operating system kernels, device drivers, and embedded runtimes.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The C Programming Language",
+        "publisher": "Brian Kernighan, Dennis Ritchie, Prentice Hall",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "c",
+      "programming",
+      "dennis_ritchie",
+      "unix",
+      "bell_labs",
+      "systems_programming",
+      "pointers"
+    ],
+    "temporal_anchor": "1972-present"
+  },
+  {
+    "node_id": "prog-cpp",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "C++ Programming Language History and Evolution",
+    "content": "C++ was created in 1979 by Bjarne Stroustrup at Bell Laboratories as 'C with Classes', adding Simula-like object-oriented abstractions to the performance and low-level control of C. Renamed C++ in 1983, it was standardized as ISO/IEC 14882 in 1998 (C++98), introducing the Standard Template Library (STL) designed by Alexander Stepanov. Modern C++ began with the landmark C++11 standard, which introduced move semantics, rvalue references, automatic type deduction ('auto'), lambda expressions, smart pointers ('std::unique_ptr', 'std::shared_ptr'), and a standard concurrency memory model. Subsequent standards (C++14, C++17, C++20, C++23) brought concepts (compile-time template constraints), coroutines, ranges, modules, and 'std::print', reinforcing its zero-overhead abstraction principle in game engines (Unreal), high-frequency trading, and high-performance computing.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Design and Evolution of C++",
+        "publisher": "Bjarne Stroustrup, Addison-Wesley",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "cpp",
+      "cplusplus",
+      "bjarne_stroustrup",
+      "oop",
+      "stl",
+      "move_semantics",
+      "systems_programming"
+    ],
+    "temporal_anchor": "1979-present"
+  },
+  {
+    "node_id": "prog-python",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "Python Programming Language History and Evolution",
+    "content": "Python was created in the late 1980s by Guido van Rossum at Centrum Wiskunde & Informatica (CWI) in the Netherlands as a successor to the ABC language capable of exception handling and interfacing with the Amoeba OS. First released in February 1991, Python prioritized developer productivity and clean, readable code with significant indentation. Python 2.0 (released October 2000) introduced list comprehensions, cycle-detecting garbage collection, and Unicode support. Python 3.0 (released December 2008) intentionally broke backward compatibility to eliminate design flaws, unifying text as Unicode strings and binary data as bytes, and changing integer division. Modern Python (Python 3.10-3.13) features structural pattern matching, faster CPython optimizations via the Specialized Adaptive Interpreter, optional static typing via the 'typing' module and MyPy, and asyncio for asynchronous I/O, establishing it as the world's dominant language for artificial intelligence, machine learning, data science, and scientific computing.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The History of Python",
+        "publisher": "Guido van Rossum, Python Software Foundation",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "python",
+      "programming",
+      "guido_van_rossum",
+      "cpython",
+      "ai",
+      "data_science",
+      "scripting"
+    ],
+    "temporal_anchor": "1991-present"
+  },
+  {
+    "node_id": "prog-javascript",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "JavaScript Language History and Evolution",
+    "content": "JavaScript was developed in May 1995 by Brendan Eich at Netscape Communications, created in just 10 days under the codename 'Mocha', later renamed 'LiveScript', and finally 'JavaScript'. Standardized by ECMA International in 1997 as ECMAScript (ECMA-262), the language enabled dynamic client-side web scripting with prototype-based inheritance, first-class functions, and event-driven execution. Key inflection points include AJAX in 2005 enabling asynchronous web apps without page reloads, and Ryan Dahl's 2009 creation of Node.js using Google's V8 engine, which brought JavaScript to backend server engineering. The watershed ECMAScript 2015 (ES6) specification modernized the language with classes, lexical block scoping ('let'/'const'), arrow functions, promises, template literals, and modules. Modern JavaScript follows an annual TC39 release cycle featuring 'async/await', optional chaining, nullish coalescing, and private class fields, serving as the universal language of the World Wide Web.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "JavaScript: The Definitive Guide",
+        "publisher": "David Flanagan, O'Reilly Media",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "javascript",
+      "js",
+      "brendan_eich",
+      "ecmascript",
+      "es6",
+      "node_js",
+      "web",
+      "frontend"
+    ],
+    "temporal_anchor": "1995-present"
+  },
+  {
+    "node_id": "prog-typescript",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "TypeScript History and Evolution",
+    "content": "TypeScript was created by Anders Hejlsberg at Microsoft and publicly released in October 2012. Designed to overcome the scaling limitations of JavaScript in large codebases, TypeScript is a typed superset of JavaScript that compiles down to clean ECMAScript. Its defining architectural trait is a structural type system with compile-time type inference, interfaces, generics, union and intersection types, type narrowing, and advanced mapped/conditional types, with zero runtime overhead because types are erased during compilation. TypeScript has become an industry standard for scalable web frontend frameworks (React, Angular, Vue) and backend services.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "TypeScript Language Specification",
+        "publisher": "Microsoft Corporation",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "typescript",
+      "ts",
+      "microsoft",
+      "anders_hejlsberg",
+      "static_typing",
+      "javascript",
+      "web"
+    ],
+    "temporal_anchor": "2012-present"
+  },
+  {
+    "node_id": "prog-csharp",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "C# and .NET History and Evolution",
+    "content": "C# was designed by Anders Hejlsberg and Scott Wiltamuth at Microsoft as part of the .NET initiative, announced in 2000 and standardized by ECMA (ECMA-334) in 2002. Running on the Common Language Runtime (CLR), C# combined object-oriented safety with component-oriented features. Milestones include C# 2.0 (generics), C# 3.0 (Language Integrated Query / LINQ), C# 5.0 (the 'async/await' pattern that revolutionized asynchronous programming), and Microsoft's 2014 pivot to open-source, cross-platform architecture with .NET Core. Modern C# (C# 10-13 on .NET 8/9) features records, top-level statements, pattern matching, native AOT compilation, and high-throughput memory primitives ('Span<T>', 'Memory<T>'), widely used in enterprise services, cloud backends, and game development via Unity.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "C# Language Specification (ECMA-334)",
+        "publisher": "Ecma International",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "csharp",
+      "dotnet",
+      "microsoft",
+      "anders_hejlsberg",
+      "unity",
+      "clr",
+      "async_await"
+    ],
+    "temporal_anchor": "2000-present"
+  },
+  {
+    "node_id": "prog-kotlin",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "Kotlin History and Evolution",
+    "content": "Kotlin was developed by JetBrains, led by Andrey Breslav in Saint Petersburg, unveiled in July 2011, and reached version 1.0 in February 2016. Designed as a concise, pragmatic, and 100% interoperable alternative to Java on the JVM, Kotlin eliminates null pointer exceptions through compile-time null safety (distinguishing nullable and non-nullable types). In May 2017, Google announced official support for Kotlin on Android, and in May 2019 made Kotlin the preferred language for Android app development ('Kotlin-first'). Core language features include extension functions, data classes, smart casts, coroutines for structured concurrency, and Kotlin Multiplatform (KMP), enabling shared business logic across Android, iOS, desktop, and backend services.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Kotlin in Action",
+        "publisher": "Dmitry Jemerov, Svetlana Isakova, Manning Publications",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "kotlin",
+      "android",
+      "jetbrains",
+      "jvm",
+      "coroutines",
+      "null_safety",
+      "mobile"
+    ],
+    "temporal_anchor": "2011-present"
+  },
+  {
+    "node_id": "prog-rust",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "Rust Programming Language History and Evolution",
+    "content": "Rust was initiated in 2006 by Graydon Hoare at Mozilla Research, sponsored by Mozilla in 2009, and reached version 1.0 in May 2015. Developed to solve memory safety and concurrency bugs in web browsers (leading to Mozilla's Servo engine), Rust achieves complete memory and thread safety without a garbage collector through a compile-time ownership and borrow checker model with explicit lifetimes. Its core principle is 'fearless concurrency' and zero-cost abstractions: code written with high-level functional iterators compiles to machine code as fast as hand-written C. Governed by the independent Rust Foundation since 2021, Rust has been adopted for core systems infrastructure across AWS, Microsoft Windows, Google Android, and was merged as the second language (alongside C) in the Linux kernel in Linux 6.1 (2022).",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Rust Programming Language",
+        "publisher": "Steve Klabnik, Carol Nichols, No Starch Press",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "rust",
+      "programming",
+      "graydon_hoare",
+      "mozilla",
+      "memory_safety",
+      "borrow_checker",
+      "systems_programming",
+      "linux_kernel"
+    ],
+    "temporal_anchor": "2010-present"
+  },
+  {
+    "node_id": "prog-go",
+    "domain": "programming",
+    "topic": "languages",
+    "title": "Go (Golang) History and Evolution",
+    "content": "Go (often Golang) was designed in September 2007 by Robert Griesemer, Rob Pike, and Ken Thompson at Google, announced in November 2009, and reached version 1.0 in March 2012. Conceived as an answer to the complexity and slow compilation of C++ in large distributed codebases, Go emphasizes radical simplicity, orthogonal features, fast compilation, and built-in concurrency based on Tony Hoare's Communicating Sequential Processes (CSP). Concurrency is expressed via lightweight goroutines (multiplexed onto OS threads by the Go runtime) and channels for communication. Go features an efficient concurrent garbage collector with sub-millisecond stop-the-world pauses. Go 1.18 (2022) added parameterized types (generics). Go has become the lingua franca of cloud infrastructure, powering Docker, Kubernetes, Terraform, Prometheus, and microservice backends worldwide.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Go Programming Language",
+        "publisher": "Alan Donovan, Brian Kernighan, Addison-Wesley",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "go",
+      "golang",
+      "rob_pike",
+      "ken_thompson",
+      "google",
+      "cloud_native",
+      "kubernetes",
+      "concurrency",
+      "goroutines"
+    ],
+    "temporal_anchor": "2009-present"
+  }
+]

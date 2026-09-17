@@ -46,6 +46,12 @@ class AppDiscovery:
             "chrome": "google chrome",
             "google chrome": "google chrome",
 
+            "unreal": "unreal engine",
+            "unreal engine": "unreal engine",
+            "ue": "unreal engine",
+            "ue5": "unreal engine",
+            "ue4": "unreal engine",
+
             "notepad": "notepad",
             "calculator": "calculator",
             "calc": "calculator",
@@ -293,6 +299,15 @@ class AppDiscovery:
             "unity hub": [
                 r"C:\Program Files\Unity Hub\Unity Hub.exe",
                 r"C:\Program Files\Unity\Hub\Unity Hub.exe",
+            ],
+
+            "unreal engine": [
+                r"C:\Program Files\Epic Games\UE_5.4\Engine\Binaries\Win64\UnrealEditor.exe",
+                r"C:\Program Files\Epic Games\UE_5.3\Engine\Binaries\Win64\UnrealEditor.exe",
+                r"C:\Program Files\Epic Games\UE_5.2\Engine\Binaries\Win64\UnrealEditor.exe",
+                r"C:\Program Files\Epic Games\UE_5.1\Engine\Binaries\Win64\UnrealEditor.exe",
+                r"C:\Program Files\Epic Games\UE_5.0\Engine\Binaries\Win64\UnrealEditor.exe",
+                r"C:\Program Files\Epic Games\UE_4.27\Engine\Binaries\Win64\UE4Editor.exe",
             ],
 
             "google chrome": [

@@ -1,0 +1,525 @@
+{
+  "version": "1.0",
+  "updated_at": 1789661957.155536,
+  "agents": {
+    "android_unified_agent": {
+      "agent_id": "android_unified_agent",
+      "name": "Android Unified Agent",
+      "version": "1.0.0",
+      "description": "Autonomous Android development, build, deployment, and repair agent.",
+      "purpose": "Full lifecycle Android Studio and Gradle project management.",
+      "capabilities": [
+        "android.build",
+        "android.deploy",
+        "android.repair",
+        "android.ui"
+      ],
+      "model_requirement": {
+        "required_capabilities": [
+          "CODING",
+          "REASONING"
+        ],
+        "preferred_model": "gemini-3.6-flash",
+        "fallback_models": [],
+        "max_context_tokens": 128000,
+        "latency_tier": "normal",
+        "requires_live_api_verified": true
+      },
+      "tool_requirements": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "safety_policy": {
+        "sandboxed_root": "dev_projects",
+        "max_steps": 20,
+        "timeout_seconds": 120,
+        "retry_limit": 2,
+        "allow_shell": false,
+        "allow_network_listen": false,
+        "allow_credential_access": false,
+        "require_emergency_stop_check": true,
+        "prohibited_tools": [
+          "shell.exec",
+          "system.cmd",
+          "powershell.exec",
+          "network.listen",
+          "credential.read",
+          "os.raw_exec",
+          "eval",
+          "exec"
+        ]
+      },
+      "lifecycle_state": "ACTIVE",
+      "verification_requirements": [],
+      "test_requirements": [],
+      "provenance": {
+        "type": "builtin",
+        "author": "NR-AI Core"
+      },
+      "created_at": 1789661886.3869889,
+      "updated_at": 1789661886.3869889
+    },
+    "vs_unified_agent": {
+      "agent_id": "vs_unified_agent",
+      "name": "Visual Studio Unified Agent",
+      "version": "1.0.0",
+      "description": "Visual Studio, MSBuild, and C#/C++ debugging and code repair agent.",
+      "purpose": "Full lifecycle Visual Studio solution inspection and build management.",
+      "capabilities": [
+        "vs.build",
+        "vs.debug",
+        "vs.repair",
+        "msbuild.run"
+      ],
+      "model_requirement": {
+        "required_capabilities": [
+          "CODING",
+          "REASONING"
+        ],
+        "preferred_model": "gemini-3.6-flash",
+        "fallback_models": [],
+        "max_context_tokens": 128000,
+        "latency_tier": "normal",
+        "requires_live_api_verified": true
+      },
+      "tool_requirements": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "safety_policy": {
+        "sandboxed_root": "dev_projects",
+        "max_steps": 20,
+        "timeout_seconds": 120,
+        "retry_limit": 2,
+        "allow_shell": false,
+        "allow_network_listen": false,
+        "allow_credential_access": false,
+        "require_emergency_stop_check": true,
+        "prohibited_tools": [
+          "shell.exec",
+          "system.cmd",
+          "powershell.exec",
+          "network.listen",
+          "credential.read",
+          "os.raw_exec",
+          "eval",
+          "exec"
+        ]
+      },
+      "lifecycle_state": "ACTIVE",
+      "verification_requirements": [],
+      "test_requirements": [],
+      "provenance": {
+        "type": "builtin",
+        "author": "NR-AI Core"
+      },
+      "created_at": 1789661886.3869889,
+      "updated_at": 1789661886.3869889
+    },
+    "unity_autonomous_agent": {
+      "agent_id": "unity_autonomous_agent",
+      "name": "Unity Autonomous Agent",
+      "version": "1.0.0",
+      "description": "Unity 2022.3 C# game development, AST modification, and EditMode test runner.",
+      "purpose": "Unity project inspection, asset validation, and C# compilation.",
+      "capabilities": [
+        "unity.build",
+        "unity.test",
+        "unity.csharp_repair",
+        "unity.ast"
+      ],
+      "model_requirement": {
+        "required_capabilities": [
+          "CODING",
+          "REASONING"
+        ],
+        "preferred_model": "gemini-3.6-flash",
+        "fallback_models": [],
+        "max_context_tokens": 128000,
+        "latency_tier": "normal",
+        "requires_live_api_verified": true
+      },
+      "tool_requirements": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "safety_policy": {
+        "sandboxed_root": "dev_projects",
+        "max_steps": 20,
+        "timeout_seconds": 120,
+        "retry_limit": 2,
+        "allow_shell": false,
+        "allow_network_listen": false,
+        "allow_credential_access": false,
+        "require_emergency_stop_check": true,
+        "prohibited_tools": [
+          "shell.exec",
+          "system.cmd",
+          "powershell.exec",
+          "network.listen",
+          "credential.read",
+          "os.raw_exec",
+          "eval",
+          "exec"
+        ]
+      },
+      "lifecycle_state": "ACTIVE",
+      "verification_requirements": [],
+      "test_requirements": [],
+      "provenance": {
+        "type": "builtin",
+        "author": "NR-AI Core"
+      },
+      "created_at": 1789661886.3869889,
+      "updated_at": 1789661886.3869889
+    },
+    "unreal_autonomous_agent": {
+      "agent_id": "unreal_autonomous_agent",
+      "name": "Unreal Autonomous Agent",
+      "version": "1.0.0",
+      "description": "Unreal Engine 5 C++ and UBT compilation, Blueprint inspection, and automation.",
+      "purpose": "Unreal Engine project building and C++ source verification.",
+      "capabilities": [
+        "unreal.build",
+        "unreal.test",
+        "unreal.cpp_repair",
+        "ubt.run"
+      ],
+      "model_requirement": {
+        "required_capabilities": [
+          "CODING",
+          "REASONING"
+        ],
+        "preferred_model": "gemini-3.6-flash",
+        "fallback_models": [],
+        "max_context_tokens": 128000,
+        "latency_tier": "normal",
+        "requires_live_api_verified": true
+      },
+      "tool_requirements": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "safety_policy": {
+        "sandboxed_root": "dev_projects",
+        "max_steps": 20,
+        "timeout_seconds": 120,
+        "retry_limit": 2,
+        "allow_shell": false,
+        "allow_network_listen": false,
+        "allow_credential_access": false,
+        "require_emergency_stop_check": true,
+        "prohibited_tools": [
+          "shell.exec",
+          "system.cmd",
+          "powershell.exec",
+          "network.listen",
+          "credential.read",
+          "os.raw_exec",
+          "eval",
+          "exec"
+        ]
+      },
+      "lifecycle_state": "ACTIVE",
+      "verification_requirements": [],
+      "test_requirements": [],
+      "provenance": {
+        "type": "builtin",
+        "author": "NR-AI Core"
+      },
+      "created_at": 1789661886.3869889,
+      "updated_at": 1789661886.3869889
+    },
+    "computer_control_agent": {
+      "agent_id": "computer_control_agent",
+      "name": "Unified Computer Agent",
+      "version": "1.0.0",
+      "description": "Safe, bounded desktop GUI automation on WinSta0 Default.",
+      "purpose": "Interactive window management and verified desktop input.",
+      "capabilities": [
+        "computer.gui_control",
+        "computer.window_focus",
+        "computer.vision"
+      ],
+      "model_requirement": {
+        "required_capabilities": [
+          "VISION",
+          "REASONING"
+        ],
+        "preferred_model": "gemini-3.6-flash",
+        "fallback_models": [],
+        "max_context_tokens": 128000,
+        "latency_tier": "normal",
+        "requires_live_api_verified": true
+      },
+      "tool_requirements": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "safety_policy": {
+        "sandboxed_root": "dev_projects",
+        "max_steps": 20,
+        "timeout_seconds": 120,
+        "retry_limit": 2,
+        "allow_shell": false,
+        "allow_network_listen": false,
+        "allow_credential_access": false,
+        "require_emergency_stop_check": true,
+        "prohibited_tools": [
+          "shell.exec",
+          "system.cmd",
+          "powershell.exec",
+          "network.listen",
+          "credential.read",
+          "os.raw_exec",
+          "eval",
+          "exec"
+        ]
+      },
+      "lifecycle_state": "ACTIVE",
+      "verification_requirements": [],
+      "test_requirements": [],
+      "provenance": {
+        "type": "builtin",
+        "author": "NR-AI Core"
+      },
+      "created_at": 1789661886.3869889,
+      "updated_at": 1789661886.3869889
+    },
+    "universal_knowledge_engine": {
+      "agent_id": "universal_knowledge_engine",
+      "name": "Universal Knowledge Engine",
+      "version": "1.0.0",
+      "description": "Epistemic multi-hop knowledge retrieval, local FTS5 store, and scholarly research.",
+      "purpose": "Factual retrieval, continuous learning, and multi-source research.",
+      "capabilities": [
+        "knowledge.retrieve",
+        "knowledge.research",
+        "literature.search"
+      ],
+      "model_requirement": {
+        "required_capabilities": [
+          "RESEARCH",
+          "GENERAL"
+        ],
+        "preferred_model": "gemini-3.6-flash",
+        "fallback_models": [],
+        "max_context_tokens": 128000,
+        "latency_tier": "normal",
+        "requires_live_api_verified": true
+      },
+      "tool_requirements": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "safety_policy": {
+        "sandboxed_root": "dev_projects",
+        "max_steps": 20,
+        "timeout_seconds": 120,
+        "retry_limit": 2,
+        "allow_shell": false,
+        "allow_network_listen": false,
+        "allow_credential_access": false,
+        "require_emergency_stop_check": true,
+        "prohibited_tools": [
+          "shell.exec",
+          "system.cmd",
+          "powershell.exec",
+          "network.listen",
+          "credential.read",
+          "os.raw_exec",
+          "eval",
+          "exec"
+        ]
+      },
+      "lifecycle_state": "ACTIVE",
+      "verification_requirements": [],
+      "test_requirements": [],
+      "provenance": {
+        "type": "builtin",
+        "author": "NR-AI Core"
+      },
+      "created_at": 1789661886.3869889,
+      "updated_at": 1789661886.3869889
+    },
+    "gen_i_need_an_agent_agent_1953": {
+      "agent_id": "gen_i_need_an_agent_agent_1953",
+      "name": "I Need An Agent Agent",
+      "version": "1.0.0",
+      "description": "Specialized autonomous agent for: I need an agent that can analyze medical research papers",
+      "purpose": "Specialized agent created to address: I need an agent that can analyze medical research papers",
+      "capabilities": [
+        "literature.biomedical_search"
+      ],
+      "model_requirement": {
+        "required_capabilities": [
+          "REASONING",
+          "RESEARCH"
+        ],
+        "preferred_model": "gemini-3.6-flash",
+        "fallback_models": [
+          "gemini-flash-latest",
+          "gpt-5.6-sol"
+        ],
+        "max_context_tokens": 128000,
+        "latency_tier": "normal",
+        "requires_live_api_verified": true
+      },
+      "tool_requirements": [
+        {
+          "tool_id": "research.lookup",
+          "permission": "RESEARCH_READ",
+          "risk_level": "LOW",
+          "required": true,
+          "purpose": "Scholarly literature and verified knowledge search"
+        }
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "safety_policy": {
+        "sandboxed_root": "dev_projects",
+        "max_steps": 20,
+        "timeout_seconds": 120,
+        "retry_limit": 2,
+        "allow_shell": false,
+        "allow_network_listen": false,
+        "allow_credential_access": false,
+        "require_emergency_stop_check": true,
+        "prohibited_tools": [
+          "shell.exec",
+          "system.cmd",
+          "powershell.exec",
+          "network.listen",
+          "credential.read",
+          "os.raw_exec",
+          "eval",
+          "exec"
+        ]
+      },
+      "lifecycle_state": "ACTIVE",
+      "verification_requirements": [],
+      "test_requirements": [],
+      "provenance": {
+        "created_by": "AgentFactory",
+        "source_requirement": "I need an agent that can analyze medical research papers",
+        "created_at": 1789661953.1476767
+      },
+      "created_at": 1789661953.1476767,
+      "updated_at": 1789661957.155536
+    }
+  },
+  "history": {}
+}

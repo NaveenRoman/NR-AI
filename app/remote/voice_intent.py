@@ -18,6 +18,8 @@ class VoiceIntentType(str, Enum):
     STATUS_QUERY = "STATUS_QUERY"
     SYSTEM_TIME = "SYSTEM_TIME"
     TOOLCHAIN_STATUS = "TOOLCHAIN_STATUS"
+    NEWS_QUERY = "NEWS_QUERY"
+    KNOWLEDGE_QUERY = "KNOWLEDGE_QUERY"
     CONVERSATION = "CONVERSATION"
     ACTION_APPROVED = "ACTION_APPROVED"
     CONFIRMATION_RESPONSE = "CONFIRMATION_RESPONSE"
@@ -223,6 +225,45 @@ class VoiceIntentParser:
                     risk_level="LOW",
                 )
 
+        # 6.5. News & Current Events Queries
+        news_triggers = [
+            "news", "headlines", "headline", "what is the news", "what is the current news",
+            "current news", "latest news", "today news", "todays news", "news today",
+            "what's happening", "whats happening", "daily briefing", "breaking news"
+        ]
+        for nt in news_triggers:
+            if nt in normalized:
+                return VoiceIntent(
+                    intent_id=intent_id,
+                    text=raw_text,
+                    normalized_text=normalized,
+                    intent_type=VoiceIntentType.NEWS_QUERY,
+                    confidence=0.95,
+                    requires_confirmation=False,
+                    risk_level="LOW",
+                    parameters={"query": normalized},
+                )
+
+        # 6.8. Universal Knowledge & Research Inquiries
+        knowledge_triggers = [
+            "what is", "what are", "who was", "who is", "who were",
+            "tell me about", "explain", "how does", "how do", "why does",
+            "why is", "when did", "when was", "compare", "difference between",
+            "history of", "theory of", "algorithm for", "principles of"
+        ]
+        for kt in knowledge_triggers:
+            if normalized.startswith(kt + " ") or normalized == kt or f" {kt} " in f" {normalized} ":
+                return VoiceIntent(
+                    intent_id=intent_id,
+                    text=raw_text,
+                    normalized_text=normalized,
+                    intent_type=VoiceIntentType.KNOWLEDGE_QUERY,
+                    confidence=0.95,
+                    requires_confirmation=False,
+                    risk_level="LOW",
+                    parameters={"query": normalized},
+                )
+
         # 7. Conversational queries
         conv_prefixes = ["what", "who", "where", "why", "how", "when", "tell me", "explain", "describe", "hello", "hi"]
         for cp in conv_prefixes:
@@ -236,6 +277,24 @@ class VoiceIntentParser:
                     requires_confirmation=False,
                     risk_level="LOW",
                 )
+
+        # 7.5. Application Launch Voice Commands ("open <app>", "launch <app>", "start <app>")
+        for prefix in ("open ", "launch ", "start "):
+            if normalized.startswith(prefix):
+                app_target = normalized[len(prefix):].strip()
+                if app_target.startswith("app "):
+                    app_target = app_target[4:].strip()
+                if app_target:
+                    return VoiceIntent(
+                        intent_id=intent_id,
+                        text=raw_text,
+                        normalized_text=normalized,
+                        intent_type=VoiceIntentType.ACTION_APPROVED,
+                        confidence=0.95,
+                        requires_confirmation=False,
+                        risk_level="LOW",
+                        parameters={"action": "computer.open_app", "app_name": app_target},
+                    )
 
         # 8. Check if speech maps to an approved computer action alias
         from app.remote.remote_actions import ACTION_ALIASES
@@ -262,3 +321,6 @@ class VoiceIntentParser:
             requires_confirmation=False,
             risk_level="MEDIUM",
         )
+
+    # Class-level alias for convenience
+    parse = parse_intent

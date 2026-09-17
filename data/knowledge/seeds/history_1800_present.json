@@ -1,0 +1,515 @@
+[
+  {
+    "node_id": "hist-1815-waterloo",
+    "domain": "history",
+    "topic": "19th_century_europe",
+    "title": "Battle of Waterloo and the Congress of Vienna",
+    "content": "On June 18, 1815, the Battle of Waterloo marked the definitive defeat of Napoleon Bonaparte by coalition forces commanded by the Duke of Wellington and Gebhard Leberecht von Bl\u00fccher. The Congress of Vienna (1814\u20131815) established a balance of power among major European monarchies, creating the 'Concert of Europe' which largely prevented continent-wide war for nearly a century until 1914.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Cambridge Modern History",
+        "publisher": "Cambridge University Press",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "napoleon",
+      "waterloo",
+      "congress_of_vienna",
+      "europe",
+      "19th_century"
+    ],
+    "temporal_anchor": "1815"
+  },
+  {
+    "node_id": "hist-1868-meiji",
+    "domain": "history",
+    "topic": "east_asia_modernization",
+    "title": "The Meiji Restoration in Japan",
+    "content": "In 1868, the Meiji Restoration restored practical imperial rule to Japan under Emperor Meiji, ending more than 250 years of Tokugawa shogunate isolationism (Sakoku). Japan initiated rapid modernization, industrialization, Westernization of institutions, and military reforms, transforming from a feudal society into an industrialized global power within a few decades.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Making of Modern Japan",
+        "publisher": "Harvard University Press",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "japan",
+      "meiji_restoration",
+      "industrialization",
+      "east_asia"
+    ],
+    "temporal_anchor": "1868"
+  },
+  {
+    "node_id": "hist-1861-us-civil-war",
+    "domain": "history",
+    "topic": "north_america",
+    "title": "The American Civil War and Abolition of Slavery",
+    "content": "Fought from 1861 to 1865 between the Northern United States (the Union) and eleven Southern states that seceded to form the Confederacy. The primary cause of the war was the status of slavery. The Union victory preserved the United States as one nation and led to the Emancipation Proclamation (1863) and the Thirteenth Amendment (1865), which officially abolished slavery across the United States.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Battle Cry of Freedom",
+        "publisher": "Oxford University Press",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "us_civil_war",
+      "lincoln",
+      "emancipation",
+      "13th_amendment",
+      "slavery"
+    ],
+    "temporal_anchor": "1861-1865"
+  },
+  {
+    "node_id": "hist-1870-second-ind-rev",
+    "domain": "history",
+    "topic": "industrial_revolution",
+    "title": "The Second Industrial Revolution",
+    "content": "Occurring roughly from 1870 to 1914, the Second Industrial Revolution (also known as the Technological Revolution) was characterized by the widespread adoption of electrical power, the Bessemer process for mass steel production, synthetic chemistry, the internal combustion engine, petroleum extraction, telegraph and telephone communications, and assembly-line manufacturing pioneered by Henry Ford.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Unbound Prometheus",
+        "publisher": "Cambridge University Press",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "second_industrial_revolution",
+      "electricity",
+      "steel",
+      "assembly_line",
+      "petroleum"
+    ],
+    "temporal_anchor": "1870-1914"
+  },
+  {
+    "node_id": "hist-1914-ww1",
+    "domain": "history",
+    "topic": "world_wars",
+    "title": "World War I and the Dissolution of Empires",
+    "content": "Triggered by the assassination of Archduke Franz Ferdinand in Sarajevo in June 1914, World War I (1914\u20131918) pitted the Allied Powers (France, UK, Russia, later US and Italy) against the Central Powers (Germany, Austria-Hungary, Ottoman Empire, Bulgaria). It introduced mechanized industrial warfare, tanks, aircraft, and chemical weapons. The war resulted in the collapse of four major empires (Russian, German, Austro-Hungarian, and Ottoman) and led to the 1919 Treaty of Versailles.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The First World War",
+        "publisher": "Penguin Books",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "ww1",
+      "versailles",
+      "allies",
+      "central_powers",
+      "sarajevo"
+    ],
+    "temporal_anchor": "1914-1918"
+  },
+  {
+    "node_id": "hist-1929-great-depression",
+    "domain": "history",
+    "topic": "economic_history",
+    "title": "The Great Depression and the New Deal",
+    "content": "Beginning with the Wall Street crash of October 1929, the Great Depression was the worst economic downturn in modern industrialized history, lasting through the late 1930s. Worldwide GDP fell by an estimated 15%, and unemployment exceeded 25% in the US. It spurred Franklin D. Roosevelt's New Deal policies, introducing the Social Security Act, SEC financial regulation, and Keynesian macroeconomic stimulus.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Manias, Panics, and Crashes",
+        "publisher": "Palgrave Macmillan",
+        "reliability_weight": 0.97,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "great_depression",
+      "wall_street_crash",
+      "new_deal",
+      "keynesian_economics"
+    ],
+    "temporal_anchor": "1929-1939"
+  },
+  {
+    "node_id": "hist-1939-ww2",
+    "domain": "history",
+    "topic": "world_wars",
+    "title": "World War II, the Holocaust, and Nuclear Weapons",
+    "content": "World War II (1939\u20131945) was the deadliest conflict in human history, involving over 30 nations. Begun by Nazi German and Imperial Japanese aggression, the war included the Holocaust (the state-sponsored genocide of six million Jews and millions of others by the Nazi regime) and ended following the atomic bombings of Hiroshima and Nagasaki in August 1945. It established the United States and Soviet Union as rival superpowers and led to the creation of the United Nations (1945).",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Second World War",
+        "publisher": "Little, Brown",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "ww2",
+      "holocaust",
+      "atomic_bomb",
+      "united_nations",
+      "superpowers"
+    ],
+    "temporal_anchor": "1939-1945"
+  },
+  {
+    "node_id": "hist-1947-india-independence",
+    "domain": "history",
+    "topic": "decolonization",
+    "title": "Indian Independence and Partition",
+    "content": "On August 15, 1947, India gained independence from British colonial rule following decades of struggle led by the Indian National Congress, Mahatma Gandhi's nonviolent civil disobedience (Satyagraha), and Subhas Chandra Bose's INA. The Indian Independence Act partitioned British India into the independent dominions of India and Pakistan, triggering one of the largest mass migrations in human history.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "India After Gandhi",
+        "publisher": "HarperCollins",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "india",
+      "independence",
+      "partition",
+      "gandhi",
+      "nehru",
+      "decolonization"
+    ],
+    "temporal_anchor": "1947"
+  },
+  {
+    "node_id": "hist-1969-apollo11",
+    "domain": "history",
+    "topic": "space_race",
+    "title": "The Apollo 11 Moon Landing and the Space Race",
+    "content": "On July 20, 1969, NASA astronauts Neil Armstrong and Buzz Aldrin landed the Apollo 11 Lunar Module Eagle on the Moon, with Armstrong taking the historic first steps. This event fulfilled President John F. Kennedy's 1961 goal and represented the technological culmination of the Cold War Space Race between the United States and the Soviet Union, advancing aerospace engineering, digital computing, and global telecommunications.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "NASA Historical Data Series",
+        "publisher": "NASA History Division",
+        "reliability_weight": 1.0,
+        "source_type": "primary"
+      }
+    ],
+    "tags": [
+      "apollo_11",
+      "moon_landing",
+      "armstrong",
+      "space_race",
+      "nasa",
+      "cold_war"
+    ],
+    "temporal_anchor": "1969-07-20"
+  },
+  {
+    "node_id": "hist-1991-ussr-collapse",
+    "domain": "history",
+    "topic": "cold_war",
+    "title": "The Fall of the Berlin Wall and Dissolution of the Soviet Union",
+    "content": "The fall of the Berlin Wall in November 1989 and the official dissolution of the Soviet Union on December 26, 1991, brought a peaceful end to the Cold War. Mikhail Gorbachev's reforms of Glasnost (openness) and Perestroika (restructuring) precipitated democratization in Eastern Europe, German reunification (1990), and the emergence of 15 independent post-Soviet republics.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Cold War: A New History",
+        "publisher": "Penguin Press",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "cold_war",
+      "berlin_wall",
+      "ussr",
+      "gorbachev",
+      "post_soviet"
+    ],
+    "temporal_anchor": "1989-1991"
+  },
+  {
+    "node_id": "hist-1837-telegraph",
+    "domain": "history",
+    "topic": "telecommunications",
+    "title": "The Electrical Telegraph and Transatlantic Cable",
+    "content": "In 1837, Samuel Morse and Alfred Vail developed the commercial electrical telegraph and Morse code in the United States, while William Fothergill Cooke and Charles Wheatstone patented a needle telegraph in Great Britain. By transmitting electrical pulses over copper wire, the telegraph transformed global communications, reducing message delivery time across continents from weeks to minutes. In 1858 and 1866, Cyrus West Field successfully laid the first transatlantic telegraph cable connecting North America and Europe, establishing the foundational infrastructure of modern global telecommunications.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Victorian Internet",
+        "publisher": "Tom Standage, Walker & Company",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "telegraph",
+      "morse_code",
+      "telecommunications",
+      "transatlantic_cable",
+      "19th_century",
+      "communication"
+    ],
+    "temporal_anchor": "1837-1866"
+  },
+  {
+    "node_id": "hist-1876-telephone-radio",
+    "domain": "history",
+    "topic": "telecommunications",
+    "title": "Invention of the Telephone and Wireless Radio",
+    "content": "In March 1876, Alexander Graham Bell was awarded US Patent 174,465 for the telephone, enabling real-time human voice transmission over electrical wire. Two decades later, Guglielmo Marconi synthesized James Clerk Maxwell's electromagnetic theory and Heinrich Hertz's radio wave experiments to demonstrate transatlantic wireless radio telegraphy in 1901. These breakthroughs created voice broadcasting, commercial radio networks, and wireless telecommunications.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Networks of Power",
+        "publisher": "Thomas P. Hughes, Johns Hopkins University Press",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "telephone",
+      "radio",
+      "alexander_graham_bell",
+      "marconi",
+      "wireless",
+      "telecommunications"
+    ],
+    "temporal_anchor": "1876-1901"
+  },
+  {
+    "node_id": "hist-1886-automobile-aviation",
+    "domain": "history",
+    "topic": "transportation",
+    "title": "The Automobile and Heavier-Than-Air Aviation",
+    "content": "In 1886, Karl Benz patented the Benz Patent-Motorwagen, the first commercial automobile powered by an internal combustion engine, while Gottlieb Daimler and Wilhelm Maybach pioneered high-speed petrol engines. In December 1903, Orville and Wilbur Wright achieved the first sustained, controlled, powered heavier-than-air human flight at Kitty Hawk, North Carolina. Together with Henry Ford's 1913 moving assembly line for the Model T, these innovations fundamentally restructured global trade, urban design, and global transit.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Wright Brothers",
+        "publisher": "David McCullough, Simon & Schuster",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "automobile",
+      "aviation",
+      "wright_brothers",
+      "karl_benz",
+      "henry_ford",
+      "internal_combustion"
+    ],
+    "temporal_anchor": "1886-1903"
+  },
+  {
+    "node_id": "hist-1947-computing-transistor",
+    "domain": "history",
+    "topic": "computing_revolution",
+    "title": "Birth of Digital Computing and the Point-Contact Transistor",
+    "content": "Modern digital computing emerged during World War II with Alan Turing's theoretical universal machine (1936), the British Colossus (1943), and the American ENIAC (1945 by John Mauchly and J. Presper Eckert). On December 16, 1947, John Bardeen, Walter Brattain, and William Shockley invented the point-contact transistor at Bell Laboratories. Replacing fragile, power-hungry vacuum tubes with solid-state semiconductor amplification, the transistor enabled the microelectronics revolution, integrated circuits (Robert Noyce and Jack Kilby, 1958), and modern microprocessors.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Crystal Fire: The Birth of the Information Age",
+        "publisher": "Michael Riordan, Lillian Hoddeson, W. W. Norton",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "transistor",
+      "eniac",
+      "turing",
+      "bell_labs",
+      "semiconductors",
+      "computing_history"
+    ],
+    "temporal_anchor": "1947"
+  },
+  {
+    "node_id": "hist-1969-arpanet-internet",
+    "domain": "history",
+    "topic": "internet_history",
+    "title": "ARPANET and the Invention of the Internet Protocols (TCP/IP)",
+    "content": "On October 29, 1969, the first node-to-node communication was transmitted across ARPANET between UCLA and the Stanford Research Institute under the direction of DARPA. Designed as a packet-switching network resilient against node failure (pioneered by Paul Baran and Donald Davies), ARPANET became the foundation of the global Internet. In 1974, Vint Cerf and Bob Kahn published 'A Protocol for Packet Network Intercommunication', defining the Transmission Control Protocol (TCP) and Internet Protocol (IP). On January 1, 1983 ('Flag Day'), ARPANET standardized on TCP/IP, creating the modern Internet.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Where Wizards Stay Up Late: The Origins of the Internet",
+        "publisher": "Katie Hafner, Matthew Lyon, Simon & Schuster",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "internet",
+      "arpanet",
+      "tcp_ip",
+      "vint_cerf",
+      "bob_kahn",
+      "packet_switching"
+    ],
+    "temporal_anchor": "1969-1983"
+  },
+  {
+    "node_id": "hist-1989-world-wide-web",
+    "domain": "history",
+    "topic": "web_history",
+    "title": "Invention of the World Wide Web and the Mosaic Browser",
+    "content": "In March 1989, British computer scientist Tim Berners-Lee wrote 'Information Management: A Proposal' at CERN, inventing the World Wide Web to enable automated information sharing between scientists. Berners-Lee created the foundational specifications: HyperText Transfer Protocol (HTTP), HyperText Markup Language (HTML), Uniform Resource Locators (URLs), and the first web server and browser (WorldWideWeb). The release of the NCSA Mosaic graphical browser by Marc Andreessen and Eric Bina in 1993 democratized web access, unleashing the commercial dot-com expansion of the 1990s.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Weaving the Web",
+        "publisher": "Tim Berners-Lee, HarperSanFrancisco",
+        "reliability_weight": 0.99,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "world_wide_web",
+      "tim_berners_lee",
+      "cern",
+      "http",
+      "html",
+      "mosaic",
+      "1990s"
+    ],
+    "temporal_anchor": "1989-1993"
+  },
+  {
+    "node_id": "hist-2007-smartphone-revolution",
+    "domain": "history",
+    "topic": "mobile_computing",
+    "title": "The Smartphone and Mobile Computing Revolution",
+    "content": "In January 2007, Steve Jobs unveiled the Apple iPhone, unifying a multi-touch capacitive glass screen, mobile web browsing, and an intuitive operating system. Later that year, the Open Handset Alliance led by Google announced Android, an open-source mobile OS based on the Linux kernel. With the launch of the App Store in 2008 and Google Play, mobile computing surpassed desktop computing in active global users, transforming communications, mobile commerce, photography, social media, and on-demand services worldwide.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The One Device: The Secret History of the iPhone",
+        "publisher": "Brian Merchant, Little, Brown and Company",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "smartphone",
+      "iphone",
+      "android",
+      "steve_jobs",
+      "mobile",
+      "app_store"
+    ],
+    "temporal_anchor": "2007-present"
+  },
+  {
+    "node_id": "hist-2006-cloud-computing",
+    "domain": "history",
+    "topic": "cloud_computing",
+    "title": "The Cloud Computing and Elastic Infrastructure Revolution",
+    "content": "In 2006, Amazon Web Services (AWS) launched Simple Storage Service (S3) and Elastic Compute Cloud (EC2), pioneering modern public cloud computing. Cloud computing shifted enterprise IT from capital expenditure in on-premise data centers to on-demand, utility-billed infrastructure with programmatic APIs. Followed by Google Cloud Platform (GCP) and Microsoft Azure, the cloud paradigm enabled serverless architectures, multi-tenant distributed databases, container orchestration (Kubernetes), and the massive compute clusters essential for training foundation AI models.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Architecting the Cloud",
+        "publisher": "Michael J. Kavis, Wiley",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "cloud_computing",
+      "aws",
+      "gcp",
+      "azure",
+      "distributed_computing",
+      "infrastructure"
+    ],
+    "temporal_anchor": "2006-present"
+  },
+  {
+    "node_id": "hist-2012-deep-learning-revolution",
+    "domain": "history",
+    "topic": "ai_history",
+    "title": "The Deep Learning Revolution: From AlexNet to Foundation Models",
+    "content": "In September 2012, Alex Krizhevsky, Ilya Sutskever, and Geoffrey Hinton won the ImageNet challenge by a decisive margin using AlexNet, a deep convolutional neural network trained on NVIDIA GPUs. This watershed proved that deep neural networks combined with massive datasets and hardware acceleration outclassed hand-crafted features. Over the subsequent decade, breakthroughs including GANs (2014), AlphaGo defeating Lee Sedol (2016), the Transformer (Vaswani et al., 2017), GPT-3 (2020), ChatGPT (2022), and multimodal foundation models (Gemini, Claude, GPT-4) established artificial intelligence as the primary general-purpose technology of the 21st century.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Deep Learning",
+        "publisher": "Ian Goodfellow, Yoshua Bengio, Aaron Courville, MIT Press",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "deep_learning",
+      "alexnet",
+      "geoffrey_hinton",
+      "ai_revolution",
+      "transformers",
+      "foundation_models"
+    ],
+    "temporal_anchor": "2012-2026"
+  },
+  {
+    "node_id": "hist-1990s-tech-revolution",
+    "domain": "history",
+    "topic": "digital_revolution",
+    "title": "The 1990s Technology and Internet Revolution",
+    "content": "The 1990s marked a profound technology revolution driven by the commercialization of the Internet, the invention and spread of the World Wide Web (Tim Berners-Lee, 1989-1991), and graphical web browsers (NCSA Mosaic, Netscape Navigator). This decade witnessed the mass adoption of personal computers running graphical operating systems (Windows 95), the rise of e-commerce (Amazon, eBay), web search engines, cellular mobile phones (2G GSM), digital telecommunications (fiber optic backbones), and the dot-com boom, laying the digital infrastructure for 21st-century global society.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Silicon Boys and Their Valley of Dreams",
+        "publisher": "David A. Kaplan, William Morrow",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "1990s",
+      "technology_revolution",
+      "internet",
+      "world_wide_web",
+      "dot_com",
+      "windows_95",
+      "netscape",
+      "digital_revolution"
+    ],
+    "temporal_anchor": "1990-1999"
+  }
+]

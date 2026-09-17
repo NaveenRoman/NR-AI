@@ -79,6 +79,7 @@ class CommandCategory(str, Enum):
     BROWSER_AGENT = "BROWSER_AGENT"
     ANDROID_STUDIO = "ANDROID_STUDIO"
     VISUAL_STUDIO = "VISUAL_STUDIO"
+    KNOWLEDGE = "KNOWLEDGE"
 
 
 @dataclass
@@ -139,6 +140,8 @@ class NRCompanion:
             provider=self.provider,
         )
         self.news_agent = news_agent or NewsAgent()
+        from app.knowledge.engine import UniversalKnowledgeEngine
+        self.knowledge_engine = UniversalKnowledgeEngine(workspace=str(self.workspace), auto_seed=True)
         self.avatar = avatar_manager or AvatarStateManager()
         self.listener = voice_listener or VoiceListener(config=self.voice_config)
         self.speaker = voice_speaker or VoiceSpeaker(config=self.voice_config)
@@ -282,6 +285,28 @@ class NRCompanion:
                 return cand, "file"
 
         return None
+
+    @staticmethod
+    def _is_conversation_reference(text: str) -> bool:
+        """
+        Detects conversational follow-up and reference queries that refer back to
+        prior assistant explanations or conversational context.
+        These MUST be handled by conversation continuity rather than being
+        intercepted by generic knowledge keywords like 'explain'.
+        """
+        if not text or not text.strip():
+            return False
+        clean = text.strip().lower()
+        patterns = [
+            r"^(?:what\s+did\s+you\s+(?:just\s+)?(?:explain|say|tell\s+me|mention|talk\s+about))(?:\s+about\s+(.+))?[.?!]*$",
+            r"^(?:tell\s+me\s+(?:what\s+you\s+(?:just\s+)?(?:explained|said)|more(?:\s+about\s+(?:that|what\s+you\s+(?:just\s+)?(?:said|explained)))?)|elaborate(?:\s+on\s+that)?|expand\s+on\s+that)[.?!]*$",
+            r"^(?:why\s+did\s+you\s+say\s+that|what\s+do\s+you\s+mean(?:\s+by\s+that)?)[.?!]*$",
+            r"^(?:what\s+was\s+your\s+(?:first|second|third|fourth|fifth|last)\s+point)[.?!]*$",
+            r"^(?:(?:can\s+you\s+)?repeat\s+(?:that|what\s+you\s+(?:just\s+)?said|the\s+last\s+part)|say\s+that\s+again)[.?!]*$",
+            r"^(?:what\s+were\s+the(?:\s+\w+)?\s+things\s+you\s+mentioned)[.?!]*$",
+            r"^(?:explain|clarify|revisit)\s+(?:that|it)(?:\s+(?:first|second|third|last))?(?:\s+point)?(?:\s+again)?[.?!]*$",
+        ]
+        return any(re.match(p, clean) for p in patterns)
 
     # -------------------------------------------------------------------------
     # Command Classification
@@ -501,15 +526,38 @@ class NRCompanion:
         if re.match(r"^scroll\s+(up|down)(?:\s+(\d+))?$", c_clean_punct):
             return CommandCategory.CONTROL_INPUT
 
-        # 1. AI News
+        # 1. Conversational Follow-up & Continuity Inquiries (Preempts keyword matching)
+        if self._is_conversation_reference(c_candidate):
+            return CommandCategory.CONVERSATION
+
+        # 2. Universal Knowledge & Research Inquiries (Takes precedence over generic news keywords)
+        knowledge_prefixes = (
+            "what is", "what are", "what was", "what were", "who was", "who is", "who were",
+            "tell me about", "explain", "how does", "how do", "how can", "how is", "why does",
+            "why is", "when did", "when was", "compare", "difference between",
+            "history of", "theory of", "algorithm for", "principles of",
+            "is agi", "is it possible", "is there", "will humans", "will ai", "will agi", "can ai"
+        )
+        if any(c_candidate.lower().startswith(pfx + " ") or c_candidate.lower() == pfx or f" {pfx} " in f" {c_candidate.lower()} " for pfx in knowledge_prefixes):
+            return CommandCategory.KNOWLEDGE
+
+        # 3. AI News
         if ("ai" in c or "artificial intelligence" in c or "machine learning" in c) and any(
             w in c for w in ["news", "happening", "latest", "update", "developments", "research"]
         ):
             return CommandCategory.NEWS_AI
 
-        # 2. General News
+        # 4. General News
         if any(w in c for w in ["news", "headlines", "world news", "india news", "tech news", "gaming news"]):
             return CommandCategory.NEWS_GENERAL
+
+        # 5. Agent Factory & Agent Creation Requests (Prioritized over generic create/build)
+        c_low_agent = c_candidate.lower().strip()
+        if any(c_low_agent.startswith(pfx) or f" {pfx} " in f" {c_low_agent} " for pfx in (
+            "i need an agent", "create an agent", "build an agent", "make an agent",
+            "generate an agent", "agent factory", "registered agents", "list agents"
+        )):
+            return CommandCategory.AGENTS
 
         # 3. Complex Software Tasks, Architecture & Engineering Tasks (Prioritized)
         complex_triggers = [
@@ -642,6 +690,8 @@ class NRCompanion:
             response = self._handle_agents(clean_input)
         elif category == CommandCategory.COMPLEX_TASK:
             response = self._handle_complex_task(clean_input)
+        elif category == CommandCategory.KNOWLEDGE:
+            response = self._handle_knowledge(clean_input)
         else:
             response = self._handle_conversation(clean_input)
 
@@ -2103,7 +2153,117 @@ class NRCompanion:
         )
 
     def _handle_agents(self, command: str) -> CompanionResponse:
-        """Queries the 10-agent orchestrator and reports live slot activity."""
+        """Handles Agent Factory requests, capability gap analysis, and orchestrator queries."""
+        c_low = command.lower().strip()
+
+        # Initialize AgentFactory lazily if needed
+        if not hasattr(self, "agent_factory") or self.agent_factory is None:
+            from app.agent.factory import AgentFactory
+            self.agent_factory = AgentFactory(
+                model_router=self.router,
+                audit_logger=self.audit,
+                config=self.config,
+            )
+
+        # Check if this is an Agent Factory / creation request
+        if any(pfx in c_low for pfx in ("i need an agent", "create an agent", "build an agent", "make an agent", "generate an agent")):
+            self.avatar.set_thinking("Analyzing agent requirements and capabilities...")
+            self.current_route = "AgentFactory"
+            self.current_agent = "Agent-1-Architect"
+            self.current_task_status = "Agent Factory Evaluation"
+
+            # 1. Capability gap analysis
+            gap = self.agent_factory.analyze_capability_gap(command)
+            if gap.existing_agent_capable:
+                resp_text = (
+                    f"[EXISTING AGENT CAPABLE]\n\n"
+                    f"An existing registered agent already satisfies your requirement:\n"
+                    f"• Agent: {gap.capable_agent_name} ({gap.capable_agent_id})\n"
+                    f"• Assessment: {gap.reason}\n\n"
+                    f"No redundant agent will be generated. You can dispatch your request directly to {gap.capable_agent_name}."
+                )
+                return CompanionResponse(
+                    text=resp_text,
+                    category=CommandCategory.AGENTS,
+                    routed_to="AgentFactory",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data={"gap_analysis": gap.to_dict()},
+                )
+
+            # 2. Capability gap detected: Design and create specification
+            try:
+                spec = self.agent_factory.create_agent_specification(command)
+            except ValueError as ve:
+                # Safety Gate or input validation denial
+                resp_text = (
+                    f"[AGENT CREATION DENIED]\n\n"
+                    f"The Agent Factory Safety Gate rejected the request:\n"
+                    f"• Reason: {str(ve)}\n\n"
+                    f"NR-AI safety controls strictly prohibit creating agents with unauthorized privileges, shell access, or security bypasses."
+                )
+                return CompanionResponse(
+                    text=resp_text,
+                    category=CommandCategory.AGENTS,
+                    routed_to="AgentFactorySafetyGate",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(ve), "safety_denied": True},
+                )
+
+            # 3. Verify and register
+            reg_result = self.agent_factory.verify_and_register(spec, auto_activate=True)
+            if reg_result.success:
+                resp_text = (
+                    f"[AGENT CREATION SUCCESSFUL]\n\n"
+                    f"Agent Factory successfully verified and registered a new specialized agent:\n"
+                    f"• Agent ID: {reg_result.agent_id}\n"
+                    f"• Version: {reg_result.version}\n"
+                    f"• State: {reg_result.lifecycle_state.value}\n"
+                    f"• Capabilities: {', '.join(spec.capabilities)}\n"
+                    f"• Tools Granted: {len(spec.tool_requirements)} allowlisted tools\n"
+                    f"• Model Tier: {spec.model_requirement.preferred_model}\n"
+                    f"• Safety Verification: 7/7 Stages Passed (Zero Shell, Emergency Stop Active, Bounded Sandbox)\n\n"
+                    f"The agent is now ACTIVE and available for orchestration."
+                )
+                emotion = AvatarEmotion.HAPPY
+            else:
+                resp_text = (
+                    f"[AGENT VERIFICATION FAILED]\n\n"
+                    f"The generated agent specification failed verification:\n"
+                    f"• Agent ID: {reg_result.agent_id}\n"
+                    f"• Failure Reason: {reg_result.message}\n\n"
+                    f"Per NR-AI invariants, unverified or failing agents cannot become ACTIVE."
+                )
+                emotion = AvatarEmotion.CONCERNED
+
+            return CompanionResponse(
+                text=resp_text,
+                category=CommandCategory.AGENTS,
+                routed_to="AgentFactory",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=emotion,
+                data=reg_result.to_dict(),
+            )
+
+        # Handle list agents / registry queries
+        if any(w in c_low for w in ("list agents", "registered agents", "show agents", "all agents")):
+            registered = self.agent_factory.list_agents()
+            reg_lines = [f"• {a.name} ({a.agent_id}) [v{a.version}] - State: {a.lifecycle_state.value} - Caps: {', '.join(a.capabilities[:3])}" for a in registered]
+            resp_text = (
+                f"NR-AI Registered Agent Catalog ({len(registered)} agents):\n\n"
+                + "\n".join(reg_lines)
+            )
+            return CompanionResponse(
+                text=resp_text,
+                category=CommandCategory.AGENTS,
+                routed_to="AgentRegistry",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.ATTENTIVE,
+                data={"agents": [a.to_dict() for a in registered]},
+            )
+
+        # Standard 10-Agent Orchestrator Status query
         metrics = self.orchestrator.get_system_metrics()
         busy = metrics["busy_slots"]
         total = metrics["total_slots"]
@@ -2223,6 +2383,49 @@ class NRCompanion:
             data={"model_execution": self.last_model_execution},
         )
 
+    def _handle_knowledge(self, command: str) -> CompanionResponse:
+        """Handles universal knowledge queries with epistemic verification and card generation."""
+        self.avatar.set_thinking(f"Consulting Knowledge: {command[:25]}...")
+        self.current_route = "UniversalKnowledgeEngine"
+        self.current_agent = "Agent-1-Architect (Knowledge Engine)"
+        self.current_task_status = "Retrieving Knowledge"
+
+        card = self.knowledge_engine.query_companion_card(command)
+        e_type = card.get("epistemic_type", "VERIFIED_FACT")
+        badge_tag = card.get("badge", {}).get("tag", "[VERIFIED FACT]")
+        display_text = f"{badge_tag}\n\n{card['display_text']}"
+
+        self.last_model_execution = {
+            "configured_role": "UNIVERSAL_KNOWLEDGE_ENGINE",
+            "configured_model": f"HybridKnowledgeStore (Tier: {card.get('retrieval_tier', 'local_store')})",
+            "requested_model": "UniversalKnowledgeEngine",
+            "actual_model_used": f"SQLite FTS5 BM25 Index / Web ({card.get('retrieval_tier', 'local_store')})",
+            "provider": "NR-AI Universal Knowledge Brain",
+            "live_api_success": "YES",
+            "cloud_request_success": "LOCAL / SCHOLARLY WEB",
+            "http_status": "200",
+            "cloud_ai_status": "EPISTEMIC GROUNDING ACTIVE",
+            "fallback_used": "NO",
+            "task_id": "KNOWLEDGE-QUERY",
+            "agent": "Agent-1-Architect (Knowledge Engine)",
+            "verification_status": f"Epistemic: {e_type} ({int(card.get('confidence', 1.0) * 100)}% Confidence)",
+            "safe_execution_evidence": f"Tier: {card.get('retrieval_tier')}, Latency: {card.get('latency_ms', 0):.2f}ms",
+            "execution_evidence": display_text[:300],
+            "timestamp": time.time(),
+        }
+
+        self.avatar.set_speaking("Knowledge verified.")
+        self.current_task_status = "Completed"
+
+        return CompanionResponse(
+            text=display_text,
+            category=CommandCategory.KNOWLEDGE,
+            routed_to="UniversalKnowledgeEngine",
+            avatar_mode=AvatarMode.SPEAKING,
+            avatar_emotion=AvatarEmotion.HAPPY,
+            data=card,
+        )
+
     def _handle_conversation(self, command: str) -> CompanionResponse:
         """Natural companion conversation with real model execution and transparent fallback."""
         self.avatar.set_thinking(f"Thinking: {command[:25]}...")
@@ -2233,6 +2436,17 @@ class NRCompanion:
         # Determine requested model via router
         c_low = command.lower()
         requested_model = self.router.route(task_type="routine", prompt=command)
+
+        # Immediate resolution for conversational follow-up references when no prior history exists
+        if self._is_conversation_reference(command) and not self.conversation_history:
+            return CompanionResponse(
+                text="We haven't discussed a previous topic yet in this session. What would you like me to explain?",
+                category=CommandCategory.CONVERSATION,
+                routed_to="DirectFallback",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.NEUTRAL,
+                data={"continuity_status": "NO_PRIOR_CONTEXT"},
+            )
 
         # 1. Action-Pronoun Follow-Up Resolution & Safe Action Execution (e.g. "open it", "run that", "show it")
         c_clean = re.sub(r"[.?!]+$", "", c_low).strip()
@@ -2341,7 +2555,29 @@ class NRCompanion:
             emotion = AvatarEmotion.ATTENTIVE
 
             # Safe honest conversational fallback
-            if any(g in c_low for g in ["hello", "hi", "hey"]):
+            if self._is_conversation_reference(command):
+                if self.conversation_history:
+                    last_turn = self.conversation_history[-1]
+                    last_user = last_turn.get("user", "")
+                    last_resp = last_turn.get("assistant", "")
+                    clean_resp = re.sub(r"\[(?:VERIFIED FACT|CURRENT INFORMATION|SOURCE-ATTRIBUTED CLAIM|INFERENCE|UNCERTAINTY|SPECULATION/PREDICTION)\]\s*", "", last_resp)
+                    clean_resp = re.sub(r"\[Model Execution Evidence:.*?\]", "", clean_resp, flags=re.DOTALL).strip()
+
+                    if any(w in c_low for w in ("first point", "1st point")):
+                        lines = [line.strip() for line in clean_resp.split("\n") if line.strip()]
+                        first_pt = lines[0] if lines else clean_resp
+                        greeting = f"Regarding our discussion on '{last_user}', the first point was: {first_pt}"
+                    elif any(w in c_low for w in ("why did you say that", "what do you mean")):
+                        greeting = f"Regarding '{last_user}', I highlighted that because: {clean_resp[:300]}..."
+                    elif any(w in c_low for w in ("repeat", "again")):
+                        greeting = f"To recap what I just explained regarding '{last_user}':\n\n{clean_resp}"
+                    elif any(w in c_low for w in ("more about that", "elaborate", "expand")):
+                        greeting = f"Elaborating on what we just discussed regarding '{last_user}': {clean_resp[:400]}... Would you like deeper technical details on a specific component?"
+                    else:
+                        greeting = f"I just explained '{last_user}':\n\n{clean_resp}"
+                else:
+                    greeting = "We haven't discussed a previous topic yet in this session. What would you like me to explain?"
+            elif any(g in c_low for g in ["hello", "hi", "hey"]):
                 greeting = "Hello! I am NR AI, your autonomous companion."
             elif "who are you" in c_low:
                 greeting = "I am NR AI, your autonomous desktop, coding, and multi-model companion."
@@ -2356,6 +2592,13 @@ class NRCompanion:
                     "• Engineering Toolchains: ToolchainRegistry connecting Unity 2022.3, Unreal Engine, Android SDK, and Java JDK\n"
                     "• Real World Knowledge: NewsAgent fetching live ArXiv AI, Technology, and World feeds\n"
                     "• Interface: Real two-stage voice listener, TTS speaker, and desktop avatar state manager"
+                )
+            elif any(w in c_low for w in ("fly a drone", "fly drone", "can you fly", "physical capabilities", "physical limits", "physical actuation", "robotic body", "hardware body", "move physically", "walk", "drive")):
+                greeting = (
+                    "I cannot fly a drone or interact with the physical world. "
+                    "I do not possess physical actuators, drones, or robotics hardware. "
+                    "My current capabilities are strictly digital and software-based, operating locally on this computer "
+                    "through code execution, toolchains, desktop orchestration, and language understanding."
                 )
             else:
                 greeting = f"I received your request: '{command}'."

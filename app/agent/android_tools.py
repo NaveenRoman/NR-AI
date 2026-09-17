@@ -507,6 +507,7 @@ class SafeGradleRunner:
                 cwd=str(self.project_dir),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 shell=False,
                 env=self._build_env(),
@@ -797,6 +798,24 @@ class AndroidToolRegistry:
         """Convenience method to execute android.get_build_status."""
         return self.execute_tool("android.get_build_status", {})
 
+    def create_project(
+        self,
+        project_name: str = "AndroidApp",
+        package_name: Optional[str] = None,
+        activity_type: str = "login",
+        language: str = "kotlin",
+    ) -> AndroidToolResult:
+        """Convenience method to execute android.create_project."""
+        return self.execute_tool(
+            "android.create_project",
+            {
+                "project_name": project_name,
+                "package_name": package_name,
+                "activity_type": activity_type,
+                "language": language,
+            },
+        )
+
     def _get_handler(self, tool_name: str) -> Callable[[Dict[str, Any]], AndroidToolResult]:
         handlers: Dict[str, Callable[[Dict[str, Any]], AndroidToolResult]] = {
             "android.list_devices": self._tool_list_devices,
@@ -814,6 +833,7 @@ class AndroidToolRegistry:
             "android.launch_app": self._tool_launch_app,
             "android.capture_log": self._tool_capture_log,
             "android.verify_app": self._tool_verify_app,
+            "android.create_project": self._tool_create_project,
         }
         return handlers[tool_name]
 
@@ -891,36 +911,27 @@ class AndroidToolRegistry:
     # Tool 3: android.launch_studio
     # -------------------------------------------------------------------------
     def _tool_launch_studio(self, params: Dict[str, Any]) -> AndroidToolResult:
-        studio_path = self.discovery.find_application("android studio")
-        if not studio_path:
-            studio_path = DEFAULT_STUDIO_PATH if DEFAULT_STUDIO_PATH.exists() else None
+        from app.commands.app_launcher import AppLauncher
 
-        if not studio_path or not Path(studio_path).exists():
+        launcher = AppLauncher()
+        res = launcher.launch_detailed("android studio", verify_timeout=12.0)
+        success = res.get("success", False)
+        verified = res.get("verified", False)
+
+        if not success and res.get("error") == "APPLICATION_NOT_FOUND":
             raise AndroidSafetyError(
                 AndroidErrorCode.ANDROID_STUDIO_NOT_FOUND,
-                "Android Studio executable not found on host machine.",
+                res.get("message", "Android Studio executable not found on host machine."),
             )
 
-        # Launch safely without shell=True
-        try:
-            proc = subprocess.Popen(
-                [str(studio_path)],
-                shell=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return AndroidToolResult(
-                success=True,
-                tool="android.launch_studio",
-                data={"path": str(studio_path), "pid": proc.pid},
-                message=f"Launched Android Studio (PID: {proc.pid}).",
-                verified=True,
-            )
-        except Exception as e:
-            raise AndroidSafetyError(
-                AndroidErrorCode.ACTION_NOT_ALLOWED,
-                f"Failed to launch Android Studio: {e}",
-            )
+        return AndroidToolResult(
+            success=success,
+            tool="android.launch_studio",
+            data=res,
+            message=res.get("message", "Android Studio launch completed."),
+            verified=verified,
+            error=res.get("error") if not success else None,
+        )
 
     # -------------------------------------------------------------------------
     # Tool 4: android.focus_studio
@@ -1199,3 +1210,41 @@ class AndroidToolRegistry:
             message=f"Package '{pkg}' on '{serial}': Installed={installed}, Running={pid is not None} (PID: {pid}).",
             verified=True,
         )
+
+    # -------------------------------------------------------------------------
+    # Tool 16: android.create_project
+    # -------------------------------------------------------------------------
+    def _tool_create_project(self, params: Dict[str, Any]) -> AndroidToolResult:
+        r"""
+        Creates/scaffolds a sandboxed Android project strictly under C:\NR-AI\dev_projects.
+        """
+        from app.agent.android_scaffold import AndroidProjectScaffolder
+
+        project_name = str(params.get("project_name", "AndroidApp")).strip()
+        package_name = params.get("package_name")
+        activity_type = str(params.get("activity_type", "login")).strip()
+        language = str(params.get("language", "kotlin")).strip()
+
+        try:
+            res = AndroidProjectScaffolder.scaffold_project(
+                project_name=project_name,
+                package_name=package_name or "com.nrai.devlogin",
+                template=activity_type,
+                language=language,
+            )
+            return AndroidToolResult(
+                success=True,
+                tool="android.create_project",
+                data=res,
+                message=f"Project '{res.get('project_name')}' successfully created at '{res.get('project_path')}'.",
+                verified=True,
+            )
+        except Exception as e:
+            logger.exception(f"Failed to create project: {e}")
+            return AndroidToolResult(
+                success=False,
+                tool="android.create_project",
+                error=str(e),
+                error_code=AndroidErrorCode.ACTION_NOT_ALLOWED.value,
+            )
+

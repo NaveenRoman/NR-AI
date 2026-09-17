@@ -16,7 +16,7 @@ Features:
 
 import logging
 import re
-from typing import Any, Dict, Iterable, List, Optional, Set, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from app.agent.model_provider import OpenAIProvider
 from app.config.model_config import (
@@ -284,6 +284,43 @@ class ModelRouter:
 
         sorted_candidates = sorted(candidates, key=score, reverse=True)
         return sorted_candidates[0]
+
+    def get_verified_model_for_capabilities(
+        self,
+        required_capabilities: Iterable[Union[ModelCapability, str]],
+        cost_preference: Optional[str] = None,
+        require_live_api: bool = True,
+    ) -> Tuple[Optional[str], str]:
+        """
+        Selects an enabled model matching capabilities and validates live API verification state.
+        Returns (model_id, status_message).
+        If highest candidate is unverified (e.g. GPT-6 Astra without live credits),
+        either returns verified fallback or returns MODEL_UNVERIFIED.
+        """
+        try:
+            candidates = self.find_models_for_capabilities(required_capabilities)
+        except (ValueError, Exception) as e:
+            return None, f"NO_CANDIDATE_MATCHES_CAPABILITIES: {e}"
+
+        if not candidates:
+            return None, "NO_CANDIDATE_MATCHES_CAPABILITIES"
+
+        best = self.select_best_model(candidates, cost_preference=cost_preference)
+        if not best:
+            return None, "NO_MODEL_SELECTED"
+
+        # Check live API verification if requested
+        if require_live_api and best.model_id == GPT_6_ASTRA:
+            if hasattr(self.provider, "verify_live_api"):
+                live_stat = self.provider.verify_live_api(GPT_6_ASTRA)
+                if not live_stat.get("live_api_verified"):
+                    # Find alternative candidate that is verified
+                    for alt in candidates:
+                        if alt.model_id != GPT_6_ASTRA:
+                            return alt.model_id, f"FALLBACK_VERIFIED: '{GPT_6_ASTRA}' is unverified, selected fallback '{alt.model_id}'."
+                    return None, f"MODEL_UNVERIFIED: '{GPT_6_ASTRA}' live API verification failed and no verified fallback available."
+
+        return best.model_id, f"VERIFIED_AVAILABLE: Selected '{best.model_id}'."
 
     def route_with_capabilities(
         self,

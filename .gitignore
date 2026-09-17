@@ -68,4 +68,6 @@ Desktop.ini
 # Local Tools & Workspaces
 tools/
 workspace/
+dev_projects/
 .git_backup/
+

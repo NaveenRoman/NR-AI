@@ -689,8 +689,14 @@ class RemoteActionSessionManager:
         exec_data: Dict[str, Any] = {}
         exec_message = ""
         exec_error: Optional[str] = None
-
         try:
+            if self.computer_agent is None:
+                try:
+                    from app.agent.computer_agent import UnifiedComputerAgent
+                    self.computer_agent = UnifiedComputerAgent()
+                except Exception as ce:
+                    logger.error(f"Failed to auto-initialize UnifiedComputerAgent: {ce}")
+
             if self.computer_agent is not None:
                 # 1. Autonomous Workflow
                 if act_type == RemoteActionType.RUN_WORKFLOW.value:
@@ -722,8 +728,8 @@ class RemoteActionSessionManager:
                 elif callable(self.computer_agent):
                     mock_res = self.computer_agent(act_type, params)
                     if isinstance(mock_res, dict):
-                        exec_success = mock_res.get("success", True)
-                        exec_verified = mock_res.get("verified", True)
+                        exec_success = mock_res.get("success", False)
+                        exec_verified = mock_res.get("verified", False)
                         exec_data = mock_res.get("data", {})
                         exec_message = mock_res.get("message", "Executed successfully")
                         exec_error = mock_res.get("error")
@@ -732,14 +738,15 @@ class RemoteActionSessionManager:
                         exec_verified = True
                         exec_message = str(mock_res)
                 else:
-                    exec_success = True
-                    exec_verified = True
-                    exec_message = f"Simulated execution of {act_type}"
+                    exec_success = False
+                    exec_verified = False
+                    exec_error = "INVALID_COMPUTER_AGENT"
+                    exec_message = f"Computer agent of type {type(self.computer_agent)} does not support tool execution."
             else:
-                # Default headless simulation
-                exec_success = True
-                exec_verified = True
-                exec_message = f"Executed {act_type} (no computer agent attached)"
+                exec_success = False
+                exec_verified = False
+                exec_error = "NO_COMPUTER_AGENT"
+                exec_message = f"Cannot execute {act_type}: UnifiedComputerAgent is not available."
 
         except Exception as ex:
             logger.exception(f"Execution error for {act_type}: {ex}")

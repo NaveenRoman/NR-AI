@@ -158,7 +158,7 @@ class SecureGateway:
             stream_session_manager=self.stream_manager,
             voice_session_manager=self.voice_session_manager,
             remote_action_session_manager=self.remote_action_session_manager,
-            telemetry_hub=None,
+            telemetry_hub=self.telemetry_dispatcher,
             emergency_controller=self.emergency_stop,
             resilience_manager=self.companion_resilience,
             audit_logger=self.audit_logger,
@@ -315,6 +315,24 @@ class SecureGateway:
             reason="Authenticated session created",
             client_ip=client_ip,
         )
+
+        # Transition companion orchestrator to IDLE_CONNECTED
+        if hasattr(self, "companion_orchestrator") and self.companion_orchestrator:
+            try:
+                curr_st = self.companion_orchestrator.get_state(device_id)
+                if curr_st in (CompanionOrchestratorState.UNPAIRED, CompanionOrchestratorState.PAIRING):
+                    self.companion_orchestrator.transition_state(
+                        device_id,
+                        CompanionOrchestratorState.AUTHENTICATED,
+                        "Authenticated session created",
+                    )
+                    self.companion_orchestrator.transition_state(
+                        device_id,
+                        CompanionOrchestratorState.IDLE_CONNECTED,
+                        "Companion ready and connected",
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to transition orchestrator state on auth: {e}")
 
         return SecureResponse(
             request_id="auth-req",
@@ -861,6 +879,21 @@ class SecureDashboardServer:
                         self._send_response(403, "application/json", json.dumps({"error": "REMOTE_AUTH_REQUIRED"}).encode("utf-8"))
                         return
                     st = gateway_ref.companion_orchestrator.get_state(device_id)
+                    if st in (CompanionOrchestratorState.UNPAIRED, CompanionOrchestratorState.PAIRING):
+                        try:
+                            gateway_ref.companion_orchestrator.transition_state(
+                                device_id,
+                                CompanionOrchestratorState.AUTHENTICATED,
+                                "Valid session verified",
+                            )
+                            gateway_ref.companion_orchestrator.transition_state(
+                                device_id,
+                                CompanionOrchestratorState.IDLE_CONNECTED,
+                                "Companion ready",
+                            )
+                            st = gateway_ref.companion_orchestrator.get_state(device_id)
+                        except Exception:
+                            pass
                     data = {
                         "device_id": device_id,
                         "session_id": session_id,
@@ -922,6 +955,46 @@ class SecureDashboardServer:
                     )
                     payload = json.dumps(status.to_dict()).encode("utf-8")
                     self._send_response(200, "application/json", payload)
+
+                # 4b. Secure emergency reset route (authenticated with operator confirmation)
+                elif parsed.path == "/api/v2/secure/emergency_reset":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    confirmed = bool(data.get("confirmed", False) or data.get("operator_confirmation", False))
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess:
+                        self._send_response(403, "application/json", json.dumps({"error": "REMOTE_AUTH_REQUIRED"}).encode("utf-8"))
+                        return
+                    if not confirmed:
+                        self._send_response(400, "application/json", json.dumps({"error": "OPERATOR_CONFIRMATION_REQUIRED", "message": "Explicit operator confirmation is required to reset Emergency Stop."}).encode("utf-8"))
+                        return
+
+                    gateway_ref.emergency_stop.reset(reset_by=f"Operator:{device_id}")
+                    if gateway_ref.companion_orchestrator:
+                        gateway_ref.companion_orchestrator.reset_emergency_stop(device_id)
+                    try:
+                        from app.agent.android_safety import AndroidSafetyGate
+                        AndroidSafetyGate.deactivate_emergency_stop()
+                    except Exception:
+                        pass
+
+                    gateway_ref.audit_logger.log_event(
+                        "EMERGENCY_STOP_RESET",
+                        "SUCCESS",
+                        device_id=device_id,
+                        session_id=session_id,
+                        client_ip=client_ip,
+                        metadata={"operator_confirmed": True}
+                    )
+                    self._send_response(200, "application/json", json.dumps({
+                        "status": "RESET",
+                        "emergency_stop": gateway_ref.emergency_stop.is_active(),
+                        "message": "Emergency Stop successfully reset by authorized operator."
+                    }).encode("utf-8"))
 
                 # Phase 2: Secure stream start route
                 elif parsed.path == "/api/v2/secure/stream/start":
@@ -1187,6 +1260,44 @@ class SecureDashboardServer:
                     res_stop = gateway_ref.companion_orchestrator.trigger_emergency_stop(device_id, reason=reason)
                     self._send_response(200, "application/json", json.dumps(res_stop).encode("utf-8"))
 
+                # Phase 5: Secure companion emergency reset endpoint
+                elif parsed.path == "/api/v2/secure/companion/emergency_reset":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    confirmed = bool(data.get("confirmed", False) or data.get("operator_confirmation", False))
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess:
+                        self._send_response(403, "application/json", json.dumps({"error": "REMOTE_AUTH_REQUIRED"}).encode("utf-8"))
+                        return
+                    if not confirmed:
+                        self._send_response(400, "application/json", json.dumps({"error": "OPERATOR_CONFIRMATION_REQUIRED", "message": "Explicit operator confirmation is required to reset Emergency Stop."}).encode("utf-8"))
+                        return
+
+                    ok = gateway_ref.companion_orchestrator.reset_emergency_stop(device_id)
+                    try:
+                        from app.agent.android_safety import AndroidSafetyGate
+                        AndroidSafetyGate.deactivate_emergency_stop()
+                    except Exception:
+                        pass
+
+                    gateway_ref.audit_logger.log_event(
+                        "COMPANION_EMERGENCY_STOP_RESET",
+                        "SUCCESS" if ok else "FAILED",
+                        device_id=device_id,
+                        session_id=session_id,
+                        client_ip=client_ip,
+                        metadata={"operator_confirmed": True}
+                    )
+                    self._send_response(200, "application/json", json.dumps({
+                        "status": "RESET" if ok else "ERROR",
+                        "emergency_stop": gateway_ref.emergency_stop.is_active(),
+                        "message": "Emergency Stop successfully reset by authorized operator."
+                    }).encode("utf-8"))
+
                 # 5. Legacy Android Companion /api/command POST
                 elif parsed.path in ("/api/command", "/command"):
                     try:
@@ -1218,6 +1329,7 @@ class SecureDashboardServer:
                 self.send_response(code)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(body)))
+                self.send_header("Connection", "close")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(body)
@@ -1226,10 +1338,11 @@ class SecureDashboardServer:
                 pass  # suppress noisy console logs
 
         try:
-            class ReusableTCPServer(socketserver.TCPServer):
+            class ReusableThreadingTCPServer(socketserver.ThreadingTCPServer):
                 allow_reuse_address = True
+                daemon_threads = True
 
-            self._httpd = ReusableTCPServer((self.host, self.port), GatewayHTTPHandler)
+            self._httpd = ReusableThreadingTCPServer((self.host, self.port), GatewayHTTPHandler)
             self._server_thread = threading.Thread(
                 target=self._httpd.serve_forever,
                 name="NRAI-SecureServer",

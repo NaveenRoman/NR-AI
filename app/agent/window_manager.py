@@ -58,6 +58,10 @@ APP_ALIASES = {
     "whatsapp": ["whatsapp.exe", "whatsapp.root.exe", "whatsapp"],
     "calculator": ["calculator.exe", "calc.exe", "calculator"],
     "calc": ["calculator.exe", "calc.exe", "calculator"],
+    "unreal engine": ["unrealengine.exe", "unrealeditor.exe", "unreal engine", "unreal editor"],
+    "unreal": ["unrealengine.exe", "unrealeditor.exe", "unreal engine", "unreal editor"],
+    "ue5": ["unrealengine.exe", "unrealeditor.exe", "unreal engine", "unreal editor"],
+    "ue4": ["unrealengine.exe", "unrealeditor.exe", "unreal engine", "unreal editor"],
 }
 
 SYSTEM_IGNORE_TITLES = {
@@ -65,6 +69,15 @@ SYSTEM_IGNORE_TITLES = {
     "windows input experience",
     "default ime",
     "msctfime ui",
+}
+
+ERROR_WINDOW_TITLES = {
+    "setup error",
+    "application error",
+    "fatal error",
+    "crash reporter",
+    "crash report",
+    "unhandled exception",
 }
 
 
@@ -138,11 +151,16 @@ class WindowManager:
         if dwmapi:
             dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, ctypes.byref(cloaked), 4)
 
+        cls_buf = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, cls_buf, 256)
+        class_name = cls_buf.value.strip()
+
         return {
             "hwnd": int(hwnd),
             "title": clean_title,
             "pid": int(pid.value),
             "process_name": proc_name,
+            "class_name": class_name,
             "visible": bool(user32.IsWindowVisible(hwnd)),
             "minimized": bool(user32.IsIconic(hwnd)),
             "maximized": bool(user32.IsZoomed(hwnd)),
@@ -179,8 +197,69 @@ class WindowManager:
         user32.EnumDesktopWindows(hdesk, cb, 0)
         return windows
 
+    def is_error_window(self, w: Dict[str, Any]) -> bool:
+        """Returns True if the window represents a crash/setup error dialog rather than an interactive application."""
+        if not w:
+            return False
+        title = (w.get("title") or "").strip().lower()
+        if not title:
+            return False
+        if title in ERROR_WINDOW_TITLES:
+            return True
+        if title.startswith("error:") or title.startswith("fatal:"):
+            return True
+        if title.endswith(" - error") or title.endswith(" setup error"):
+            return True
+        if "setup error" in title or "fatal error" in title or "crash reporter" in title:
+            return True
+        if w.get("class_name") == "#32770" and ("error" in title or "crash" in title):
+            return True
+        return False
+
+    def find_error_window(self, search_text: str) -> Optional[Dict[str, Any]]:
+        """Finds if a crash/setup error dialog is open for the queried application or process."""
+        query = (search_text or "").strip().lower()
+        if not query:
+            return None
+        windows = self.get_windows(include_cloaked=False)
+        patterns = self.aliases.get(query, [query])
+        for pat in patterns:
+            pat_clean = pat.lower()
+            pat_exe = pat_clean if pat_clean.endswith(".exe") else pat_clean + ".exe"
+            for w in windows:
+                if w["process_name"].lower() in (pat_clean, pat_exe):
+                    if self.is_error_window(w):
+                        return w
+        return None
+
+    def get_dialog_text(self, hwnd: int) -> str:
+        """Extracts text content from static controls in a modal dialog box (#32770)."""
+        if not user32 or not hwnd or not user32.IsWindow(hwnd):
+            return ""
+        texts = []
+        WM_GETTEXT = 0x000D
+        WM_GETTEXTLENGTH = 0x000E
+
+        def cb(child, _):
+            cls_buf = ctypes.create_unicode_buffer(128)
+            user32.GetClassNameW(child, cls_buf, 128)
+            cls_name = cls_buf.value.strip().lower()
+            if cls_name == "static":
+                l = user32.SendMessageW(child, WM_GETTEXTLENGTH, 0, 0)
+                if 0 < l < 1024:
+                    buf = ctypes.create_unicode_buffer(l + 2)
+                    user32.SendMessageW(child, WM_GETTEXT, l + 1, buf)
+                    val = buf.value.strip()
+                    if val and val not in texts:
+                        texts.append(val)
+            return True
+
+        WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+        user32.EnumChildWindows(hwnd, WNDENUMPROC(cb), 0)
+        return " ".join(texts).strip()
+
     def find_window_deterministic(
-        self, search_text: str
+        self, search_text: str, exclude_error_windows: bool = True
     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """
         Finds open desktop windows matching the search query deterministically.
@@ -192,6 +271,8 @@ class WindowManager:
             return [], "Search text is empty."
 
         windows = self.get_windows(include_cloaked=False)
+        if exclude_error_windows:
+            windows = [w for w in windows if not self.is_error_window(w)]
         if not windows:
             return [], None
 

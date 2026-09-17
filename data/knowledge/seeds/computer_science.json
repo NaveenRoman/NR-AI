@@ -1,0 +1,323 @@
+[
+  {
+    "node_id": "cs-arch-von-neumann",
+    "domain": "computer_science",
+    "topic": "computer_architecture",
+    "title": "Von Neumann Architecture and Memory Hierarchy",
+    "content": "The Von Neumann architecture is a theoretical computer design published in 1945 where program instructions and data share a common read-write memory storage and bus. Core components include: 1) Central Processing Unit (Arithmetic Logic Unit and Control Unit with Program Counter and Instruction Registers); 2) Main Memory (RAM); 3) Mass external storage; 4) Input/Output mechanisms. Modern CPUs mitigate the 'Von Neumann Bottleneck' (throughput limit between CPU and memory) using multi-level SRAM cache hierarchies (L1, L2, L3 caches), hardware prefetching, out-of-order execution, and branch prediction.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Computer Architecture: A Quantitative Approach",
+        "publisher": "Morgan Kaufmann",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "von_neumann",
+      "cpu",
+      "memory_hierarchy",
+      "cache",
+      "hardware",
+      "alu"
+    ],
+    "temporal_anchor": "1945"
+  },
+  {
+    "node_id": "cs-os-virtual-memory-paging",
+    "domain": "computer_science",
+    "topic": "operating_systems",
+    "title": "Virtual Memory, Paging, and the Translation Lookaside Buffer (TLB)",
+    "content": "Virtual memory provides an abstraction of contiguous, uniform address spaces to each process while providing hardware isolation and enabling programs to exceed physical RAM capacity. The operating system and Memory Management Unit (MMU) divide virtual address space into fixed-size chunks called 'pages' (typically 4KB) mapped to physical 'page frames' via hierarchical page tables. The Translation Lookaside Buffer (TLB) is an on-chip hardware cache that stores recent virtual-to-physical address translations to avoid multi-level memory lookups. A 'page fault' occurs when an accessed virtual page is not resident in physical RAM, triggering an interrupt that loads the page from disk swap.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Operating System Concepts",
+        "publisher": "Wiley",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "operating_systems",
+      "virtual_memory",
+      "paging",
+      "tlb",
+      "mmu",
+      "page_fault"
+    ],
+    "temporal_anchor": "1960s-present"
+  },
+  {
+    "node_id": "cs-net-osi-tcpip-model",
+    "domain": "computer_science",
+    "topic": "networking",
+    "title": "OSI 7-Layer Model and TCP/IP Architecture",
+    "content": "Network communications are conceptualized across standardized layers: The OSI reference model defines 7 layers: 1) Physical (bits, cables, signaling); 2) Data Link (frames, MAC addresses, Ethernet, switches); 3) Network (packets, IP addresses, routers); 4) Transport (segments, TCP reliable byte-stream / UDP datagrams, port numbers); 5) Session; 6) Presentation; 7) Application (HTTP, DNS, SSH). The practical TCP/IP suite consolidates layers 5-7 into the Application layer. TCP ensures reliability through a 3-way handshake (SYN, SYN-ACK, ACK), sequence numbers, sliding window flow control, and congestion control algorithms (CUBIC, BBR).",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Computer Networks: A Systems Approach",
+        "publisher": "Morgan Kaufmann",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "networking",
+      "osi_model",
+      "tcp_ip",
+      "ethernet",
+      "routing",
+      "transport"
+    ],
+    "temporal_anchor": "1980s-present"
+  },
+  {
+    "node_id": "cs-db-acid-cap-theorem",
+    "domain": "computer_science",
+    "topic": "databases_distributed_systems",
+    "title": "ACID Properties and Brewer's CAP Theorem",
+    "content": "In database systems, ACID guarantees transaction reliability: Atomicity (all-or-nothing execution); Consistency (preserves database schema constraints); Isolation (concurrent transactions execute without interference, with serializability being the highest level); Durability (committed transactions survive system crashes). In distributed data systems, Eric Brewer's CAP Theorem states that a distributed data store can simultaneously provide at most two of three guarantees during a network partition: Consistency (every read receives the most recent write), Availability (every non-failing node returns a response), and Partition Tolerance (system operates despite arbitrary message drops).",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Designing Data-Intensive Applications",
+        "publisher": "O'Reilly Media",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "databases",
+      "acid",
+      "cap_theorem",
+      "distributed_systems",
+      "transactions"
+    ],
+    "temporal_anchor": "2000"
+  },
+  {
+    "node_id": "cs-sec-tls13-cryptography",
+    "domain": "computer_science",
+    "topic": "cybersecurity",
+    "title": "TLS 1.3 Protocol and Modern Cryptographic Primitives",
+    "content": "Transport Layer Security (TLS 1.3, RFC 8446) encrypts Internet communications across the Transport layer. Key security innovations include: 1) 1-RTT handshake (and optional 0-RTT resumption); 2) Complete removal of legacy weak ciphers (RC4, 3DES, CBC mode, SHA-1); 3) Mandatory Ephemeral Diffie-Hellman key exchange (ECDHE) ensuring Forward Secrecy\u2014even if a server's private key is compromised in the future, past session traffic cannot be decrypted; 4) Authenticated Encryption with Associated Data (AEAD) algorithms such as AES-GCM and ChaCha20-Poly1305 for simultaneous confidentiality and integrity.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3",
+        "publisher": "IETF",
+        "reliability_weight": 1.0,
+        "source_type": "primary"
+      }
+    ],
+    "tags": [
+      "cryptography",
+      "tls13",
+      "security",
+      "encryption",
+      "aead",
+      "ecdhe"
+    ],
+    "temporal_anchor": "2018"
+  },
+  {
+    "node_id": "cs-concurrency-deadlocks",
+    "domain": "computer_science",
+    "topic": "concurrency",
+    "title": "Concurrency, Race Conditions, and Coffman's Deadlock Conditions",
+    "content": "Concurrent programs require synchronization primitives (mutexes, semaphores, atomic operations) to avoid race conditions\u2014where the output is dependent on non-deterministic thread execution timing. A deadlock occurs when a set of concurrent processes are permanently blocked waiting for resources held by one another. Edward G. Coffman Jr. identified the four necessary and sufficient conditions for deadlock: 1) Mutual Exclusion (unshareable resources); 2) Hold and Wait (processes hold resources while requesting others); 3) No Preemption (resources cannot be forcibly confiscated); 4) Circular Wait (a closed chain of processes each waiting for a resource held by the next). Deadlock prevention eliminates at least one condition (e.g. strict resource ordering).",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "System Deadlocks",
+        "publisher": "ACM Computing Surveys",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "concurrency",
+      "deadlock",
+      "race_condition",
+      "mutex",
+      "coffman_conditions"
+    ],
+    "temporal_anchor": "1971"
+  },
+  {
+    "node_id": "cs-algo-complexity-dijkstra",
+    "domain": "computer_science",
+    "topic": "algorithms_and_complexity",
+    "title": "Fundamental Algorithms, Big-O Complexity, and Dijkstra's Shortest Path",
+    "content": "Asymptotic analysis (Big-O, Big-Omega, Big-Theta) quantifies the worst-case, best-case, and average-case scaling of algorithms as input size N grows. Fundamental algorithmic paradigms include: 1) Divide and Conquer: MergeSort and QuickSort achieving O(N log N) optimal comparison sorting; 2) Dynamic Programming: memoization and tabulation breaking overlapping subproblems into polynomial-time solutions (Knapsack, Bellman-Ford); 3) Greedy Algorithms: Dijkstra's algorithm finds single-source shortest paths on non-negative weighted graphs in O((V + E) log V) using a priority queue (min-heap); 4) Complexity Classes: P (polynomial-time solvable), NP (polynomial-time verifiable), and NP-Complete problems (Cook-Levin Theorem, 3-SAT) for which no known polynomial algorithm exists.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Introduction to Algorithms (CLRS)",
+        "publisher": "MIT Press",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "algorithms",
+      "big_o",
+      "dijkstra",
+      "dynamic_programming",
+      "np_completeness",
+      "sorting"
+    ],
+    "temporal_anchor": "1950s-present"
+  },
+  {
+    "node_id": "cs-ds-hash-tables-b-trees",
+    "domain": "computer_science",
+    "topic": "data_structures",
+    "title": "Fundamental Data Structures: Hash Tables, Balanced Trees, and B-Trees",
+    "content": "Data structures organize memory for efficient algorithmic access: 1) Hash Tables: provide O(1) expected average lookup, insertion, and deletion by mapping keys to array buckets via hash functions, resolving collisions with chaining or open addressing (Robin Hood, cuckoo hashing); 2) Self-Balancing Binary Search Trees: AVL trees and Red-Black trees maintain O(log N) worst-case balance by applying tree rotations; 3) B-Trees and B+ Trees (Bayer & McCreight, 1970): self-balancing multi-way search trees optimized for disk and block storage (databases and filesystems like InnoDB, Ext4, NTFS) where nodes match disk page sizes to minimize expensive I/O operations.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "The Art of Computer Programming, Vol 3: Sorting and Searching",
+        "publisher": "Donald E. Knuth, Addison-Wesley",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "data_structures",
+      "hash_tables",
+      "b_trees",
+      "red_black_trees",
+      "indexing",
+      "memory"
+    ],
+    "temporal_anchor": "1970-present"
+  },
+  {
+    "node_id": "cs-compilers-ast-llvm-jit",
+    "domain": "computer_science",
+    "topic": "compiler_design",
+    "title": "Compiler Architecture, Abstract Syntax Trees (AST), LLVM, and JIT",
+    "content": "Compilers translate high-level programming languages into executable machine code through distinct frontend and backend phases: 1) Frontend: Lexical analysis (tokenization) converts character streams into tokens; Syntactic analysis (parsing) verifies grammatical structure and constructs an Abstract Syntax Tree (AST); Semantic analysis enforces type-checking and symbol resolution; 2) Intermediate Representation (IR): Decouples language frontends from hardware backends (pioneered by Chris Lattner's LLVM infrastructure), applying target-independent optimizations (dead code elimination, loop unrolling, SSA form); 3) Backend: Instruction selection, register allocation (graph coloring), and machine code generation; 4) Just-In-Time (JIT) Compilers: Dynamically profile running bytecode (JVM HotSpot, V8) to compile hot execution paths directly into optimized native machine code at runtime.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Compilers: Principles, Techniques, and Tools (Dragon Book)",
+        "publisher": "Aho, Lam, Sethi, Ullman, Pearson",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "compilers",
+      "ast",
+      "llvm",
+      "jit",
+      "parser",
+      "optimization",
+      "bytecode"
+    ],
+    "temporal_anchor": "1980s-present"
+  },
+  {
+    "node_id": "cs-distributed-consensus-raft-paxos",
+    "domain": "computer_science",
+    "topic": "distributed_systems",
+    "title": "Distributed Consensus: Paxos, Raft, and Byzantine Fault Tolerance",
+    "content": "Distributed consensus allows a cluster of independent nodes to agree on state transitions despite network delays, packet drops, and node crashes: 1) Paxos (Leslie Lamport, 1998): guarantees safety under asynchronous networks using multi-phase commit (Prepare, Promise, Propose, Accept); 2) Raft (Ongaro & Ousterhout, 2014): decomposes consensus into understandable, distinct subproblems\u2014Leader Election, Log Replication, and Safety\u2014using randomized election timers and strong leader authority, powering etcd, Consul, and Kubernetes; 3) Byzantine Fault Tolerance (BFT): tolerates malicious or arbitrary Byzantine failures (up to f < n/3 faulty nodes), standard in cryptographic ledgers and distributed networks.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "In Search of an Understandable Consensus Algorithm (USENIX ATC 2014)",
+        "publisher": "Diego Ongaro, John Ousterhout, Stanford University",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "distributed_systems",
+      "consensus",
+      "raft",
+      "paxos",
+      "byzantine_fault_tolerance",
+      "etcd"
+    ],
+    "temporal_anchor": "1998-2014"
+  },
+  {
+    "node_id": "cs-swe-solid-microservices-cicd",
+    "domain": "computer_science",
+    "topic": "software_engineering",
+    "title": "Software Engineering Principles: SOLID, Design Patterns, and CI/CD",
+    "content": "Software engineering governs the reliable design, construction, and maintenance of complex software systems: 1) SOLID Principles (Robert C. Martin): Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion; 2) Design Patterns (Gang of Four): Creational (Singleton, Factory, Builder), Structural (Adapter, Decorator, Facade), and Behavioral (Observer, Strategy, Command); 3) Architectural Paradigms: Monolithic architectures provide operational simplicity and low network latency; Microservices decompose applications into independently deployable services communicating over gRPC or REST, requiring distributed tracing and eventual consistency; 4) Continuous Integration and Continuous Deployment (CI/CD): automated pipelines that compile code, execute unit/integration test suites, and enforce static analysis before deploying to production environments.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Design Patterns: Elements of Reusable Object-Oriented Software",
+        "publisher": "Gamma, Helm, Johnson, Vlissides, Addison-Wesley",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "software_engineering",
+      "solid_principles",
+      "design_patterns",
+      "microservices",
+      "ci_cd",
+      "architecture"
+    ],
+    "temporal_anchor": "1994-present"
+  },
+  {
+    "node_id": "cs-hardware-moores-law",
+    "domain": "computer_science",
+    "topic": "computer_architecture",
+    "title": "Moore's Law, Dennard Scaling, and Modern Semiconductor Physics",
+    "content": "Moore's Law was an empirical observation made by Gordon Moore in 1965, predicting that the number of transistors on a microchip doubles roughly every two years, accompanied by declining cost per transistor. For decades, Dennard scaling (constant power density as transistors shrank) ensured clock speed increases alongside density gains. However, Dennard scaling ended around 2005 due to leakage currents. Modern consensus on Moore's Law is divided: Nvidia CEO Jensen Huang declared 'Moore's Law is dead' because traditional monolithic 2D transistor scaling has slowed, costs per wafer have soared at 3nm/2nm nodes, and quantum tunneling limits gate thickness. Conversely, Intel and TSMC assert Moore's Law continues through architectural innovations: Gate-All-Around (GAA) nanosheet transistors (RibbonFET), backside power delivery (PowerVia), 3D packaging, and chiplet modularization.",
+    "epistemic_type": "SOURCE_ATTRIBUTED_CLAIM",
+    "confidence": 0.95,
+    "sources": [
+      {
+        "name": "Cramming more components onto integrated circuits",
+        "publisher": "Electronics Magazine (Gordon Moore, 1965)",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      },
+      {
+        "name": "International Roadmap for Devices and Systems (IRDS)",
+        "publisher": "IEEE",
+        "reliability_weight": 0.98,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "moores_law",
+      "moore",
+      "semiconductors",
+      "transistor_scaling",
+      "dennard_scaling",
+      "gaa",
+      "intel",
+      "nvidia",
+      "tsmc",
+      "truth"
+    ],
+    "temporal_anchor": "1965-2026"
+  }
+]
