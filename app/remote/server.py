@@ -39,7 +39,7 @@ from app.remote.protocol import (
     SecureResponse,
     parse_and_validate_request,
 )
-from app.remote.rate_limiter import RateLimiter, VoiceRateLimiter
+from app.remote.rate_limiter import RateLimiter, RemoteActionRateLimiter, VoiceRateLimiter
 from app.remote.frame import FrameEncoding, StreamFrame
 from app.remote.screen_capture import MockScreenCaptureEngine, ScreenCaptureEngine
 from app.remote.stream import StreamManager, StreamSession, StreamState
@@ -60,6 +60,18 @@ from app.remote.voice_session import (
     VoiceCommandSession,
     VoiceSessionManager,
     VoiceSessionState,
+)
+from app.remote.remote_actions import (
+    RemoteActionRequest,
+    RemoteActionResult,
+    RemoteActionType,
+    validate_remote_action_request,
+)
+from app.remote.remote_action_safety import RemoteActionSafetyGate
+from app.remote.remote_action_session import (
+    RemoteActionSession,
+    RemoteActionSessionManager,
+    RemoteActionState,
 )
 
 logger = logging.getLogger("NRAI.SecureServer")
@@ -91,6 +103,9 @@ class SecureGateway:
         voice_rate_limiter: Optional[VoiceRateLimiter] = None,
         stt_provider: Optional[SpeechToTextProvider] = None,
         transport_mode: TransportSecurityMode = TransportSecurityMode.ENCRYPTED_SESSION,
+        remote_action_session_manager: Optional[RemoteActionSessionManager] = None,
+        remote_action_rate_limiter: Optional[RemoteActionRateLimiter] = None,
+        computer_agent: Optional[Any] = None,
     ):
         self.companion = companion
         self.pairing_manager = pairing_manager or PairingManager()
@@ -111,6 +126,16 @@ class SecureGateway:
             command_router_fn=(lambda cmd: self.companion.interact(cmd, speak_output=False).to_dict()) if self.companion and hasattr(self.companion, "interact") else None,
             audit_logger_fn=self.audit_logger.log_event,
             telemetry_event_fn=self.telemetry_dispatcher.dispatch if hasattr(self.telemetry_dispatcher, "dispatch") else None,
+        )
+        self.remote_action_rate_limiter = remote_action_rate_limiter or RemoteActionRateLimiter()
+        comp_agent = computer_agent
+        if comp_agent is None and self.companion and hasattr(self.companion, "computer_agent"):
+            comp_agent = getattr(self.companion, "computer_agent")
+        self.remote_action_session_manager = remote_action_session_manager or RemoteActionSessionManager(
+            computer_agent=comp_agent,
+            emergency_controller=self.emergency_stop,
+            rate_limiter=self.remote_action_rate_limiter,
+            audit_logger=self.audit_logger,
         )
 
     def handle_pairing_request(self, body: Dict[str, Any], client_ip: str) -> SecureResponse:
@@ -568,6 +593,50 @@ class SecureGateway:
                 return {"status": "NOT_FOUND"}
             return sess.to_dict()
 
+        # Phase 4: Scoped Remote Actions & Computer Control
+        elif action in ("action.remote_execute", "action.approved_execute"):
+            action_data = req.payload.get("action_request") or req.payload
+            if not isinstance(action_data, dict):
+                raise ValueError("Invalid action payload: expected dictionary")
+            action_data_clean = dict(action_data)
+            if "session_id" not in action_data_clean:
+                action_data_clean["session_id"] = req.session_id
+            if "device_id" not in action_data_clean:
+                action_data_clean["device_id"] = req.device_id
+            if "action_id" not in action_data_clean:
+                action_data_clean["action_id"] = req.request_id
+
+            valid, err_code, action_req = validate_remote_action_request(action_data_clean)
+            if not valid or not action_req:
+                raise ValueError(f"Action validation failed: {err_code}")
+
+            res = self.remote_action_session_manager.process_action_request(
+                action_req, session.scopes, cached_target=req.payload.get("cached_target")
+            )
+            return res.to_dict()
+
+        elif action == "action.remote_confirm":
+            aid = str(req.payload.get("action_id", "")).strip()
+            token = str(req.payload.get("confirmation_token", "")).strip()
+            conf = bool(req.payload.get("confirmed", True))
+            ok, msg, a_resp = self.remote_action_session_manager.confirm_action(
+                req.session_id, aid, req.device_id, token, conf
+            )
+            if not ok or not a_resp:
+                return {"status": "ERROR", "reason": msg, "error": msg}
+            return a_resp.to_dict()
+
+        elif action == "action.remote_cancel":
+            reason = str(req.payload.get("reason", "Cancelled by client"))
+            ok, msg = self.remote_action_session_manager.cancel_action(req.session_id, reason)
+            return {"status": "CANCELLED" if ok else "ERROR", "reason": msg}
+
+        elif action == "action.remote_status":
+            sess = self.remote_action_session_manager.get_session(req.session_id)
+            if not sess:
+                return {"status": "NOT_FOUND"}
+            return sess.to_dict()
+
         raise ValueError(f"Unhandled action: {action}")
 
 
@@ -699,6 +768,24 @@ class SecureDashboardServer:
                         self._send_response(404, "application/json", json.dumps({"error": "VOICE_SESSION_NOT_FOUND"}).encode("utf-8"))
                         return
                     self._send_response(200, "application/json", json.dumps(v_sess.to_dict()).encode("utf-8"))
+
+                # Phase 4: Secure remote action status GET endpoint
+                elif parsed.path == "/api/v2/secure/action/status":
+                    params = urllib.parse.parse_qs(parsed.query)
+                    session_id = params.get("session_id", [""])[0]
+                    device_id = params.get("device_id", [""])[0]
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or (
+                        PhonePermissionScope.READ_STATUS not in sess.scopes and
+                        PhonePermissionScope.APPROVED_COMPUTER_ACTION not in sess.scopes
+                    ):
+                        self._send_response(403, "application/json", json.dumps({"error": "REMOTE_PERMISSION_DENIED"}).encode("utf-8"))
+                        return
+                    act_sess = gateway_ref.remote_action_session_manager.get_session(session_id)
+                    if not act_sess:
+                        self._send_response(404, "application/json", json.dumps({"error": "SESSION_NOT_FOUND"}).encode("utf-8"))
+                        return
+                    self._send_response(200, "application/json", json.dumps(act_sess.to_dict()).encode("utf-8"))
 
                 else:
                     self._send_response(404, "text/plain", b"Not Found")
@@ -912,6 +999,69 @@ class SecureDashboardServer:
                     ok, msg = gateway_ref.voice_session_manager.cancel_session(session_id)
                     code = 200 if ok else 400
                     self._send_response(code, "application/json", json.dumps({"status": "CANCELLED" if ok else "ERROR", "message": msg}).encode("utf-8"))
+
+                # Phase 4: Secure remote action execute endpoint
+                elif parsed.path == "/api/v2/secure/action/execute":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or PhonePermissionScope.APPROVED_COMPUTER_ACTION not in sess.scopes:
+                        self._send_response(403, "application/json", json.dumps({"error": "REMOTE_PERMISSION_DENIED", "status": "DENIED"}).encode("utf-8"))
+                        return
+
+                    is_valid, err_code, action_req = validate_remote_action_request(data)
+                    if not is_valid or not action_req:
+                        self._send_response(400, "application/json", json.dumps({"error": err_code, "status": "DENIED"}).encode("utf-8"))
+                        return
+
+                    res = gateway_ref.remote_action_session_manager.process_action_request(
+                        action_req, sess.scopes, cached_target=data.get("cached_target")
+                    )
+                    code = 200 if res.status in ("SUCCESS", "AWAITING_CONFIRMATION") else (403 if res.status == "DENIED" or res.error == "REMOTE_STOPPED" else 400)
+                    self._send_response(code, "application/json", res.to_json().encode("utf-8"))
+
+                # Phase 4: Secure remote action confirm endpoint
+                elif parsed.path == "/api/v2/secure/action/confirm":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    action_id = str(data.get("action_id", "")).strip()
+                    token = str(data.get("confirmation_token", "")).strip()
+                    conf = bool(data.get("confirmed", True))
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or PhonePermissionScope.APPROVED_COMPUTER_ACTION not in sess.scopes:
+                        self._send_response(403, "application/json", json.dumps({"error": "REMOTE_PERMISSION_DENIED"}).encode("utf-8"))
+                        return
+                    ok, c_msg, a_res = gateway_ref.remote_action_session_manager.confirm_action(
+                        session_id, action_id, device_id, token, conf
+                    )
+                    code = 200 if ok else (403 if a_res and a_res.error == "REMOTE_STOPPED" else 400)
+                    resp_dict = a_res.to_dict() if a_res else {"error": c_msg}
+                    self._send_response(code, "application/json", json.dumps(resp_dict).encode("utf-8"))
+
+                # Phase 4: Secure remote action cancel endpoint
+                elif parsed.path == "/api/v2/secure/action/cancel":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    reason = str(data.get("reason", "Cancelled by client"))
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess:
+                        self._send_response(403, "application/json", json.dumps({"error": "REMOTE_AUTH_REQUIRED"}).encode("utf-8"))
+                        return
+                    ok, c_msg = gateway_ref.remote_action_session_manager.cancel_action(session_id, reason)
+                    code = 200 if ok else 400
+                    self._send_response(code, "application/json", json.dumps({"status": "CANCELLED" if ok else "ERROR", "message": c_msg}).encode("utf-8"))
 
                 # 5. Legacy Android Companion /api/command POST
                 elif parsed.path in ("/api/command", "/command"):

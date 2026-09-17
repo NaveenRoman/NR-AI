@@ -165,3 +165,22 @@ class VoiceRateLimiter(RateLimiter):
             max_auth_failures=MAX_FAILED_AUTH_ATTEMPTS,
             lockout_duration_seconds=AUTH_LOCKOUT_SECONDS,
         )
+
+
+class RemoteActionRateLimiter(RateLimiter):
+    """
+    Dedicated remote computer action rate limiter enforcing bounded actions per minute (default 30 req/min).
+    """
+
+    def __init__(
+        self,
+        requests_per_minute: int = 30,
+        burst_limit: int = 5,
+    ):
+        rps = float(requests_per_minute) / 60.0
+        super().__init__(
+            rate_limit_rps=rps,
+            burst_limit=burst_limit,
+            max_auth_failures=MAX_FAILED_AUTH_ATTEMPTS,
+            lockout_duration_seconds=AUTH_LOCKOUT_SECONDS,
+        )

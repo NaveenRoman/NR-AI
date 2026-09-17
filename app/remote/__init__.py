@@ -149,6 +149,33 @@ from app.remote.voice_session import (
     VoiceSessionManager,
     VoiceSessionState,
 )
+from app.remote.rate_limiter import (
+    RateLimiter,
+    RemoteActionRateLimiter,
+    VoiceRateLimiter,
+)
+from app.remote.remote_actions import (
+    ACTION_ALIASES,
+    REMOTE_ACTION_ALLOWLIST,
+    RemoteActionDefinition,
+    RemoteActionRequest,
+    RemoteActionResult,
+    RemoteActionRiskLevel,
+    RemoteActionType,
+    validate_remote_action_request,
+)
+from app.remote.remote_action_safety import (
+    HIGH_RISK_KEYWORDS,
+    RemoteActionSafetyGate,
+    SafetyEvaluationResult,
+)
+from app.remote.remote_action_session import (
+    RemoteActionSession,
+    RemoteActionSessionManager,
+    RemoteActionState,
+    RemoteActionStateError,
+    VALID_TRANSITIONS as VALID_REMOTE_ACTION_TRANSITIONS,
+)
 
 __all__ = [
     # Identity & Pairing
@@ -290,4 +317,48 @@ __all__ = [
     "AUDIO_CHECKSUM_MISMATCH",
     "AUDIO_REPLAY_DETECTED",
     "SPEECH_TO_TEXT_UNAVAILABLE",
+    # Remote Actions (Phase 4)
+    "RemoteActionRateLimiter",
+    "RemoteActionType",
+    "RemoteActionRiskLevel",
+    "RemoteActionDefinition",
+    "REMOTE_ACTION_ALLOWLIST",
+    "ACTION_ALIASES",
+    "RemoteActionRequest",
+    "RemoteActionResult",
+    "validate_remote_action_request",
+    "RemoteActionSafetyGate",
+    "SafetyEvaluationResult",
+    "HIGH_RISK_KEYWORDS",
+    "RemoteActionState",
+    "RemoteActionSession",
+    "RemoteActionSessionManager",
+    "RemoteActionStateError",
+    "VALID_REMOTE_ACTION_TRANSITIONS",
+    "MAX_REMOTE_ACTION_PAYLOAD_BYTES",
+    "MAX_REMOTE_ACTION_TIMEOUT_SECONDS",
+    "REMOTE_CONFIRMATION_TIMEOUT_SECONDS",
+    "REMOTE_ACTION_TTL_SECONDS",
+    "MAX_CONCURRENT_REMOTE_ACTIONS_PER_DEVICE",
+    "MAX_GLOBAL_CONCURRENT_REMOTE_ACTIONS",
+    "MAX_REMOTE_ACTION_RATE_PER_MINUTE",
+    "REMOTE_TARGET_TTL_SECONDS",
+    "REMOTE_AUTH_REQUIRED",
+    "REMOTE_PERMISSION_DENIED",
+    "REMOTE_ACTION_NOT_ALLOWED",
+    "REMOTE_ACTION_MALFORMED",
+    "REMOTE_ACTION_EXPIRED",
+    "REMOTE_ACTION_REPLAYED",
+    "REMOTE_CONFIRMATION_REQUIRED",
+    "REMOTE_CONFIRMATION_INVALID",
+    "REMOTE_CONFIRMATION_EXPIRED",
+    "REMOTE_TARGET_STALE",
+    "REMOTE_TARGET_INVALID",
+    "REMOTE_RATE_LIMITED",
+    "REMOTE_CONCURRENCY_LIMIT",
+    "REMOTE_SAFETY_REJECTED",
+    "REMOTE_EXECUTION_FAILED",
+    "REMOTE_VERIFICATION_FAILED",
+    "REMOTE_STOPPED",
+    "REMOTE_SESSION_EXPIRED",
 ]
