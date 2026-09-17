@@ -1,3 +1,42 @@
+
+// -----------------------------------------------------------------------------
+// Speech Interruption / Barge-in & Central Return
+// -----------------------------------------------------------------------------
+function interruptSpeech() {
+  if (state.isSpeakingAudio || (state.speechSynth && state.speechSynth.speaking)) {
+    if (state.speechSynth) {
+      state.speechSynth.cancel();
+    }
+    state.isSpeakingAudio = false;
+    const voiceNotice = document.getElementById("introVoiceNotice");
+    if (voiceNotice) {
+      voiceNotice.textContent = "USER INTERRUPTED • LISTENING";
+      voiceNotice.style.display = "block";
+    }
+    fetch("/api/conversation/interrupt", { method: "POST" }).catch(() => {});
+  }
+}
+
+async function returnToCentral() {
+  state.activeConversationAgent = null;
+  state.activeConversationAgentName = null;
+  const banner = document.getElementById("activeChatBanner");
+  if (banner) banner.style.display = "none";
+
+  try {
+    const res = await fetch("/api/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "NR-AI" }),
+    });
+    const data = await res.json();
+    const reply = data.text || "Resumed central orchestration.";
+    if (state.ttsEnabled) speakText(reply);
+  } catch (e) {
+    console.error(e);
+  }
+  pollGalaxyState();
+}
 /**
  * NR-AI Galaxy UI — Interactive Celestial Canvas & Command Center Engine
  * 60 FPS Canvas rendering, Black Hole Vortex, Dynamic Agent Binding, Real Telemetry Polling.
@@ -10,6 +49,8 @@
 const state = {
   galaxy: null,
   selectedNode: null,
+  activeConversationAgent: null,
+  activeConversationAgentName: null,
   searchQuery: "",
   statusFilter: "ALL",
 
@@ -155,15 +196,27 @@ function renderLoop(now) {
 // -----------------------------------------------------------------------------
 // Drawing Helpers
 // -----------------------------------------------------------------------------
+function getNodePosition(node, now) {
+  // Slow, elegant continuous orbital revolution without camera translation
+  const ring = node.orbit_ring || 1;
+  const speed = 0.00003 * (4 - ring);
+  const rad = ((node.orbit_angle * Math.PI) / 180) + (now ? now * speed : 0);
+  return {
+    x: Math.cos(rad) * node.orbit_radius,
+    y: Math.sin(rad) * node.orbit_radius,
+    angleRad: rad,
+  };
+}
+
 function drawOrbits() {
-  const rings = [220, 310, 390];
+  const rings = (state.galaxy && state.galaxy.orbital_rings) || [260, 400, 540];
   ctx.save();
   for (const r of rings) {
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(56, 189, 248, 0.08)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 8]);
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.09)";
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 10]);
     ctx.stroke();
   }
   ctx.restore();
@@ -180,9 +233,9 @@ function drawConnections(now) {
     const isFiltered = isNodeFilteredOut(node);
     const alpha = isFiltered ? 0.05 : (state.introMode && !isSpeaker ? 0.12 : 0.25);
 
-    const rad = (node.orbit_angle * Math.PI) / 180;
-    const nx = Math.cos(rad) * node.orbit_radius;
-    const ny = Math.sin(rad) * node.orbit_radius;
+    const pos = getNodePosition(node, now);
+    const nx = pos.x;
+    const ny = pos.y;
 
     ctx.beginPath();
     ctx.moveTo(0, 0);
@@ -325,11 +378,14 @@ function drawNodes(now) {
     const isSpeaker = state.introMode && state.currentSpeakerId === node.agent_id;
 
     ctx.save();
-    const rad = (node.orbit_angle * Math.PI) / 180;
-    const x = Math.cos(rad) * node.orbit_radius;
-    const y = Math.sin(rad) * node.orbit_radius;
+    const pos = getNodePosition(node, now);
+    const x = pos.x;
+    const y = pos.y;
 
     ctx.translate(x, y);
+
+    const activeAgentId = state.activeConversationAgent || (state.galaxy && state.galaxy.active_conversation_agent);
+    const isActiveChat = activeAgentId && (activeAgentId.toLowerCase() === node.agent_id.toLowerCase() || activeAgentId.toLowerCase() === node.friendly_name.toLowerCase());
 
     // If intro mode is active, subdue non-speaking agents to 35% opacity
     if (state.introMode && !isSpeaker) {
@@ -439,12 +495,28 @@ function drawNodes(now) {
       ctx.fillStyle = node.glow;
       ctx.fill();
 
+      if (isActiveChat) {
+        // High-emphasis active conversational focus halo
+        ctx.beginPath();
+        ctx.arc(0, 0, baseRadius + 14, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0, 240, 255, 0.18)";
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, baseRadius + 8, 0, Math.PI * 2);
+        ctx.strokeStyle = "#00f0ff";
+        ctx.lineWidth = 2;
+        ctx.shadowColor = "#00f0ff";
+        ctx.shadowBlur = 18;
+        ctx.stroke();
+      }
+
       // Node Sphere
       ctx.beginPath();
       ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
       ctx.fillStyle = "#0f172a";
-      ctx.shadowColor = node.color;
-      ctx.shadowBlur = isSelected ? 32 : 18;
+      ctx.shadowColor = isActiveChat ? "#00f0ff" : node.color;
+      ctx.shadowBlur = (isSelected || isActiveChat) ? 32 : 18;
       ctx.fill();
 
       // Node Border
@@ -471,10 +543,10 @@ function drawNodes(now) {
       ctx.fillStyle = "#94a3b8";
       ctx.fillText(node.role, 0, baseRadius + 27);
 
-      // Status Pill Badge (Real state only)
-      const statusText = `● ${node.status}`;
+      // Status Pill Badge
+      const statusText = isActiveChat ? "● ACTIVE CHAT" : `● ${node.status}`;
       ctx.font = "bold 9px var(--font-sans)";
-      ctx.fillStyle = node.status_color || "#10b981";
+      ctx.fillStyle = isActiveChat ? "#00f0ff" : (node.status_color || "#10b981");
       ctx.fillText(statusText, 0, baseRadius + 39);
     }
 
@@ -551,9 +623,9 @@ function handleCanvasClick(screenX, screenY) {
   const hitRadius = 38;
 
   for (const node of state.galaxy.nodes) {
-    const rad = (node.orbit_angle * Math.PI) / 180;
-    const nx = Math.cos(rad) * node.orbit_radius;
-    const ny = Math.sin(rad) * node.orbit_radius;
+    const pos = getNodePosition(node, now);
+    const nx = pos.x;
+    const ny = pos.y;
     const dist = Math.hypot(worldX - nx, worldY - ny);
 
     if (dist <= hitRadius) {
@@ -945,6 +1017,8 @@ async function sendGlobalCommand() {
   ];
   const isIntro = introTriggers.some(t => cmdLower.includes(t));
 
+  interruptSpeech();
+
   if (isIntro) {
     startIntroductionMode();
   }
@@ -958,8 +1032,21 @@ async function sendGlobalCommand() {
     const data = await res.json();
     const replyText = data.text || data.response || "Command executed.";
 
-    if (data.data && data.data.introduction_mode && !state.introMode) {
-      startIntroductionMode();
+    if (data.data) {
+      if (data.data.active_conversation_agent !== undefined) {
+        state.activeConversationAgent = data.data.active_conversation_agent;
+        state.activeConversationAgentName = data.data.agent_name || (data.data.active_conversation_agent ? data.data.active_conversation_agent.split("_")[0].toUpperCase() : null);
+      }
+      if (data.data.single_agent_introduction && data.data.single_speaker_id) {
+        state.currentSpeakerId = data.data.single_speaker_id;
+        state.isSpeakingAudio = true;
+        setTimeout(() => {
+          state.isSpeakingAudio = false;
+          state.currentSpeakerId = null;
+        }, 5000);
+      } else if (data.data.introduction_mode && !state.introMode) {
+        startIntroductionMode();
+      }
     }
 
     // Append to conversation if agent panel is open
@@ -1013,6 +1100,18 @@ async function pollGalaxyState() {
 
     state.galaxy = data;
     updateHUDTelemetry(data.system_metrics);
+
+    // Sync active conversational agent banner
+    const activeId = data.active_conversation_agent || state.activeConversationAgent;
+    const banner = document.getElementById("activeChatBanner");
+    const bannerName = document.getElementById("activeChatAgentName");
+    if (activeId && banner && bannerName) {
+      const matchingNode = data.nodes ? data.nodes.find(n => n.agent_id.toLowerCase() === activeId.toLowerCase()) : null;
+      bannerName.textContent = matchingNode ? matchingNode.friendly_name : activeId;
+      banner.style.display = "flex";
+    } else if (banner) {
+      banner.style.display = "none";
+    }
 
     // Update Central Core Status
     const coreStatus = document.getElementById("coreStatusIndicator");

@@ -1,3 +1,4 @@
+from app.agent.credential_diagnostics import CredentialDiagnosticEngine, get_fast_diagnostics_summary
 """
 NR-AI Galaxy UI & Agent Visualization Engine.
 UI Intelligence Foundation — Celestial Agent Mapping & Real Telemetry Aggregator.
@@ -27,6 +28,14 @@ from app.remote.emergency import EmergencyStopController
 
 logger = logging.getLogger("NRAI.GalaxyEngine")
 
+# Multi-Orbital Ring Radii (Spacious Cosmic Layout)
+ORBIT_INNER_RADIUS: float = 260.0    # 4 Core Specialists (Droid, Studio, Unity, Unreal)
+ORBIT_MIDDLE_RADIUS: float = 400.0   # 7 Intelligence & Systems Agents
+ORBIT_OUTER_RADIUS: float = 540.0    # Scaffolding, UI, & Dynamic Generated Agents
+ORBIT_EXTRA_RADIUS: float = 680.0    # Overflow dynamic tier if outer exceeds capacity
+ORBITAL_RADII_TIERS = {1: ORBIT_INNER_RADIUS, 2: ORBIT_MIDDLE_RADIUS, 3: ORBIT_OUTER_RADIUS, 4: ORBIT_EXTRA_RADIUS}
+
+
 # -----------------------------------------------------------------------------
 # Celestial Visual Identity Definitions
 # -----------------------------------------------------------------------------
@@ -38,7 +47,7 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "color": "#10b981",  # Emerald / Android green
         "glow": "rgba(16, 185, 129, 0.6)",
         "orbit_ring": 1,
-        "base_angle": 135,
+        "base_angle": 45,
         "icon_type": "android",
         "greeting": "Hi Boss! I'm Droid, your Android Agent. I can help you create, build, debug, and deploy Android applications. Tell me your requirement!",
         "suggested_actions": [
@@ -55,7 +64,7 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "color": "#8b5cf6",  # Violet
         "glow": "rgba(139, 92, 246, 0.6)",
         "orbit_ring": 1,
-        "base_angle": 15,
+        "base_angle": 135,
         "icon_type": "visual_studio",
         "greeting": "Hi Boss! I'm Studio, your Visual Studio and C#/C++ Agent. I inspect solutions, build MSBuild targets, and diagnose compilation errors.",
         "suggested_actions": [
@@ -71,7 +80,7 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "color": "#38bdf8",  # Sky blue
         "glow": "rgba(56, 189, 248, 0.6)",
         "orbit_ring": 1,
-        "base_angle": 215,
+        "base_angle": 225,
         "icon_type": "unity",
         "greeting": "Hi Boss! I'm Unity, your Unity 2022.3 Game Agent. I manage scenes, validate assets, parse C# ASTs, and run EditMode tests.",
         "suggested_actions": [
@@ -87,7 +96,7 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "color": "#ef4444",  # Crimson / Red
         "glow": "rgba(239, 68, 68, 0.6)",
         "orbit_ring": 1,
-        "base_angle": 250,
+        "base_angle": 315,
         "icon_type": "unreal",
         "greeting": "Hi Boss! I'm Unreal, your Unreal Engine 5 Agent. I handle C++ source parsing, UBT build orchestration, and Blueprint automation.",
         "suggested_actions": [
@@ -102,8 +111,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "category": "Intelligence & Research",
         "color": "#3b82f6",  # Royal Blue
         "glow": "rgba(59, 130, 246, 0.6)",
-        "orbit_ring": 1,
-        "base_angle": 90,
+        "orbit_ring": 2,
+        "base_angle": 18,
         "icon_type": "book",
         "greeting": "Hi Boss! I'm Knowledge, your Universal Knowledge & Research Agent. I query local FTS5 stores, arXiv, Wikipedia, and PubMed for verified facts.",
         "suggested_actions": [
@@ -118,8 +127,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "category": "System & Automation",
         "color": "#14b8a6",  # Teal / Cyan
         "glow": "rgba(20, 184, 166, 0.6)",
-        "orbit_ring": 1,
-        "base_angle": 35,
+        "orbit_ring": 2,
+        "base_angle": 70,
         "icon_type": "gear",
         "greeting": "Hi Boss! I'm Sentinel, your Unified Computer & System Agent. I inspect windows, perform verified GUI operations, and ensure system health.",
         "suggested_actions": [
@@ -135,8 +144,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "category": "Orchestration",
         "color": "#ec4899",  # Pink / Magenta
         "glow": "rgba(236, 72, 153, 0.6)",
-        "orbit_ring": 1,
-        "base_angle": 60,
+        "orbit_ring": 2,
+        "base_angle": 122,
         "icon_type": "nexus",
         "greeting": "Hi Boss! I'm Nexus, your Multi-Agent Orchestrator. I decompose multi-disciplinary goals and route tasks across specialized agents.",
         "suggested_actions": [
@@ -150,8 +159,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "category": "Security & Defense",
         "color": "#06b6d4",  # Cyan
         "glow": "rgba(6, 182, 212, 0.6)",
-        "orbit_ring": 1,
-        "base_angle": 345,
+        "orbit_ring": 2,
+        "base_angle": 174,
         "icon_type": "shield",
         "greeting": "Hi Boss! I'm Shield, your Defensive Security Agent. I audit execution safety, enforce zero-shell invariants, and guard credentials.",
         "suggested_actions": [
@@ -166,8 +175,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "category": "Intelligence & Research",
         "color": "#f59e0b",  # Amber
         "glow": "rgba(245, 158, 11, 0.6)",
-        "orbit_ring": 1,
-        "base_angle": 315,
+        "orbit_ring": 2,
+        "base_angle": 226,
         "icon_type": "beaker",
         "greeting": "Hi Boss! I'm Quest, your Deep Research Agent. I formulate queries, analyze academic literature, and synthesize scientific papers.",
         "suggested_actions": [
@@ -181,8 +190,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "category": "Sensory & Speech",
         "color": "#10b981",  # Emerald
         "glow": "rgba(16, 185, 129, 0.6)",
-        "orbit_ring": 1,
-        "base_angle": 275,
+        "orbit_ring": 2,
+        "base_angle": 278,
         "icon_type": "mic",
         "greeting": "Hi Boss! I'm Echo, your Voice & Audio Agent. I listen for natural language commands and synthesize audio responses.",
         "suggested_actions": [
@@ -196,8 +205,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "category": "Sensory & Vision",
         "color": "#d946ef",  # Fuchsia
         "glow": "rgba(217, 70, 239, 0.6)",
-        "orbit_ring": 1,
-        "base_angle": 160,
+        "orbit_ring": 2,
+        "base_angle": 330,
         "icon_type": "eye",
         "greeting": "Hi Boss! I'm Vision, your Visual Grounding and OCR Agent. I inspect screen pixels, detect UI hierarchies, and identify visual targets.",
         "suggested_actions": [
@@ -211,8 +220,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "category": "Code & Scaffolding",
         "color": "#f97316",  # Orange
         "glow": "rgba(249, 115, 22, 0.6)",
-        "orbit_ring": 1,
-        "base_angle": 185,
+        "orbit_ring": 3,
+        "base_angle": 36,
         "icon_type": "code",
         "greeting": "Hi Boss! I'm Forge, your Scaffolding & Code Generation Agent. I create sandboxed project trees and multi-step developer workflows.",
         "suggested_actions": [
@@ -226,8 +235,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "category": "Presentation & UI",
         "color": "#06b6d4",  # Cyan
         "glow": "rgba(6, 182, 212, 0.6)",
-        "orbit_ring": 1,
-        "base_angle": 295,
+        "orbit_ring": 3,
+        "base_angle": 216,
         "icon_type": "monitor",
         "greeting": "Hi Boss! I'm Pixel, your UI & Visualization Agent. I maintain the living Galaxy command center and HUD interfaces.",
         "suggested_actions": [
@@ -396,7 +405,7 @@ class GalaxyEngine:
                 status_color=status_color,
                 color=profile["color"],
                 glow=profile["glow"],
-                orbit_radius=220.0 if profile["orbit_ring"] == 1 else 310.0,
+                orbit_radius=ORBITAL_RADII_TIERS.get(profile.get("orbit_ring", 1), ORBIT_INNER_RADIUS),
                 orbit_angle=float(profile["base_angle"]),
                 orbit_speed=0.015,
                 icon_type=profile["icon_type"],
@@ -415,10 +424,12 @@ class GalaxyEngine:
             if aid not in processed_ids and spec.lifecycle_state != AgentLifecycleState.RETIRED:
                 dynamic_specs.append(spec)
 
-        # Position dynamically generated agents in outer orbit ring (radius = 320px)
+        # Position dynamically generated agents in outer orbit ring (radius = 540px)
+        # Staggered cleanly with Forge & Pixel on Ring 3
         num_dynamic = len(dynamic_specs)
+        total_ring3 = 2 + num_dynamic
         for idx, spec in enumerate(dynamic_specs):
-            angle = (360.0 / max(num_dynamic, 1)) * idx + 45.0
+            angle = ((360.0 / max(total_ring3, 1)) * (2 + idx) + 36.0) % 360.0
             h_val = abs(hash(spec.agent_id)) % 360
             color = f"hsl({h_val}, 85%, 60%)"
             glow = f"hsla({h_val}, 85%, 60%, 0.6)"
@@ -458,7 +469,7 @@ class GalaxyEngine:
                 status_color=status_color,
                 color=color,
                 glow=glow,
-                orbit_radius=320.0,
+                orbit_radius=ORBIT_OUTER_RADIUS,
                 orbit_angle=angle % 360.0,
                 orbit_speed=0.010,
                 icon_type="cpu",
@@ -507,19 +518,31 @@ class GalaxyEngine:
                 "animated": n.status in ("WORKING", "THINKING"),
             })
 
+        active_agent = companion_snapshot.get("active_conversation_agent") if companion_snapshot else None
+        handoff = companion_snapshot.get("handoff_path", []) if companion_snapshot else []
+        try:
+            diag = get_fast_diagnostics_summary()
+        except Exception:
+            diag = {"overall_status": "LOCAL_FALLBACK_ACTIVE", "cloud_ai_active": False}
+
         return {
             "success": True,
             "central_core": central_core,
+            "orbital_rings": [ORBIT_INNER_RADIUS, ORBIT_MIDDLE_RADIUS, ORBIT_OUTER_RADIUS],
+            "active_conversation_agent": active_agent,
+            "handoff_path": handoff,
+            "credential_diagnostics": diag,
             "nodes": [n.to_dict() for n in nodes],
             "connections": connections,
             "system_metrics": metrics,
             "timestamp": time.time(),
         }
 
-    def get_agent_introductions(self, companion_snapshot: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_agent_introductions(self, companion_snapshot: Optional[Dict[str, Any]] = None, single_agent_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Dynamically generates the sequential agent introduction script from the AgentRegistry
         and celestial profiles. Excludes SUSPENDED, RETIRED, and OFFLINE agents.
+        If single_agent_id is provided, returns the introduction exclusively for that agent.
         Never hardcodes the agent list; reflects current live registry state.
         """
         nodes = self.build_celestial_nodes(companion_snapshot)
@@ -546,10 +569,16 @@ class GalaxyEngine:
                 "speech_text": speech_text,
             })
 
+        # Filter for single agent if requested
+        if single_agent_id:
+            tgt = single_agent_id.lower().strip()
+            sequence = [a for a in sequence if a["agent_id"].lower() == tgt or a["name"].lower() == tgt]
+
         return {
             "success": True,
-            "intro_greeting": "Of course, Boss. Let me introduce you to my agents.",
-            "intro_outro": "That's my current agent team, Boss. Tell me what you want to build, learn, research, or solve.",
+            "single_agent_mode": bool(single_agent_id),
+            "intro_greeting": "Of course, Boss. Let me introduce you to my agents." if not single_agent_id else "",
+            "intro_outro": "That's my current agent team, Boss. Tell me what you want to build, learn, research, or solve." if not single_agent_id else "",
             "total_agents": len(sequence),
             "emergency_stop_active": self.emergency_stop.is_active(),
             "sequence": sequence,

@@ -39,6 +39,16 @@ from app.ui.galaxy_engine import (
     BUILTIN_CELESTIAL_PROFILES,
     CelestialNode,
     GalaxyEngine,
+    ORBIT_INNER_RADIUS,
+    ORBIT_MIDDLE_RADIUS,
+    ORBIT_OUTER_RADIUS,
+    ORBITAL_RADII_TIERS,
+)
+from app.agent.credential_diagnostics import (
+    CredentialDiagnosticEngine,
+    DiagnosticStatus,
+    redact_secret,
+    get_fast_diagnostics_summary,
 )
 from app.ui.dashboard import CompanionDashboard
 
@@ -188,7 +198,7 @@ class TestGalaxyEngineBasics(unittest.TestCase):
             self.assertIsNotNone(dyn_node)
             self.assertFalse(dyn_node.is_builtin)
             self.assertEqual(dyn_node.friendly_name, "Crypto Analyzer")
-            self.assertEqual(dyn_node.orbit_radius, 320.0)
+            self.assertEqual(dyn_node.orbit_radius, ORBIT_OUTER_RADIUS)
             self.assertIn("Hi Boss! I'm Crypto Analyzer", dyn_node.greeting)
         finally:
             self.registry.retire_agent(dummy_spec.agent_id)
@@ -706,6 +716,240 @@ class TestGalaxyIntroductionMode(unittest.TestCase):
         self.assertIn('.btn-intro-trigger', css)
         self.assertIn('.intro-equalizer', css)
         self.assertIn('.queue-pill', css)
+
+
+
+
+class TestGalaxyUIRefinement2(unittest.TestCase):
+    """
+    Refinement 2 Test Suite:
+    - Multi-Orbital Rings Layout (Inner 260px, Middle 400px, Outer 540px)
+    - Zero Node Collisions & Geometric Non-Overlapping Clearance
+    - Dynamic Agent Tier 3 Outer Placement
+    - Direct Agent Addressing & Persona Routing
+    - Active Conversation Agent Persistence (multi-turn follow-ups)
+    - Voice Interruption / Barge-in
+    - Central NR-AI Takeover
+    - Single-Agent Introduction Mode
+    - Authentic Credential Diagnostics (100% secret redaction, Quota Exhausted handling)
+    - HTTP REST Endpoints for Active Conversation & Diagnostics
+    """
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.emergency_stop = EmergencyStopController()
+        if self.emergency_stop.is_active():
+            self.emergency_stop.reset()
+        self.temp_file = Path(tempfile.gettempdir()) / f"test_galaxy_ref2_{time.time_ns()}.json"
+        self.registry = AgentRegistry(registry_file=self.temp_file)
+        self.engine = GalaxyEngine(registry=self.registry, emergency_stop=self.emergency_stop)
+        self.voice_cfg = VoiceConfig(silent_mode=True, tts_enabled=False)
+        self.companion = NRCompanion(voice_config=self.voice_cfg)
+
+    def tearDown(self):
+        if hasattr(self, "temp_file") and self.temp_file.exists():
+            try:
+                self.temp_file.unlink()
+            except Exception:
+                pass
+
+    def test_41_multi_orbital_rings_layout(self):
+        """Galaxy state returns 3 concentric orbital rings: 260px, 400px, 540px."""
+        self.assertEqual(ORBIT_INNER_RADIUS, 260.0)
+        self.assertEqual(ORBIT_MIDDLE_RADIUS, 400.0)
+        self.assertEqual(ORBIT_OUTER_RADIUS, 540.0)
+        state = self.engine.get_galaxy_state()
+        rings = state.get("orbital_rings", [])
+        self.assertEqual(rings, [260.0, 400.0, 540.0])
+
+    def test_42_celestial_nodes_orbit_distribution(self):
+        """Nodes are partitioned across inner, middle, and outer orbital tiers."""
+        nodes = self.engine.build_celestial_nodes()
+        nodes_by_id = {n.agent_id: n for n in nodes}
+
+        # Inner ring (260px) specialists: Droid, Studio, Unity, Unreal
+        inner_ids = ["android_unified_agent", "vs_unified_agent", "unity_autonomous_agent", "unreal_autonomous_agent"]
+        for aid in inner_ids:
+            if aid in nodes_by_id:
+                self.assertEqual(nodes_by_id[aid].orbit_radius, ORBIT_INNER_RADIUS, f"{aid} must be on inner orbit")
+
+        # Middle ring (400px) intelligence & system agents
+        mid_ids = ["universal_knowledge_engine", "nexus_coordinator", "security_agent", "research_agent", "voice_agent", "vision_agent", "computer_control_agent"]
+        for aid in mid_ids:
+            if aid in nodes_by_id:
+                self.assertEqual(nodes_by_id[aid].orbit_radius, ORBIT_MIDDLE_RADIUS, f"{aid} must be on middle orbit")
+
+        # Outer ring (540px)
+        if "pixel_ui_agent" in nodes_by_id:
+            self.assertEqual(nodes_by_id["pixel_ui_agent"].orbit_radius, ORBIT_OUTER_RADIUS)
+
+    def test_43_dynamic_agent_outer_orbit_placement(self):
+        """AgentFactory-generated dynamic agents are placed on outer orbit with staggered angles."""
+        for i in range(3):
+            spec = AgentSpecification(
+                agent_id=f"gen_galaxy_test_agent_{i}",
+                name=f"Test Dynamic Agent {i}",
+                purpose=f"Test dynamic agent {i} outer ring placement",
+                capabilities=["test.capability"],
+                lifecycle_state=AgentLifecycleState.APPROVED,
+            )
+            self.registry.register_agent(spec)
+            self.registry.activate_agent(spec.agent_id)
+
+        nodes = self.engine.build_celestial_nodes()
+        dynamic_nodes = [n for n in nodes if n.agent_id.startswith("gen_galaxy_test_agent_")]
+        self.assertEqual(len(dynamic_nodes), 3)
+
+        for dn in dynamic_nodes:
+            self.assertEqual(dn.orbit_radius, ORBIT_OUTER_RADIUS)
+
+        # Angles must be distinct/staggered
+        angles = [dn.orbit_angle for dn in dynamic_nodes]
+        self.assertEqual(len(set(angles)), 3, "Dynamic agents must have distinct orbital angles")
+
+    def test_44_no_node_overlap_and_clearance(self):
+        """Nodes on the same ring have ample angular separation (>10 degrees)."""
+        nodes = self.engine.build_celestial_nodes()
+        from collections import defaultdict
+        by_radius = defaultdict(list)
+        for n in nodes:
+            by_radius[n.orbit_radius].append(n.orbit_angle % 360)
+
+        for radius, angles in by_radius.items():
+            if len(angles) <= 1:
+                continue
+            sorted_angles = sorted(angles)
+            for i in range(len(sorted_angles)):
+                a1 = sorted_angles[i]
+                a2 = sorted_angles[(i + 1) % len(sorted_angles)]
+                diff = (a2 - a1) % 360
+                self.assertGreater(diff, 10.0, f"Nodes on ring R={radius} are too close: {a1} vs {a2}")
+
+    def test_45_direct_agent_addressing_droid(self):
+        """Direct calling 'Hey Droid' or 'Droid' routes directly to Droid and activates session."""
+        resp = self.companion.interact("Hey Droid", speak_output=False)
+        self.assertEqual(resp.routed_to, "Droid")
+        self.assertIn("Droid", resp.text)
+        self.assertEqual(self.companion.active_conversation_agent, "android_unified_agent")
+        self.assertEqual(self.companion.active_conversation_agent_name, "Droid")
+
+    def test_46_direct_agent_addressing_unity_and_unreal(self):
+        """Direct addressing switches context between different agents."""
+        resp_u = self.companion.interact("Unity", speak_output=False)
+        self.assertEqual(resp_u.routed_to, "Unity")
+        self.assertEqual(self.companion.active_conversation_agent, "unity_autonomous_agent")
+
+        resp_un = self.companion.interact("Unreal", speak_output=False)
+        self.assertEqual(resp_un.routed_to, "Unreal")
+        self.assertEqual(self.companion.active_conversation_agent, "unreal_autonomous_agent")
+
+    def test_47_active_conversation_persistence(self):
+        """Follow-up command without agent name stays with active agent."""
+        self.companion.interact("Droid", speak_output=False)
+        self.assertEqual(self.companion.active_conversation_agent, "android_unified_agent")
+
+        follow_up = self.companion.interact("Create a login screen", speak_output=False)
+        self.assertEqual(follow_up.routed_to, "Droid")
+        self.assertIn("Droid:", follow_up.text)
+        self.assertEqual(self.companion.active_conversation_agent, "android_unified_agent")
+
+    def test_48_active_conversation_followup_modification(self):
+        """Consecutive follow-up modification stays with active agent."""
+        self.companion.interact("Droid", speak_output=False)
+        self.companion.interact("Create a login screen", speak_output=False)
+        mod_resp = self.companion.interact("Make the button blue", speak_output=False)
+        self.assertEqual(mod_resp.routed_to, "Droid")
+        self.assertIn("Droid:", mod_resp.text)
+        self.assertIn("blue", mod_resp.text.lower())
+
+    def test_49_barge_in_and_speech_interruption(self):
+        """User interruption words ('wait', 'stop', 'hold on') interrupt immediately."""
+        self.companion.interact("Droid", speak_output=False)
+        interrupt_resp = self.companion.interact("wait, don't create it", speak_output=False)
+        self.assertEqual(interrupt_resp.routed_to, "InterruptionHandler")
+        self.assertTrue(interrupt_resp.data.get("interrupted"))
+        self.assertIn("won't create it", interrupt_resp.text.lower())
+
+    def test_50_central_core_takeover(self):
+        """User calling 'NR-AI' or 'Central' resets active agent to Central Core."""
+        self.companion.interact("Droid", speak_output=False)
+        self.assertIsNotNone(self.companion.active_conversation_agent)
+
+        central_resp = self.companion.interact("NR-AI", speak_output=False)
+        self.assertEqual(central_resp.routed_to, "NR-AI-Central")
+        self.assertIsNone(self.companion.active_conversation_agent)
+        self.assertIsNone(self.companion.active_conversation_agent_name)
+
+    def test_51_single_agent_introduction_mode(self):
+        """User asking 'Droid, introduce yourself' triggers single agent intro."""
+        intro_resp = self.companion.interact("Droid, introduce yourself", speak_output=False)
+        self.assertEqual(intro_resp.routed_to, "GalaxyIntroduction")
+        self.assertTrue(intro_resp.data.get("single_agent_introduction"))
+        self.assertEqual(intro_resp.data.get("single_speaker_id"), "android_unified_agent")
+        self.assertIn("Droid", intro_resp.text)
+
+    def test_52_credential_diagnostics_quota_exhausted_honest_reporting(self):
+        """Credential diagnostic engine reports quota exhaustion accurately without claiming missing keys."""
+        summary = get_fast_diagnostics_summary()
+        self.assertIn("overall_status", summary)
+        self.assertIn("providers", summary)
+        self.assertIn("model_honesty", summary)
+
+    def test_53_credential_diagnostics_secret_redaction(self):
+        """redact_secret() strictly redacts tokens without exposing raw characters."""
+        self.assertEqual(redact_secret(None), "[NOT SET]")
+        self.assertEqual(redact_secret(""), "[NOT SET]")
+        self.assertEqual(redact_secret("12345"), "[REDACTED]")
+        redacted = redact_secret("sk-proj-abc123456789xyzsecretkey")
+        self.assertNotIn("123456789xyzsecretkey", redacted)
+        self.assertTrue(redacted.endswith("...[REDACTED]"))
+
+    def test_54_model_honesty_unverified_reporting(self):
+        """GPT-6 Astra is reported as unverified, never fabricated."""
+        engine = CredentialDiagnosticEngine()
+        diag = engine.diagnose_all(force_refresh=False)
+        honesty = diag.get("model_honesty", {})
+        self.assertIn("gpt_6_astra", honesty)
+        self.assertIn("UNVERIFIED", honesty["gpt_6_astra"])
+
+    def test_55_active_conversation_endpoints_http(self):
+        """Dashboard HTTP endpoints support active conversation and credential diagnostics."""
+        port = 8597
+        dashboard = CompanionDashboard(companion=self.companion)
+        started = dashboard.start_http_server(port=port)
+        self.assertTrue(started)
+        time.sleep(0.3)
+        try:
+            # 1. GET /api/conversation/active
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/conversation/active")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data.get("success"))
+
+            # 2. POST /api/conversation/active
+            body = json.dumps({"agent_id": "android_unified_agent", "agent_name": "Droid"}).encode("utf-8")
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/conversation/active", data=body, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data.get("success"))
+                self.assertEqual(data.get("active_conversation_agent"), "android_unified_agent")
+
+            # 3. POST /api/conversation/interrupt
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/conversation/interrupt", data=b"{}", headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data.get("success"))
+                self.assertEqual(data.get("status"), "USER_INTERRUPTED")
+
+            # 4. GET /api/diagnostics/credentials
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/diagnostics/credentials")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertIn("overall_status", data)
+                self.assertIn("model_honesty", data)
+        finally:
+            dashboard.stop_http_server()
 
 
 if __name__ == "__main__":

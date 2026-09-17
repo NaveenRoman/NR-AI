@@ -222,6 +222,22 @@ class CompanionDashboard:
                     self._send_json(200, payload)
 
                 # 1b. Galaxy Introduction API
+                elif parsed.path == "/api/diagnostics/credentials":
+                    from app.agent.credential_diagnostics import CredentialDiagnosticEngine
+                    diag = CredentialDiagnosticEngine().diagnose_all()
+                    self._send_json(200, json.dumps(diag, indent=2).encode("utf-8"))
+
+                elif parsed.path == "/api/conversation/active":
+                    comp = dashboard_ref.companion
+                    payload = json.dumps({
+                        "success": True,
+                        "active_conversation_agent": getattr(comp, "active_conversation_agent", None),
+                        "active_conversation_agent_name": getattr(comp, "active_conversation_agent_name", None),
+                        "handoff_path": getattr(comp, "last_handoff_path", []),
+                        "conversation_id": getattr(comp, "conversation_id", ""),
+                    }, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
                 elif parsed.path in ("/api/galaxy/introduction", "/api/galaxy/introduction/"):
                     snapshot = dashboard_ref.get_status_snapshot()
                     intro_data = dashboard_ref.galaxy_engine.get_agent_introductions(companion_snapshot=snapshot)
@@ -344,6 +360,27 @@ class CompanionDashboard:
                     self._send_json(200, payload)
 
                 # 3. Agent Specific Action
+                elif parsed.path == "/api/conversation/active":
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+                    agent_id = b_data.get("agent_id")
+                    comp = dashboard_ref.companion
+                    if comp:
+                        comp.active_conversation_agent = agent_id
+                    self._send_json(200, json.dumps({"success": True, "active_conversation_agent": agent_id}).encode("utf-8"))
+
+                elif parsed.path == "/api/conversation/interrupt":
+                    comp = dashboard_ref.companion
+                    if comp and hasattr(comp.speaker, "stop"):
+                        comp.speaker.stop()
+                    self._send_json(200, json.dumps({
+                        "success": True,
+                        "status": "USER_INTERRUPTED",
+                        "active_conversation_agent": getattr(comp, "active_conversation_agent", None),
+                    }).encode("utf-8"))
+
                 elif parsed.path.startswith("/api/agent/") and parsed.path.endswith("/action"):
                     path_parts = parsed.path.strip("/").split("/")
                     # path_parts: ["api", "agent", "<agent_id>", "action"]
