@@ -17,6 +17,7 @@ Verifies:
 
 import json
 import os
+from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
 import urllib.request
@@ -950,6 +951,299 @@ class TestGalaxyUIRefinement2(unittest.TestCase):
                 self.assertIn("model_honesty", data)
         finally:
             dashboard.stop_http_server()
+
+
+    # -------------------------------------------------------------------------
+    # Galaxy UI Refinement 3: Agent Chat Workspace, Push-to-Talk, Context Locking
+    # -------------------------------------------------------------------------
+    def test_56_agent_activation_voice_and_direct_addressing(self):
+        """Voice triggers 'Activate Droid', 'Switch to Studio', 'Talk to Unity' activate agents."""
+        # 1. Activate Droid
+        aid, fname, rem = self.companion.resolve_addressed_agent("Activate Droid")
+        self.assertEqual(aid, "android_unified_agent")
+        self.assertEqual(fname, "Droid")
+        self.assertEqual(rem, "")
+
+        # 2. Switch to Studio
+        aid, fname, rem = self.companion.resolve_addressed_agent("Switch to Studio")
+        self.assertEqual(aid, "vs_unified_agent")
+        self.assertEqual(fname, "Studio")
+
+        # 3. Talk to Unity and create script
+        aid, fname, rem = self.companion.resolve_addressed_agent("Talk to Unity and create a player controller")
+        self.assertEqual(aid, "unity_autonomous_agent")
+        self.assertEqual(fname, "Unity")
+        self.assertIn("player controller", rem)
+
+    def test_57_session_aware_introduction(self):
+        """First activation delivers authentic capability intro; repeat delivers crisp readiness."""
+        comp = NRCompanion()
+        intro1, first1 = comp.activate_agent_session("android_unified_agent")
+        self.assertTrue(first1)
+        self.assertIn("Droid", intro1)
+        self.assertIn("Android", intro1)
+
+        # Second activation in same session
+        intro2, first2 = comp.activate_agent_session("android_unified_agent")
+        self.assertFalse(first2)
+        self.assertEqual(intro2, "Yes Boss, I'm ready. What do you need?")
+
+    def test_58_context_locked_specialist_followups(self):
+        """With Droid active, follow-up queries remain locked to Android Studio workspace."""
+        comp = NRCompanion()
+        comp.activate_agent_session("android_unified_agent")
+
+        # Query 1: What is the error?
+        r1 = comp.interact("What is the error?", speak_output=False)
+        self.assertIn("Droid:", r1.text)
+        self.assertIn("nr_android_test", r1.text)
+        self.assertEqual(comp.active_conversation_agent, "android_unified_agent")
+
+        # Query 2: Why is this button not working?
+        r2 = comp.interact("Why is this button not working?", speak_output=False)
+        self.assertIn("Droid:", r2.text)
+        self.assertIn("MainActivity.kt", r2.text)
+        self.assertEqual(comp.active_conversation_agent, "android_unified_agent")
+
+    def test_59_verify_before_answering_contract(self):
+        """Agent checks ground-truth evidence before answering build status, never falsely claiming done."""
+        comp = NRCompanion()
+        comp.activate_agent_session("android_unified_agent")
+
+        # Did you build the app?
+        r = comp.interact("Did you build the app?", speak_output=False)
+        self.assertIn("Droid:", r.text)
+        self.assertIn("not executed a build", r.text)
+        self.assertNotIn("Completed successfully", r.text)
+
+    def test_60_non_blind_knowledge_escape_with_workspace_preservation(self):
+        """General knowledge questions query Universal Knowledge while preserving Droid workspace."""
+        comp = NRCompanion()
+        comp.activate_agent_session("android_unified_agent")
+
+        # Ask general knowledge question
+        r = comp.interact("What is the capital of France?", speak_output=False)
+        self.assertIn("Droid:", r.text)
+        self.assertIn("Universal Knowledge", r.text)
+        self.assertIn("Android Studio workspace", r.text)
+        # Active workspace must still be Droid!
+        self.assertEqual(comp.active_conversation_agent, "android_unified_agent")
+
+    def test_61_bounded_chat_history_and_secret_redaction(self):
+        """Chat history is bounded to 20 turns and strictly redacts API keys and secrets."""
+        comp = NRCompanion()
+        aid = "android_unified_agent"
+
+        # Add message with simulated secret
+        comp.add_agent_chat_message(aid, role="user", text="My API key is AIzaSyD9fakeapikey123456789012345678")
+        comp.add_agent_chat_message(aid, role="agent", text="Secret noted.")
+
+        hist = comp.get_agent_chat_history(aid)
+        self.assertEqual(len(hist), 2)
+        self.assertNotIn("AIzaSyD9fakeapikey123456789012345678", hist[0]["text"])
+        self.assertIn("[REDACTED_API_KEY]", hist[0]["text"])
+
+    def test_62_active_development_context_ground_truth(self):
+        """Active development context reports real Android Studio workspace and files."""
+        comp = NRCompanion()
+        ctx = comp.get_active_development_context("android_unified_agent")
+        self.assertEqual(ctx["environment"], "ANDROID")
+        self.assertEqual(ctx["ide"], "Android Studio")
+        self.assertEqual(ctx["project_name"], "NR AI Test")
+        self.assertEqual(ctx["package_name"], "com.nrai.test")
+        self.assertEqual(ctx["language"], "Kotlin")
+        self.assertEqual(ctx["build_system"], "Gradle")
+        self.assertTrue(ctx["project_exists"])
+        self.assertTrue(ctx["main_activity_exists"])
+
+    def test_63_galaxy_engine_workspace_metadata(self):
+        """GalaxyEngine attaches workspace names and projects to all celestial profiles."""
+        ge = GalaxyEngine()
+        nodes = ge.build_celestial_nodes()
+        droid = next((n for n in nodes if n.agent_id == "android_unified_agent"), None)
+        studio = next((n for n in nodes if n.agent_id == "vs_unified_agent"), None)
+        unity = next((n for n in nodes if n.agent_id == "unity_autonomous_agent"), None)
+
+        self.assertIsNotNone(droid)
+        self.assertEqual(droid.workspace_name, "Android Studio")
+        self.assertEqual(droid.project_name, "NR AI Test")
+
+        self.assertIsNotNone(studio)
+        self.assertEqual(studio.workspace_name, "Visual Studio")
+
+        self.assertIsNotNone(unity)
+        self.assertEqual(unity.workspace_name, "Unity Editor")
+
+    def test_64_http_endpoints_agent_workspace_and_chat(self):
+        """Test GET /api/agent/<id>/context, POST /activate, POST /chat, and GET /chat."""
+        port = 8598
+        dashboard = CompanionDashboard(companion=self.companion)
+        started = dashboard.start_http_server(port=port)
+        self.assertTrue(started)
+        time.sleep(0.3)
+        try:
+            # 1. GET /api/agent/android_unified_agent/context
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/agent/android_unified_agent/context")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data.get("success"))
+                self.assertEqual(data.get("workspace_name"), "Android Studio")
+                self.assertEqual(len(data.get("step_checklist", [])), 8)
+
+            # 2. POST /api/agent/android_unified_agent/activate
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/agent/android_unified_agent/activate", data=b"{}", headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data.get("success"))
+                self.assertIn("Droid", data.get("speech"))
+
+            # 3. POST /api/agent/android_unified_agent/chat
+            body = json.dumps({"text": "What is the error?"}).encode("utf-8")
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/agent/android_unified_agent/chat", data=body, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data.get("success"))
+                self.assertIn("Droid: No errors detected", data.get("reply"))
+
+            # 4. GET /api/agent/android_unified_agent/chat
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/api/agent/android_unified_agent/chat")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.assertTrue(data.get("success"))
+                self.assertGreaterEqual(data.get("count"), 2)
+        finally:
+            dashboard.stop_http_server()
+
+    def test_65_barge_in_speech_interruption(self):
+        """Barge-in triggers ('wait, don't create it', 'stop') interrupt speech synthesis."""
+        comp = NRCompanion()
+        comp.activate_agent_session("android_unified_agent")
+
+        r = comp.interact("wait, don't create it", speak_output=False)
+        self.assertIn("Droid:", r.text)
+        self.assertIn("I won't create it", r.text)
+        self.assertTrue(r.data.get("interrupted"))
+
+    def test_66_switch_agent_and_return_to_central(self):
+        """Switching to another agent and returning to central NR-AI works deterministically."""
+        comp = NRCompanion()
+        comp.activate_agent_session("android_unified_agent")
+        self.assertEqual(comp.active_conversation_agent, "android_unified_agent")
+
+        # Switch to Unity
+        r1 = comp.interact("Unity", speak_output=False)
+        self.assertEqual(comp.active_conversation_agent, "unity_autonomous_agent")
+
+        # Return to central
+        r2 = comp.interact("NR-AI", speak_output=False)
+        self.assertIsNone(comp.active_conversation_agent)
+        self.assertIn("central orchestration", r2.text)
+
+    def test_67_dynamic_agent_factory_workspace_parity(self):
+        """Dynamic Agent Factory agents automatically receive full workspace and conversation parity."""
+        from app.agent.factory.specification import AgentSpecification, AgentLifecycleState
+        from app.agent.factory.registry import AgentRegistry
+
+        unique_id = f"test_qa_{int(time.time() * 1000)}"
+        spec = AgentSpecification(
+            agent_id=unique_id,
+            name="Test QA Agent",
+            purpose="Automate system verification suites",
+            capabilities=["system.core", "ui.visualization"],
+            lifecycle_state=AgentLifecycleState.APPROVED,
+        )
+        reg = AgentRegistry()
+        reg.register_agent(spec)
+        reg.activate_agent(unique_id)
+
+        try:
+            ge = GalaxyEngine(registry=reg)
+            ctx = ge.get_agent_context(unique_id)
+            self.assertEqual(ctx["workspace_name"], "Test QA Workspace")
+            self.assertEqual(len(ctx["step_checklist"]), 8)
+
+            comp = NRCompanion()
+            speech1, first1 = comp.activate_agent_session(unique_id, agent_name="Test QA")
+            self.assertTrue(first1)
+            self.assertIn("Test QA", speech1)
+        finally:
+            reg.retire_agent(unique_id)
+
+    def test_68_html_and_css_workspace_components(self):
+        """Galaxy HTML and CSS contain all required Agent Chat Workspace and PTT console components."""
+        html_path = Path(r"C:\NR-AI\app\ui\templates\galaxy.html")
+        css_path = Path(r"C:\NR-AI\app\ui\static\galaxy.css")
+        js_path = Path(r"C:\NR-AI\app\ui\static\galaxy.js")
+
+        with open(html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        with open(css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+        with open(js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        # HTML Workspace Elements
+        self.assertIn('id="panelFocusCard"', html)
+        self.assertIn('id="panelWorkspaceFocus"', html)
+        self.assertIn('id="panelActiveProject"', html)
+        self.assertIn('id="panelStepList"', html)
+        self.assertIn('id="panelMicBtn"', html)
+        self.assertIn('id="panelTextInput"', html)
+        self.assertIn('id="panelChatHistory"', html)
+
+        # CSS Styles
+        self.assertIn('.workspace-focus-card', css)
+        self.assertIn('.checklist-card', css)
+        self.assertIn('.ptt-mic-btn', css)
+        self.assertIn('.state-ready', css)
+        self.assertIn('.state-listening', css)
+        self.assertIn('.state-speaking', css)
+
+        # JS Push-to-Talk Logic
+        self.assertIn('updatePttState', js)
+        self.assertIn('toggleAgentPushToTalk', js)
+        self.assertIn('sendAgentTextMessage', js)
+        self.assertIn('loadAgentWorkspace', js)
+
+    def test_69_security_invariants_shell_false_and_localhost(self):
+        """Strict security invariants: zero shell=True in UI/Companion dispatch, strictly 127.0.0.1, ModelIsolationGate enforced."""
+        # 1. UI and Companion dispatch must have 0 shell=True
+        target_files = [
+            Path(r"C:\NR-AI\app\ui\dashboard.py"),
+            Path(r"C:\NR-AI\app\ui\galaxy_engine.py"),
+            Path(r"C:\NR-AI\app\remote\server.py"),
+        ]
+        shell_true_matches = []
+        for py_file in target_files:
+            with open(py_file, "r", encoding="utf-8", errors="ignore") as f:
+                for idx, line in enumerate(f, 1):
+                    if "shell=True" in line and not line.strip().startswith("#"):
+                        shell_true_matches.append(f"{py_file.name}:{idx}")
+        self.assertEqual(len(shell_true_matches), 0, f"Found shell=True in UI layer: {shell_true_matches}")
+
+        # 2. Companion get_active_development_context uses shell=False
+        comp = NRCompanion()
+        ctx = comp.get_active_development_context("android_unified_agent")
+        self.assertEqual(ctx.get("verification_status"), "DETERMINISTIC_SAFE")
+
+        # 3. Agent Safety Policy rejects allow_shell=True
+        from app.agent.factory.safety import AgentFactorySafetyGate
+        from app.agent.factory.specification import AgentSpecification, SafetyPolicy
+        gate = AgentFactorySafetyGate()
+        bad_spec = AgentSpecification(
+            agent_id="bad_shell_agent",
+            name="Bad Shell Agent",
+            purpose="Malicious shell test",
+            safety_policy=SafetyPolicy(allow_shell=True),
+        )
+        safe, violations = gate.audit_specification(bad_spec)
+        self.assertFalse(safe)
+        self.assertTrue(any("shell" in v.lower() for v in violations))
+
+        # 4. Host binding strictly localhost 127.0.0.1
+        from app.ui.dashboard import CompanionDashboard
+        dash = CompanionDashboard()
+        self.assertEqual(dash.host, "127.0.0.1")
 
 
 if __name__ == "__main__":

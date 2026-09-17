@@ -639,64 +639,181 @@ function handleCanvasClick(screenX, screenY) {
   }
 }
 
-function selectAgent(node) {
+async function selectAgent(node) {
   state.selectedNode = node;
+  state.activeConversationAgent = node.agent_id;
+  state.activeConversationAgentName = node.friendly_name;
 
-  // KEEP GALAXY VIEW ROCK-SOLID STABLE — ZERO ZOOM / CAMERA TRANSLATION
+  // Show Active Conversation Banner in Central Viewport
+  const banner = document.getElementById("activeChatBanner");
+  const bannerName = document.getElementById("activeChatAgentName");
+  if (banner) banner.style.display = "flex";
+  if (bannerName) bannerName.textContent = node.friendly_name;
+
+  // Render Base Agent Panel immediately
   renderAgentPanel(node);
 
-  // If introduction mode is NOT active, speak greeting if TTS is enabled
-  if (state.ttsEnabled && !state.introMode && node.greeting) {
-    speakText(node.greeting);
+  // Asynchronously activate agent session (session-aware greeting)
+  try {
+    const actRes = await fetch(`/api/agent/${node.agent_id}/activate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+    if (actRes.ok) {
+      const actData = await actRes.json();
+      if (actData.speech) {
+        appendChatMessage("agent", actData.speech);
+        if (state.ttsEnabled && !state.introMode) {
+          updatePttState("SPEAKING");
+          speakText(actData.speech, () => updatePttState("READY"));
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Agent activation call error:", err);
   }
+
+  // Load detailed workspace context (Focus, checklist, telemetry)
+  loadAgentWorkspace(node.agent_id);
+
+  // Load existing chat history
+  loadAgentChatHistory(node.agent_id);
 }
 
 // -----------------------------------------------------------------------------
-// Agent Interaction Panel Rendering
+// Agent Chat Workspace & Interaction Panel Rendering
 // -----------------------------------------------------------------------------
 function renderAgentPanel(node) {
   const panel = document.getElementById("agentPanel");
   if (!panel) return;
 
-  document.getElementById("panelAgentAvatar").textContent = getIconGlyph(node.icon_type);
-  document.getElementById("panelAgentAvatar").style.borderColor = node.color;
-  document.getElementById("panelAgentAvatar").style.boxShadow = `0 0 16px ${node.glow}`;
+  const avatar = document.getElementById("panelAgentAvatar");
+  if (avatar) {
+    avatar.textContent = getIconGlyph(node.icon_type);
+    avatar.style.borderColor = node.color;
+    avatar.style.boxShadow = `0 0 16px ${node.glow}`;
+  }
 
-  document.getElementById("panelAgentName").textContent = node.friendly_name;
-  document.getElementById("panelAgentRole").textContent = node.role;
+  const nameElem = document.getElementById("panelAgentName");
+  if (nameElem) nameElem.textContent = node.friendly_name;
+
+  const roleElem = document.getElementById("panelAgentRole");
+  if (roleElem) roleElem.textContent = node.role;
 
   const statusBadge = document.getElementById("panelStatusPill");
-  statusBadge.textContent = `● ${node.status}`;
-  statusBadge.style.color = node.status_color || "#10b981";
-  statusBadge.style.borderColor = node.status_color || "#10b981";
-  statusBadge.style.background = `${node.status_color || "#10b981"}18`;
+  if (statusBadge) {
+    statusBadge.textContent = `● ${node.status}`;
+    statusBadge.style.color = node.status_color || "#10b981";
+    statusBadge.style.borderColor = node.status_color || "#10b981";
+    statusBadge.style.background = `${node.status_color || "#10b981"}18`;
+  }
 
-  document.getElementById("panelModelPill").textContent = node.model_name || "gemini-3.6-flash";
-  document.getElementById("panelGreeting").textContent = `"${node.greeting}"`;
+  const modelPill = document.getElementById("panelModelPill");
+  if (modelPill) modelPill.textContent = node.model_name || "Auto-Routed";
 
-  // Capabilities Pills
-  const capsContainer = document.getElementById("panelCapsList");
-  capsContainer.innerHTML = "";
-  (node.capabilities || []).slice(0, 6).forEach(c => {
-    const pill = document.createElement("span");
-    pill.className = "cap-tag";
-    pill.textContent = c;
-    capsContainer.appendChild(pill);
-  });
+  // Set Workspace Focus & Project Defaults
+  const wsFocus = document.getElementById("panelWorkspaceFocus");
+  if (wsFocus) wsFocus.textContent = `● ${node.workspace_name || "Central Workspace"}`;
 
-  // Suggested Actions
-  const actionsContainer = document.getElementById("panelActionsList");
-  actionsContainer.innerHTML = "";
-  (node.suggested_actions || []).forEach(act => {
-    const btn = document.createElement("button");
-    btn.className = "quick-action-btn";
-    btn.innerHTML = `<span>▶</span> <span>${act.label}</span>`;
-    btn.onclick = () => executeAgentAction(node.agent_id, act.id);
-    actionsContainer.appendChild(btn);
-  });
+  const actProj = document.getElementById("panelActiveProject");
+  if (actProj) actProj.textContent = node.project_name || "None";
+
+  const currTask = document.getElementById("panelCurrentTask");
+  if (currTask) {
+    currTask.textContent = node.current_task ? (node.current_task.task_name || "Standing by") : "Standing by in workspace";
+  }
+
+  // Set PTT button initial ready state
+  updatePttState("READY");
 
   // Open Panel without changing camera
   panel.classList.add("open");
+}
+
+async function loadAgentWorkspace(agentId) {
+  try {
+    const res = await fetch(`/api/agent/${agentId}/context`);
+    if (!res.ok) return;
+    const ctx = await res.json();
+
+    const wsFocus = document.getElementById("panelWorkspaceFocus");
+    if (wsFocus) wsFocus.textContent = `● ${ctx.workspace_name || "Central Workspace"}`;
+
+    const actProj = document.getElementById("panelActiveProject");
+    if (actProj) actProj.textContent = ctx.project_name || "None";
+
+    const currTask = document.getElementById("panelCurrentTask");
+    if (currTask && ctx.development_context) {
+      currTask.textContent = ctx.development_context.current_task || ctx.development_context.ide || "Standing by";
+    }
+
+    // Render Checklist Steps
+    const stepList = document.getElementById("panelStepList");
+    if (stepList && ctx.step_checklist) {
+      stepList.innerHTML = "";
+      ctx.step_checklist.forEach(step => {
+        const div = document.createElement("div");
+        div.className = `step-item ${step.status || "idle"}`;
+        div.id = step.id;
+        div.innerHTML = `<span class="step-item-icon">${step.icon || "○"}</span> <span>${step.label}</span>`;
+        stepList.appendChild(div);
+      });
+    }
+
+    // Render Suggested Action Buttons
+    const actionsGrid = document.getElementById("panelActionsGrid");
+    if (actionsGrid && ctx.suggested_actions) {
+      actionsGrid.innerHTML = "";
+      ctx.suggested_actions.forEach(act => {
+        const btn = document.createElement("button");
+        btn.className = "action-card-btn";
+        btn.innerHTML = `<span>▶</span> <span>${act.label}</span>`;
+        btn.onclick = () => executeAgentAction(agentId, act.id);
+        actionsGrid.appendChild(btn);
+      });
+    }
+  } catch (e) {
+    console.warn("Failed to load agent workspace context:", e);
+  }
+}
+
+async function loadAgentChatHistory(agentId) {
+  const container = document.getElementById("panelChatHistory");
+  if (!container) return;
+
+  try {
+    const res = await fetch(`/api/agent/${agentId}/chat`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.history && Array.isArray(data.history)) {
+      container.innerHTML = "";
+      data.history.forEach(m => {
+        appendChatMessage(m.role, m.text, m.data, false);
+      });
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch (e) {
+    console.warn("Failed to load agent chat history:", e);
+  }
+}
+
+function appendChatMessage(role, text, meta, scroll = true) {
+  const container = document.getElementById("panelChatHistory");
+  if (!container) return;
+
+  const bubble = document.createElement("div");
+  bubble.className = `chat-bubble ${role}`;
+  bubble.textContent = text;
+  container.appendChild(bubble);
+
+  if (scroll) {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function clearActiveAgentChat() {
+  const container = document.getElementById("panelChatHistory");
+  if (container) container.innerHTML = "";
 }
 
 function closeAgentPanel() {
@@ -704,6 +821,152 @@ function closeAgentPanel() {
   if (panel) panel.classList.remove("open");
   state.selectedNode = null;
   // Zero camera movement — stable composition
+}
+
+// -----------------------------------------------------------------------------
+// Push-to-Talk Voice & Interaction State Machine
+// -----------------------------------------------------------------------------
+function updatePttState(newState) {
+  state.pttState = newState;
+  const btn = document.getElementById("panelMicBtn");
+  const label = document.getElementById("panelMicStatusText");
+  if (!btn || !label) return;
+
+  // Clear existing state classes
+  btn.className = "ptt-mic-btn";
+  btn.classList.add(`state-${newState.toLowerCase()}`);
+
+  const stateLabels = {
+    READY: "TAP TO SPEAK",
+    LISTENING: "🔴 LISTENING...",
+    TRANSCRIBING: "◌ TRANSCRIBING...",
+    UNDERSTANDING: "◌ UNDERSTANDING...",
+    RESPONDING: "◌ RESPONDING...",
+    SPEAKING: "🔊 SPEAKING (TAP TO STOP)",
+    ERROR: "⚠️ MIC ERROR (USE TEXT)"
+  };
+
+  label.textContent = stateLabels[newState] || newState;
+}
+
+function toggleAgentPushToTalk() {
+  // If agent is currently speaking, tap acts as instant barge-in / interruption
+  if (state.pttState === "SPEAKING") {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    fetch("/api/conversation/interrupt", { method: "POST" }).catch(() => {});
+    updatePttState("READY");
+    return;
+  }
+
+  // If already listening, user tapped to stop early
+  if (state.pttState === "LISTENING") {
+    if (state.agentRecognition) {
+      try { state.agentRecognition.stop(); } catch (e) {}
+    }
+    updatePttState("TRANSCRIBING");
+    return;
+  }
+
+  // Turn-based Start Push-to-Talk
+  if (state.pttState === "READY") {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      updatePttState("ERROR");
+      alert("Speech recognition is not available in this browser environment. Please use the text input below.");
+      return;
+    }
+
+    try {
+      state.agentRecognition = new SpeechRecognition();
+      state.agentRecognition.continuous = false; // Strictly single turn! No automatic re-recording loop!
+      state.agentRecognition.interimResults = false;
+
+      state.agentRecognition.onstart = () => {
+        updatePttState("LISTENING");
+      };
+
+      state.agentRecognition.onresult = async (event) => {
+        const spokenText = event.results[0][0].transcript;
+        updatePttState("TRANSCRIBING");
+        await sendAgentTurn(spokenText);
+      };
+
+      state.agentRecognition.onerror = (e) => {
+        console.warn("Push-to-talk error:", e);
+        updatePttState("READY");
+      };
+
+      state.agentRecognition.onend = () => {
+        if (state.pttState === "LISTENING") {
+          updatePttState("TRANSCRIBING");
+        }
+      };
+
+      state.agentRecognition.start();
+    } catch (e) {
+      console.warn("Could not start agent speech recognition:", e);
+      updatePttState("READY");
+    }
+  }
+}
+
+async function sendAgentTurn(text) {
+  if (!text || !text.trim()) {
+    updatePttState("READY");
+    return;
+  }
+
+  const aid = state.activeConversationAgent || (state.selectedNode ? state.selectedNode.agent_id : "android_unified_agent");
+  appendChatMessage("user", text);
+  updatePttState("UNDERSTANDING");
+
+  try {
+    updatePttState("RESPONDING");
+    const res = await fetch(`/api/agent/${aid}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text, speak_output: false })
+    });
+
+    const data = await res.json();
+    const reply = data.reply || (data.response && data.response.text) || "Understood.";
+    appendChatMessage("agent", reply);
+
+    // Update checklist step visually if relevant
+    const low = text.toLowerCase();
+    if (low.includes("build") || low.includes("compile")) {
+      const bStep = document.getElementById("step_building");
+      if (bStep) {
+        bStep.className = "step-item active";
+        const icon = bStep.querySelector(".step-item-icon");
+        if (icon) icon.textContent = "▶";
+      }
+    }
+
+    if (state.ttsEnabled) {
+      updatePttState("SPEAKING");
+      speakText(reply, () => {
+        updatePttState("READY");
+      });
+    } else {
+      updatePttState("READY");
+    }
+  } catch (err) {
+    console.error("Error sending agent turn:", err);
+    appendChatMessage("agent", "Error communicating with agent.");
+    updatePttState("READY");
+  }
+}
+
+function sendAgentTextMessage() {
+  const input = document.getElementById("panelTextInput");
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  sendAgentTurn(text);
 }
 
 // -----------------------------------------------------------------------------

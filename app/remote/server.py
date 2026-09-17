@@ -938,6 +938,21 @@ class SecureDashboardServer:
                     payload = json.dumps({"success": True, "count": len(nodes), "agents": [n.to_dict() for n in nodes]}, indent=2).encode("utf-8")
                     self._send_response(200, "application/json", payload)
 
+                elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/context") or parsed.path.endswith("/context/")):
+                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/context", "").strip("/")
+                    snapshot = gateway_ref.companion.dashboard.get_status_snapshot() if (gateway_ref.companion and hasattr(gateway_ref.companion, "dashboard")) else {}
+                    ctx = gateway_ref.galaxy_engine.get_agent_context(agent_id, companion_snapshot=snapshot)
+                    if gateway_ref.companion and hasattr(gateway_ref.companion, "get_active_development_context"):
+                        ctx["development_context"] = gateway_ref.companion.get_active_development_context(agent_id)
+                    payload = json.dumps(ctx, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
+                elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/chat") or parsed.path.endswith("/chat/")):
+                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/chat", "").strip("/")
+                    history = gateway_ref.companion.get_agent_chat_history(agent_id) if (gateway_ref.companion and hasattr(gateway_ref.companion, "get_agent_chat_history")) else []
+                    payload = json.dumps({"success": True, "agent_id": agent_id, "count": len(history), "history": history}, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
                 elif parsed.path.startswith("/api/agent/"):
                     agent_id = parsed.path[len("/api/agent/"):].strip("/")
                     snapshot = gateway_ref.companion.dashboard.get_status_snapshot() if (gateway_ref.companion and hasattr(gateway_ref.companion, "dashboard")) else {}
@@ -1421,7 +1436,7 @@ class SecureDashboardServer:
                 # Agent Specific Action
                 elif parsed.path == "/api/conversation/active":
                     try:
-                        b_data = json.loads(body) if body else {}
+                        b_data = json.loads(body_str) if body_str else {}
                     except Exception:
                         b_data = {}
                     agent_id = b_data.get("agent_id")
@@ -1439,6 +1454,50 @@ class SecureDashboardServer:
                         "status": "USER_INTERRUPTED",
                         "active_conversation_agent": getattr(comp, "active_conversation_agent", None),
                     }).encode("utf-8"))
+
+                elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/activate") or parsed.path.endswith("/activate/")):
+                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/activate", "").strip("/")
+                    speech = "Yes Boss, I'm ready."
+                    is_first = False
+                    comp = gateway_ref.companion
+                    if comp and hasattr(comp, "activate_agent_session"):
+                        speech, is_first = comp.activate_agent_session(agent_id)
+                    else:
+                        if comp:
+                            comp.active_conversation_agent = agent_id
+                    payload = json.dumps({
+                        "success": True,
+                        "agent_id": agent_id,
+                        "speech": speech,
+                        "first_intro": is_first,
+                        "active_conversation_agent": agent_id,
+                    }, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
+                elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/chat") or parsed.path.endswith("/chat/")):
+                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/chat", "").strip("/")
+                    try:
+                        c_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        c_data = {}
+                    cmd = c_data.get("text") or c_data.get("command") or body_str.strip()
+                    speak = bool(c_data.get("speak_output", False))
+                    comp = gateway_ref.companion
+                    if comp and hasattr(comp, "interact"):
+                        comp.active_conversation_agent = agent_id
+                        resp = comp.interact(cmd, speak_output=speak)
+                        resp_dict = resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}
+                        reply = getattr(resp, "text", str(resp))
+                    else:
+                        reply = f"Agent '{agent_id}' processed: {cmd}"
+                        resp_dict = {"text": reply}
+                    payload = json.dumps({
+                        "success": True,
+                        "agent_id": agent_id,
+                        "reply": reply,
+                        "response": resp_dict,
+                    }, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
 
                 elif parsed.path.startswith("/api/agent/") and parsed.path.endswith("/action"):
                     path_parts = parsed.path.strip("/").split("/")

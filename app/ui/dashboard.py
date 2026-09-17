@@ -43,6 +43,7 @@ class CompanionDashboard:
             self.companion = companion
         self._server_thread: Optional[threading.Thread] = None
         self._httpd: Optional[socketserver.TCPServer] = None
+        self.host: str = "127.0.0.1"
         self.port: int = 8585
         from app.ui.galaxy_engine import GalaxyEngine
         self.galaxy_engine = GalaxyEngine()
@@ -251,7 +252,24 @@ class CompanionDashboard:
                     payload = json.dumps({"success": True, "count": len(agents), "agents": agents}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
-                # 3. Specific Agent API
+                # 3. Specific Agent Workspace Context API
+                elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/context") or parsed.path.endswith("/context/")):
+                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/context", "").strip("/")
+                    snapshot = dashboard_ref.get_status_snapshot()
+                    ctx = dashboard_ref.galaxy_engine.get_agent_context(agent_id, companion_snapshot=snapshot)
+                    if hasattr(dashboard_ref.companion, "get_active_development_context"):
+                        ctx["development_context"] = dashboard_ref.companion.get_active_development_context(agent_id)
+                    payload = json.dumps(ctx, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 3b. Specific Agent Chat History API
+                elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/chat") or parsed.path.endswith("/chat/")):
+                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/chat", "").strip("/")
+                    history = dashboard_ref.companion.get_agent_chat_history(agent_id) if hasattr(dashboard_ref.companion, "get_agent_chat_history") else []
+                    payload = json.dumps({"success": True, "agent_id": agent_id, "count": len(history), "history": history}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 3c. Specific Agent Node API
                 elif parsed.path.startswith("/api/agent/"):
                     agent_id = parsed.path[len("/api/agent/"):].strip("/")
                     nodes = dashboard_ref.galaxy_engine.build_celestial_nodes(dashboard_ref.get_status_snapshot())
@@ -380,6 +398,49 @@ class CompanionDashboard:
                         "status": "USER_INTERRUPTED",
                         "active_conversation_agent": getattr(comp, "active_conversation_agent", None),
                     }).encode("utf-8"))
+
+                elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/activate") or parsed.path.endswith("/activate/")):
+                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/activate", "").strip("/")
+                    speech = "Yes Boss, I'm ready."
+                    is_first = False
+                    if dashboard_ref.companion and hasattr(dashboard_ref.companion, "activate_agent_session"):
+                        speech, is_first = dashboard_ref.companion.activate_agent_session(agent_id)
+                    else:
+                        if dashboard_ref.companion:
+                            dashboard_ref.companion.active_conversation_agent = agent_id
+                    payload = json.dumps({
+                        "success": True,
+                        "agent_id": agent_id,
+                        "speech": speech,
+                        "first_intro": is_first,
+                        "active_conversation_agent": agent_id,
+                    }, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/chat") or parsed.path.endswith("/chat/")):
+                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/chat", "").strip("/")
+                    try:
+                        c_data = json.loads(body) if body else {}
+                    except Exception:
+                        c_data = {}
+                    cmd = c_data.get("text") or c_data.get("command") or body.strip()
+                    speak = bool(c_data.get("speak_output", False))
+                    comp = dashboard_ref.companion
+                    if comp and hasattr(comp, "interact"):
+                        comp.active_conversation_agent = agent_id
+                        resp = comp.interact(cmd, speak_output=speak)
+                        resp_dict = resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}
+                        reply = getattr(resp, "text", str(resp))
+                    else:
+                        reply = f"Agent '{agent_id}' processed: {cmd}"
+                        resp_dict = {"text": reply}
+                    payload = json.dumps({
+                        "success": True,
+                        "agent_id": agent_id,
+                        "reply": reply,
+                        "response": resp_dict,
+                    }, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
 
                 elif parsed.path.startswith("/api/agent/") and parsed.path.endswith("/action"):
                     path_parts = parsed.path.strip("/").split("/")

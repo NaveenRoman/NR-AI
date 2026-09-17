@@ -255,7 +255,7 @@
         </div>
       </div>
 
-      <!-- Right-Side Agent Detail & Interaction Panel -->
+      <!-- Right-Side Agent Detail & Interaction Panel (Dedicated Agent Chat Workspace) -->
       <aside id="agentPanel" class="agent-panel">
         <div class="panel-header">
           <div class="agent-identity">
@@ -271,12 +271,34 @@
           </div>
         </div>
 
-        <!-- Greeting Speech Card -->
-        <div id="panelGreeting" class="agent-greeting-box">
-          Ready for instructions, Boss.
+        <!-- 1. Workspace Focus Card -->
+        <div id="panelFocusCard" class="workspace-focus-card">
+          <div class="focus-card-row">
+            <span class="focus-card-label">WORKSPACE FOCUS:</span>
+            <span id="panelWorkspaceFocus" class="focus-card-value">● Android Studio</span>
+          </div>
+          <div class="focus-card-row">
+            <span class="focus-card-label">ACTIVE PROJECT:</span>
+            <span id="panelActiveProject" class="focus-card-value">NR AI Test</span>
+          </div>
+          <div class="focus-card-row">
+            <span class="focus-card-label">CURRENT TASK:</span>
+            <span id="panelCurrentTask" class="focus-card-value muted">Standing by in Android Studio workspace</span>
+          </div>
         </div>
 
-        <!-- Capability Action Buttons -->
+        <!-- 2. Step-by-Step Task Checklist -->
+        <div id="panelStepChecklistContainer" class="checklist-card">
+          <div class="checklist-header">
+            <span>TASK PROGRESSION WORKFLOW</span>
+            <span id="panelStepProgressBadge" class="step-badge">READY</span>
+          </div>
+          <div id="panelStepList" class="checklist-steps">
+            <!-- Dynamically populated 8-step pipeline -->
+          </div>
+        </div>
+
+        <!-- 3. Capabilities & Actions -->
         <div>
           <div style="font-size: 0.72rem; font-weight: bold; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.08em;">
             INSTANT CAPABILITY ACTIONS
@@ -286,45 +308,19 @@
           </div>
         </div>
 
-        <!-- Current Task Progress (if working) -->
-        <div id="panelTaskCard" class="task-card" style="display: none;">
-          <div class="task-header">ACTIVE WORKFLOW EXECUTION</div>
-          <div id="panelTaskTitle" class="task-title">Creating Android project structure...</div>
-          <div class="task-progress-bar">
-            <div id="panelTaskProgress" class="task-progress-fill" style="width: 68%;"></div>
-          </div>
-          <div class="task-steps-list">
-            <div class="task-step done">
-              <span class="task-step-icon">✓</span>
-              <span>Project scaffold initialized</span>
-            </div>
-            <div class="task-step active">
-              <span class="task-step-icon">▶</span>
-              <span>Writing clean architecture modules</span>
-            </div>
-            <div class="task-step">
-              <span class="task-step-icon">○</span>
-              <span>Verifying gradle dependencies</span>
-            </div>
-          </div>
-          <button class="stop-task-btn" onclick="triggerEmergencyStop()">
-            🛑 HALT THIS AGENT
-          </button>
-        </div>
-
-        <!-- Agent Metadata Grid -->
+        <!-- 4. Agent Metadata & Safety Grid -->
         <div class="agent-metrics-grid">
           <div class="agent-metric-item">
             <span>Isolation:</span>
-            <strong>Standard</strong>
+            <strong>ModelIsolationGate</strong>
           </div>
           <div class="agent-metric-item">
             <span>Model:</span>
-            <strong>Auto-Routed</strong>
+            <strong id="panelModelPill">Auto-Routed</strong>
           </div>
           <div class="agent-metric-item">
             <span>Safety Gate:</span>
-            <strong style="color: #10b981;">Enforced</strong>
+            <strong style="color: #10b981;">Deterministic</strong>
           </div>
           <div class="agent-metric-item">
             <span>Audit State:</span>
@@ -332,13 +328,38 @@
           </div>
         </div>
 
-        <!-- Agent Chat Conversation -->
+        <!-- 5. Direct Agent Dialogue (Chat History) -->
         <div class="agent-chat-box">
-          <div style="font-size: 0.72rem; font-weight: bold; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.08em;">
-            DIRECT AGENT DIALOGUE
+          <div class="chat-header-bar">
+            <span>DIRECT AGENT DIALOGUE</span>
+            <button class="chat-clear-btn" onclick="clearActiveAgentChat()" title="Clear chat view">Clear</button>
           </div>
           <div id="panelChatHistory" class="chat-history">
             <!-- Messages added here -->
+          </div>
+        </div>
+
+        <!-- 6. Push-to-Talk Voice & Text Console -->
+        <div class="ptt-console">
+          <!-- Big Push-to-Talk Mic Button -->
+          <button id="panelMicBtn" class="ptt-mic-btn state-ready" onclick="toggleAgentPushToTalk()" title="Push-to-Talk Voice">
+            <span class="ptt-mic-icon">🎤</span>
+            <span id="panelMicStatusText" class="ptt-mic-label">TAP TO SPEAK</span>
+            <span class="ptt-wave-indicator"></span>
+          </button>
+
+          <!-- Text Input Fallback Bar (Voice/Text Parity) -->
+          <div class="ptt-text-row">
+            <input 
+              id="panelTextInput" 
+              type="text" 
+              class="ptt-text-input" 
+              placeholder="Ask this agent..." 
+              onkeydown="if(event.key==='Enter') sendAgentTextMessage()"
+            />
+            <button id="panelSendBtn" class="ptt-send-btn" onclick="sendAgentTextMessage()" title="Send">
+              ➔
+            </button>
           </div>
         </div>
       </aside>

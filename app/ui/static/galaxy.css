@@ -1237,3 +1237,276 @@ body {
   border-color: #00f0ff;
   color: #ffffff;
 }
+
+/* =============================================================================
+   8. AGENT CHAT WORKSPACE & PUSH-TO-TALK CONSOLE
+   ============================================================================= */
+
+/* Workspace Focus Card */
+.workspace-focus-card {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.focus-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.76rem;
+}
+
+.focus-card-label {
+  color: #94a3b8;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-size: 0.70rem;
+}
+
+.focus-card-value {
+  color: #38bdf8;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.focus-card-value.muted {
+  color: #cbd5e1;
+  font-weight: 400;
+  font-size: 0.72rem;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Step-by-Step Task Checklist */
+.checklist-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checklist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.70rem;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+}
+
+.step-badge {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid #10b981;
+  color: #10b981;
+  font-family: var(--font-mono);
+}
+
+.checklist-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: #64748b;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.step-item.completed {
+  color: #10b981;
+}
+
+.step-item.active {
+  color: #00f0ff;
+  font-weight: 700;
+  background: rgba(0, 240, 255, 0.08);
+}
+
+.step-item.failed {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.step-item-icon {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 0.8rem;
+  width: 14px;
+  text-align: center;
+}
+
+/* Chat Header Bar */
+.chat-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.70rem;
+  font-weight: bold;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.chat-clear-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 0.68rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.chat-clear-btn:hover {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Push-to-Talk Console */
+.ptt-console {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(56, 189, 248, 0.15);
+}
+
+.ptt-mic-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  background: rgba(14, 165, 233, 0.15);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.ptt-mic-btn:hover:not(:disabled) {
+  background: rgba(14, 165, 233, 0.25);
+  border-color: #00f0ff;
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+/* PTT States */
+.ptt-mic-btn.state-ready {
+  background: rgba(14, 165, 233, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+
+.ptt-mic-btn.state-listening {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  color: #fca5a5;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+  animation: pulseGlow 1.2s infinite;
+}
+
+.ptt-mic-btn.state-transcribing,
+.ptt-mic-btn.state-understanding,
+.ptt-mic-btn.state-responding {
+  background: rgba(168, 85, 247, 0.2);
+  border-color: #a855f7;
+  color: #d8b4fe;
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.3);
+}
+
+.ptt-mic-btn.state-speaking {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #6ee7b7;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+  cursor: pointer;
+}
+
+.ptt-mic-btn.state-speaking:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+.ptt-mic-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.ptt-mic-icon {
+  font-size: 1.1rem;
+}
+
+.ptt-mic-label {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+}
+
+/* Fallback Text Input */
+.ptt-text-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ptt-text-input {
+  flex: 1;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #ffffff;
+  font-size: 0.80rem;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.ptt-text-input:focus {
+  border-color: #00f0ff;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.25);
+}
+
+.ptt-send-btn {
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  color: #00f0ff;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.ptt-send-btn:hover {
+  background: #00f0ff;
+  color: #050b14;
+}
