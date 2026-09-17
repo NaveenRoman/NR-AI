@@ -1,6 +1,7 @@
 /**
  * NR-AI Galaxy UI — Interactive Celestial Canvas & Command Center Engine
  * 60 FPS Canvas rendering, Black Hole Vortex, Dynamic Agent Binding, Real Telemetry Polling.
+ * Refinement: Fixed stable galaxy composition (zero mouse zoom/pan) and Galaxy Introduction Mode.
  */
 
 // -----------------------------------------------------------------------------
@@ -11,21 +12,29 @@ const state = {
   selectedNode: null,
   searchQuery: "",
   statusFilter: "ALL",
+
+  // Fixed camera composition — zero mouse drift/zoom
   panX: 0,
   panY: 0,
-  targetPanX: 0,
-  targetPanY: 0,
   zoom: 1.0,
-  targetZoom: 1.0,
-  isDragging: false,
-  dragStartX: 0,
-  dragStartY: 0,
+
   particles: [],
   activeConnections: [],
   lastPoll: 0,
   ttsEnabled: true,
   speechSynth: window.speechSynthesis,
   recognition: null,
+
+  // Introduction Mode State
+  introMode: false,
+  introPaused: false,
+  introStep: -1, // -1: inactive, 0: NR-AI core intro, 1..N: agents, N+1: NR-AI outro
+  introQueue: [],
+  introGreeting: "Of course, Boss. Let me introduce you to my agents.",
+  introOutro: "That's my current agent team, Boss. Tell me what you want to build, learn, research, or solve.",
+  currentSpeakerId: null,
+  isSpeakingAudio: false,
+  introTimer: null,
 };
 
 // -----------------------------------------------------------------------------
@@ -61,7 +70,7 @@ function initClock() {
 }
 
 // -----------------------------------------------------------------------------
-// Canvas & Render Loop
+// Canvas & Render Loop (Fixed Composition — Zero Mouse Movement Camera Shifts)
 // -----------------------------------------------------------------------------
 let canvas, ctx;
 
@@ -71,31 +80,7 @@ function initCanvas() {
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
 
-  // Mouse pan/zoom events
-  canvas.addEventListener("mousedown", (e) => {
-    state.isDragging = true;
-    state.dragStartX = e.clientX - state.targetPanX;
-    state.dragStartY = e.clientY - state.targetPanY;
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (state.isDragging) {
-      state.targetPanX = e.clientX - state.dragStartX;
-      state.targetPanY = e.clientY - state.dragStartY;
-    }
-  });
-
-  window.addEventListener("mouseup", () => {
-    state.isDragging = false;
-  });
-
-  canvas.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    state.targetZoom = Math.min(Math.max(state.targetZoom * zoomFactor, 0.4), 2.5);
-  });
-
-  // Click detection for nodes
+  // Click detection for selecting agent nodes (NO camera translation or zooming)
   canvas.addEventListener("click", (e) => {
     const rect = canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -103,7 +88,7 @@ function initCanvas() {
     handleCanvasClick(clickX, clickY);
   });
 
-  // Start Animation Loop
+  // Start 60 FPS Render Loop
   requestAnimationFrame(renderLoop);
 }
 
@@ -120,9 +105,9 @@ function initParticles() {
   const count = 180;
   for (let i = 0; i < count; i++) {
     state.particles.push({
-      radius: 95 + Math.random() * 80,
+      radius: 95 + Math.random() * 85,
       angle: Math.random() * Math.PI * 2,
-      speed: (0.015 + Math.random() * 0.02) * (Math.random() > 0.5 ? 1 : 1),
+      speed: (0.015 + Math.random() * 0.02),
       size: 1.2 + Math.random() * 2.5,
       hue: Math.random() > 0.5 ? (30 + Math.random() * 30) : (280 + Math.random() * 60),
       opacity: 0.3 + Math.random() * 0.7,
@@ -131,7 +116,7 @@ function initParticles() {
 }
 
 // -----------------------------------------------------------------------------
-// Main Render Loop
+// Main Render Loop — 60 FPS Rock-Solid Fixed Composition
 // -----------------------------------------------------------------------------
 let lastFrameTime = performance.now();
 
@@ -139,29 +124,24 @@ function renderLoop(now) {
   const dt = (now - lastFrameTime) / 1000;
   lastFrameTime = now;
 
-  // Smooth camera interpolation
-  state.panX += (state.targetPanX - state.panX) * 0.12;
-  state.panY += (state.targetPanY - state.panY) * 0.12;
-  state.zoom += (state.targetZoom - state.zoom) * 0.12;
-
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
-  // Center coordinate system
-  ctx.translate(canvas.width / 2 + state.panX, canvas.height / 2 + state.panY);
-  ctx.scale(state.zoom, state.zoom);
+  // Fixed composition centered in canvas — zero mouse pan or zoom drift
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.scale(1.0, 1.0);
 
-  // 1. Draw Concentric Orbits
+  // 1. Draw Static Concentric Orbital Rings
   drawOrbits();
 
-  // 2. Draw Connections to Central Core
-  drawConnections();
+  // 2. Draw Gravitational Energy Beams to Agents
+  drawConnections(now);
 
   // 3. Draw Central Black Hole Intelligence Core
   drawCentralBlackHole(now);
 
-  // 4. Draw Celestial Agent Nodes
-  drawNodes();
+  // 4. Draw Celestial Agent Nodes (with speaker spotlighting)
+  drawNodes(now);
 
   ctx.restore();
 
@@ -189,26 +169,46 @@ function drawOrbits() {
   ctx.restore();
 }
 
-function drawConnections() {
+function drawConnections(now) {
   if (!state.galaxy || !state.galaxy.nodes) return;
   ctx.save();
 
-  const now = performance.now() * 0.002;
+  const timeSec = now * 0.002;
 
   for (const node of state.galaxy.nodes) {
+    const isSpeaker = state.introMode && state.currentSpeakerId === node.agent_id;
     const isFiltered = isNodeFilteredOut(node);
-    const alpha = isFiltered ? 0.06 : 0.25;
+    const alpha = isFiltered ? 0.05 : (state.introMode && !isSpeaker ? 0.12 : 0.25);
 
     const rad = (node.orbit_angle * Math.PI) / 180;
     const nx = Math.cos(rad) * node.orbit_radius;
     const ny = Math.sin(rad) * node.orbit_radius;
 
-    // Glowing connection line
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(nx, ny);
 
-    if (node.status === "WORKING" || node.status === "THINKING") {
+    if (isSpeaker) {
+      // High-energy luminous gravitational beam from Central Core to Speaking Agent
+      ctx.strokeStyle = "#00f0ff";
+      ctx.lineWidth = 3.5;
+      ctx.shadowColor = "#00f0ff";
+      ctx.shadowBlur = 18;
+      ctx.stroke();
+
+      // Energy pulse traveling along the beam
+      for (let k = 0; k < 3; k++) {
+        const t = ((timeSec * 2.0 + k * 0.33) % 1);
+        const px = nx * t;
+        const py = ny * t;
+        ctx.beginPath();
+        ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowColor = "#00f0ff";
+        ctx.shadowBlur = 16;
+        ctx.fill();
+      }
+    } else if (node.status === "WORKING" || node.status === "THINKING") {
       ctx.strokeStyle = node.color;
       ctx.lineWidth = 2.5;
       ctx.shadowColor = node.color;
@@ -216,7 +216,7 @@ function drawConnections() {
       ctx.stroke();
 
       // Traveling photon particle
-      const t = (now % 1);
+      const t = (timeSec % 1);
       const px = nx * t;
       const py = ny * t;
       ctx.beginPath();
@@ -238,13 +238,16 @@ function drawConnections() {
 function drawCentralBlackHole(now) {
   ctx.save();
 
+  const isCoreSpeaker = state.introMode && state.currentSpeakerId === "nr_ai_central_intelligence";
+  const pulseFactor = isCoreSpeaker ? 1.0 + 0.08 * Math.sin(now * 0.008) : 1.0;
+
   // 1. Accretion Disk Plasma Glow
-  const glowRadius = 160;
+  const glowRadius = 160 * pulseFactor;
   const gradient = ctx.createRadialGradient(0, 0, 40, 0, 0, glowRadius);
   gradient.addColorStop(0, "rgba(0, 0, 0, 1)");
-  gradient.addColorStop(0.35, "rgba(245, 158, 11, 0.45)");
-  gradient.addColorStop(0.65, "rgba(236, 72, 153, 0.35)");
-  gradient.addColorStop(0.85, "rgba(56, 189, 248, 0.25)");
+  gradient.addColorStop(0.35, isCoreSpeaker ? "rgba(245, 158, 11, 0.65)" : "rgba(245, 158, 11, 0.45)");
+  gradient.addColorStop(0.65, isCoreSpeaker ? "rgba(236, 72, 153, 0.55)" : "rgba(236, 72, 153, 0.35)");
+  gradient.addColorStop(0.85, isCoreSpeaker ? "rgba(0, 240, 255, 0.45)" : "rgba(56, 189, 248, 0.25)");
   gradient.addColorStop(1, "rgba(10, 15, 30, 0)");
 
   ctx.beginPath();
@@ -253,10 +256,11 @@ function drawCentralBlackHole(now) {
   ctx.fill();
 
   // 2. Rotating Particles in Accretion Disk
+  const speedMult = isCoreSpeaker ? 1.8 : 1.0;
   for (const p of state.particles) {
-    p.angle += p.speed;
-    const px = Math.cos(p.angle) * p.radius;
-    const py = Math.sin(p.angle) * p.radius;
+    p.angle += p.speed * speedMult;
+    const px = Math.cos(p.angle) * p.radius * pulseFactor;
+    const py = Math.sin(p.angle) * p.radius * pulseFactor;
 
     ctx.beginPath();
     ctx.arc(px, py, p.size, 0, Math.PI * 2);
@@ -267,42 +271,44 @@ function drawCentralBlackHole(now) {
   }
 
   // 3. Black Hole Event Horizon (Deep Black Void)
+  const coreR = 75 * pulseFactor;
   ctx.beginPath();
-  ctx.arc(0, 0, 75, 0, Math.PI * 2);
+  ctx.arc(0, 0, coreR, 0, Math.PI * 2);
   ctx.fillStyle = "#020409";
-  ctx.shadowColor = "#38bdf8";
-  ctx.shadowBlur = 30;
+  ctx.shadowColor = isCoreSpeaker ? "#00f0ff" : "#38bdf8";
+  ctx.shadowBlur = isCoreSpeaker ? 45 : 30;
   ctx.fill();
 
   // Inner border ring
   ctx.beginPath();
-  ctx.arc(0, 0, 75, 0, Math.PI * 2);
-  ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
-  ctx.lineWidth = 2;
+  ctx.arc(0, 0, coreR, 0, Math.PI * 2);
+  ctx.strokeStyle = isCoreSpeaker ? "rgba(0, 240, 255, 0.9)" : "rgba(56, 189, 248, 0.6)";
+  ctx.lineWidth = isCoreSpeaker ? 3 : 2;
   ctx.stroke();
 
   // Central pulsating intelligence waveform
   const isEStop = state.galaxy && state.galaxy.central_core.status === "STOPPED";
-  drawWaveformInCore(now, isEStop);
+  drawWaveformInCore(now, isEStop, isCoreSpeaker);
 
   ctx.restore();
 }
 
-function drawWaveformInCore(now, isEStop) {
+function drawWaveformInCore(now, isEStop, isCoreSpeaker) {
   ctx.save();
-  const width = 80;
+  const width = 84;
   const numBars = 16;
   const step = width / numBars;
   const startX = -width / 2;
 
   ctx.beginPath();
-  ctx.strokeStyle = isEStop ? "#ef4444" : "#38bdf8";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = isEStop ? "#ef4444" : (isCoreSpeaker ? "#00f0ff" : "#38bdf8");
+  ctx.lineWidth = isCoreSpeaker ? 3 : 2;
   ctx.lineCap = "round";
 
+  const amp = isEStop ? 0 : (isCoreSpeaker ? 18 : 10);
   for (let i = 0; i < numBars; i++) {
     const x = startX + i * step;
-    const wave = isEStop ? 0 : Math.sin(now * 0.005 + i * 0.5) * 10;
+    const wave = Math.sin(now * 0.006 + i * 0.5) * amp;
     ctx.moveTo(x, -wave);
     ctx.lineTo(x, wave);
   }
@@ -310,12 +316,13 @@ function drawWaveformInCore(now, isEStop) {
   ctx.restore();
 }
 
-function drawNodes() {
+function drawNodes(now) {
   if (!state.galaxy || !state.galaxy.nodes) return;
 
   for (const node of state.galaxy.nodes) {
     const isFiltered = isNodeFilteredOut(node);
     const isSelected = state.selectedNode && state.selectedNode.agent_id === node.agent_id;
+    const isSpeaker = state.introMode && state.currentSpeakerId === node.agent_id;
 
     ctx.save();
     const rad = (node.orbit_angle * Math.PI) / 180;
@@ -324,57 +331,175 @@ function drawNodes() {
 
     ctx.translate(x, y);
 
-    if (isFiltered) {
+    // If intro mode is active, subdue non-speaking agents to 35% opacity
+    if (state.introMode && !isSpeaker) {
+      ctx.globalAlpha = 0.35;
+    } else if (isFiltered) {
       ctx.globalAlpha = 0.2;
+    } else {
+      ctx.globalAlpha = 1.0;
     }
 
-    // Outer Glow Ring
-    const baseRadius = 26;
-    ctx.beginPath();
-    ctx.arc(0, 0, baseRadius + 8, 0, Math.PI * 2);
-    ctx.fillStyle = node.glow;
-    ctx.fill();
+    if (isSpeaker) {
+      // 🌟 THE STAR OF THE GALAXY 🌟
+      const speakerRadius = 32 + Math.sin(now * 0.008) * 3;
 
-    // Node Sphere
-    ctx.beginPath();
-    ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
-    ctx.fillStyle = "#0f172a";
-    ctx.shadowColor = node.color;
-    ctx.shadowBlur = isSelected ? 32 : 18;
-    ctx.fill();
+      // Outer Breathing Concentric Glowing Rings
+      ctx.beginPath();
+      ctx.arc(0, 0, speakerRadius + 28, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0, 240, 255, 0.12)";
+      ctx.fill();
 
-    // Node Border
-    ctx.beginPath();
-    ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = isSelected ? "#ffffff" : node.color;
-    ctx.lineWidth = isSelected ? 3 : 2;
-    ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, speakerRadius + 14, 0, Math.PI * 2);
+      ctx.fillStyle = node.glow || "rgba(0, 240, 255, 0.35)";
+      ctx.fill();
 
-    // Agent Icon Text/Symbol
-    ctx.font = "bold 13px var(--font-sans)";
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(getIconGlyph(node.icon_type), 0, -2);
+      ctx.beginPath();
+      ctx.arc(0, 0, speakerRadius + 8, 0, Math.PI * 2);
+      ctx.strokeStyle = "#00f0ff";
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = "#00f0ff";
+      ctx.shadowBlur = 24;
+      ctx.stroke();
 
-    // Friendly Name Label
-    ctx.font = "bold 12px var(--font-sans)";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(node.friendly_name, 0, baseRadius + 15);
+      // Orbiting Spark Particles around Speaker
+      for (let s = 0; s < 4; s++) {
+        const sAngle = (now * 0.004 + (s * Math.PI) / 2);
+        const sx = Math.cos(sAngle) * (speakerRadius + 16);
+        const sy = Math.sin(sAngle) * (speakerRadius + 16);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowColor = "#00f0ff";
+        ctx.shadowBlur = 10;
+        ctx.fill();
+      }
 
-    // Role Subtitle
-    ctx.font = "9px var(--font-sans)";
-    ctx.fillStyle = "#94a3b8";
-    ctx.fillText(node.role, 0, baseRadius + 27);
+      // Speaker Node Sphere
+      ctx.beginPath();
+      ctx.arc(0, 0, speakerRadius, 0, Math.PI * 2);
+      ctx.fillStyle = "#091326";
+      ctx.shadowColor = "#00f0ff";
+      ctx.shadowBlur = 35;
+      ctx.fill();
 
-    // Status Pill Badge
-    const statusText = `● ${node.status}`;
-    ctx.font = "bold 9px var(--font-sans)";
-    ctx.fillStyle = node.status_color;
-    ctx.fillText(statusText, 0, baseRadius + 39);
+      ctx.beginPath();
+      ctx.arc(0, 0, speakerRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Agent Icon
+      ctx.font = "bold 17px var(--font-sans)";
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(getIconGlyph(node.icon_type), 0, -2);
+
+      // Prominent Bold Name
+      ctx.font = "bold 15px var(--font-sans)";
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "#00f0ff";
+      ctx.shadowBlur = 12;
+      ctx.fillText(node.friendly_name.toUpperCase(), 0, speakerRadius + 18);
+      ctx.shadowBlur = 0;
+
+      // Role Subtitle
+      ctx.font = "bold 10px var(--font-sans)";
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillText(node.role, 0, speakerRadius + 32);
+
+      // ● SPEAKING Badge Pill
+      ctx.fillStyle = "rgba(16, 185, 129, 0.2)";
+      ctx.strokeStyle = "#10b981";
+      ctx.lineWidth = 1;
+      const bW = 84;
+      const bH = 18;
+      ctx.beginPath();
+      ctx.roundRect(-bW / 2, speakerRadius + 38, bW, bH, 9);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = "bold 9px var(--font-sans)";
+      ctx.fillStyle = "#10b981";
+      ctx.fillText("● SPEAKING", 0, speakerRadius + 47);
+
+      // Animated Mini Equalizer below badge while audio is active
+      if (state.isSpeakingAudio) {
+        drawMiniEqualizer(0, speakerRadius + 64, now);
+      }
+    } else {
+      // Normal Node
+      const baseRadius = 26;
+
+      // Outer Glow Ring
+      ctx.beginPath();
+      ctx.arc(0, 0, baseRadius + 8, 0, Math.PI * 2);
+      ctx.fillStyle = node.glow;
+      ctx.fill();
+
+      // Node Sphere
+      ctx.beginPath();
+      ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
+      ctx.fillStyle = "#0f172a";
+      ctx.shadowColor = node.color;
+      ctx.shadowBlur = isSelected ? 32 : 18;
+      ctx.fill();
+
+      // Node Border
+      ctx.beginPath();
+      ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = isSelected ? "#ffffff" : node.color;
+      ctx.lineWidth = isSelected ? 3 : 2;
+      ctx.stroke();
+
+      // Agent Icon Text/Symbol
+      ctx.font = "bold 13px var(--font-sans)";
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(getIconGlyph(node.icon_type), 0, -2);
+
+      // Friendly Name Label
+      ctx.font = "bold 12px var(--font-sans)";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(node.friendly_name, 0, baseRadius + 15);
+
+      // Role Subtitle
+      ctx.font = "9px var(--font-sans)";
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillText(node.role, 0, baseRadius + 27);
+
+      // Status Pill Badge (Real state only)
+      const statusText = `● ${node.status}`;
+      ctx.font = "bold 9px var(--font-sans)";
+      ctx.fillStyle = node.status_color || "#10b981";
+      ctx.fillText(statusText, 0, baseRadius + 39);
+    }
 
     ctx.restore();
   }
+}
+
+function drawMiniEqualizer(cx, cy, now) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  const bars = 5;
+  const barW = 3;
+  const gap = 3;
+  const totalW = bars * barW + (bars - 1) * gap;
+  const startX = -totalW / 2;
+
+  for (let i = 0; i < bars; i++) {
+    const height = 4 + Math.abs(Math.sin(now * 0.01 + i * 0.8)) * 12;
+    const x = startX + i * (barW + gap);
+    ctx.fillStyle = "#00f0ff";
+    ctx.shadowColor = "#00f0ff";
+    ctx.shadowBlur = 6;
+    ctx.fillRect(x, -height / 2, barW, height);
+  }
+  ctx.restore();
 }
 
 function getIconGlyph(type) {
@@ -413,17 +538,17 @@ function isNodeFilteredOut(node) {
 }
 
 // -----------------------------------------------------------------------------
-// Hit Detection & Agent Selection
+// Hit Detection & Agent Selection (Zero Camera Movement)
 // -----------------------------------------------------------------------------
 function handleCanvasClick(screenX, screenY) {
   if (!state.galaxy || !state.galaxy.nodes) return;
 
-  // Convert screen coordinates to world coordinates
-  const worldX = (screenX - (canvas.width / 2 + state.panX)) / state.zoom;
-  const worldY = (screenY - (canvas.height / 2 + state.panY)) / state.zoom;
+  // Convert screen coordinates to centered world coordinates
+  const worldX = screenX - canvas.width / 2;
+  const worldY = screenY - canvas.height / 2;
 
   let clickedNode = null;
-  const hitRadius = 35;
+  const hitRadius = 38;
 
   for (const node of state.galaxy.nodes) {
     const rad = (node.orbit_angle * Math.PI) / 180;
@@ -445,17 +570,12 @@ function handleCanvasClick(screenX, screenY) {
 function selectAgent(node) {
   state.selectedNode = node;
 
-  // Smoothly center on selected agent node
-  const rad = (node.orbit_angle * Math.PI) / 180;
-  state.targetPanX = -Math.cos(rad) * node.orbit_radius * state.zoom;
-  state.targetPanY = -Math.sin(rad) * node.orbit_radius * state.zoom;
-  state.targetZoom = 1.35;
-
+  // KEEP GALAXY VIEW ROCK-SOLID STABLE — ZERO ZOOM / CAMERA TRANSLATION
   renderAgentPanel(node);
 
-  // Voice greeting if enabled
-  if (state.ttsEnabled && node.greeting) {
-    speak(node.greeting);
+  // If introduction mode is NOT active, speak greeting if TTS is enabled
+  if (state.ttsEnabled && !state.introMode && node.greeting) {
+    speakText(node.greeting);
   }
 }
 
@@ -475,41 +595,35 @@ function renderAgentPanel(node) {
 
   const statusBadge = document.getElementById("panelStatusPill");
   statusBadge.textContent = `● ${node.status}`;
-  statusBadge.style.color = node.status_color;
-  statusBadge.style.borderColor = node.status_color;
-  statusBadge.style.background = `${node.status_color}18`;
+  statusBadge.style.color = node.status_color || "#10b981";
+  statusBadge.style.borderColor = node.status_color || "#10b981";
+  statusBadge.style.background = `${node.status_color || "#10b981"}18`;
 
-  document.getElementById("panelGreeting").textContent = node.greeting;
+  document.getElementById("panelModelPill").textContent = node.model_name || "gemini-3.6-flash";
+  document.getElementById("panelGreeting").textContent = `"${node.greeting}"`;
 
-  // Render capability action buttons
-  const actionGrid = document.getElementById("panelActionsGrid");
-  actionGrid.innerHTML = "";
-  if (node.suggested_actions && node.suggested_actions.length > 0) {
-    for (const act of node.suggested_actions) {
-      const btn = document.createElement("button");
-      btn.className = "action-card-btn";
-      btn.innerHTML = `<span>▶</span> <span>${act.label}</span>`;
-      btn.onclick = () => executeAgentAction(node.agent_id, act.id, act.label);
-      actionGrid.appendChild(btn);
-    }
-  }
+  // Capabilities Pills
+  const capsContainer = document.getElementById("panelCapsList");
+  capsContainer.innerHTML = "";
+  (node.capabilities || []).slice(0, 6).forEach(c => {
+    const pill = document.createElement("span");
+    pill.className = "cap-tag";
+    pill.textContent = c;
+    capsContainer.appendChild(pill);
+  });
 
-  // Current task card
-  const taskCard = document.getElementById("panelTaskCard");
-  if (node.current_task && node.status === "WORKING") {
-    taskCard.style.display = "block";
-    document.getElementById("panelTaskTitle").textContent = node.current_task.description || "Executing workflow...";
-    document.getElementById("panelTaskProgress").style.width = `${node.current_task.progress || 68}%`;
-  } else {
-    taskCard.style.display = "none";
-  }
+  // Suggested Actions
+  const actionsContainer = document.getElementById("panelActionsList");
+  actionsContainer.innerHTML = "";
+  (node.suggested_actions || []).forEach(act => {
+    const btn = document.createElement("button");
+    btn.className = "quick-action-btn";
+    btn.innerHTML = `<span>▶</span> <span>${act.label}</span>`;
+    btn.onclick = () => executeAgentAction(node.agent_id, act.id);
+    actionsContainer.appendChild(btn);
+  });
 
-  // Chat stream reset
-  const chatHistory = document.getElementById("panelChatHistory");
-  chatHistory.innerHTML = `
-    <div class="chat-bubble agent">${node.greeting}</div>
-  `;
-
+  // Open Panel without changing camera
   panel.classList.add("open");
 }
 
@@ -517,37 +631,295 @@ function closeAgentPanel() {
   const panel = document.getElementById("agentPanel");
   if (panel) panel.classList.remove("open");
   state.selectedNode = null;
-  state.targetPanX = 0;
-  state.targetPanY = 0;
-  state.targetZoom = 1.0;
+  // Zero camera movement — stable composition
 }
 
 // -----------------------------------------------------------------------------
-// Action Execution & Global Commands
+// Galaxy Introduction Mode Engine (One-by-One Agent Presentation)
 // -----------------------------------------------------------------------------
-async function executeAgentAction(agentId, actionId, label) {
-  const chatHistory = document.getElementById("panelChatHistory");
-  const userMsg = document.createElement("div");
-  userMsg.className = "chat-bubble user";
-  userMsg.textContent = label;
-  chatHistory.appendChild(userMsg);
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+async function startIntroductionMode() {
+  if (state.introMode && !state.introPaused) return;
 
+  try {
+    const res = await fetch("/api/galaxy/introduction");
+    if (!res.ok) {
+      console.error("Failed to load introduction data");
+      return;
+    }
+    const data = await res.json();
+    if (!data.success || !data.sequence) return;
+
+    state.introMode = true;
+    state.introPaused = false;
+    state.introStep = 0;
+    state.introQueue = data.sequence;
+    state.introGreeting = data.intro_greeting || "Of course, Boss. Let me introduce you to my agents.";
+    state.introOutro = data.intro_outro || "That's my current agent team, Boss. Tell me what you want to build, learn, research, or solve.";
+
+    // Show Intro HUD
+    const hud = document.getElementById("introHud");
+    if (hud) {
+      hud.style.display = "flex";
+    }
+
+    updateIntroQueuePreview();
+    playIntroStep(0);
+  } catch (err) {
+    console.error("Error starting introduction mode:", err);
+  }
+}
+
+function updateIntroQueuePreview() {
+  const container = document.getElementById("introQueuePreview");
+  if (!container) return;
+
+  let html = `<div class="queue-pill ${state.introStep === 0 ? 'current' : (state.introStep > 0 ? 'done' : '')}">
+    ${state.introStep > 0 ? '✓' : (state.introStep === 0 ? '●' : '○')} NR-AI
+  </div>`;
+
+  state.introQueue.forEach((agent, idx) => {
+    const stepIdx = idx + 1;
+    const isDone = state.introStep > stepIdx;
+    const isCurrent = state.introStep === stepIdx;
+    const marker = isDone ? '✓' : (isCurrent ? '●' : '○');
+    const cls = isDone ? 'done' : (isCurrent ? 'current' : '');
+    html += `<div class="queue-pill ${cls}">${marker} ${agent.name}</div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+function playIntroStep(step) {
+  if (!state.introMode || state.introPaused) return;
+
+  clearTimeout(state.introTimer);
+
+  const total = state.introQueue.length;
+  updateIntroQueuePreview();
+
+  // Step 0: NR-AI Central Intelligence Greeting
+  if (step === 0) {
+    state.currentSpeakerId = "nr_ai_central_intelligence";
+    updateIntroHudSpeaker({
+      name: "NR-AI",
+      role: "Central Intelligence Core",
+      avatar: "🌌",
+      badge: "● SPEAKING",
+      text: state.introGreeting,
+      stepText: `Core Intro (0 / ${total})`,
+    });
+
+    speakText(state.introGreeting, () => {
+      if (state.introMode && !state.introPaused) {
+        advanceIntroStep();
+      }
+    });
+    return;
+  }
+
+  // Steps 1..total: Agent Introductions
+  if (step >= 1 && step <= total) {
+    const agent = state.introQueue[step - 1];
+    state.currentSpeakerId = agent.agent_id;
+
+    updateIntroHudSpeaker({
+      name: agent.name,
+      role: agent.role,
+      avatar: getIconGlyph(agent.icon_type),
+      badge: "● SPEAKING",
+      text: agent.speech_text,
+      stepText: `${step} / ${total}`,
+    });
+
+    speakText(agent.speech_text, () => {
+      if (state.introMode && !state.introPaused) {
+        advanceIntroStep();
+      }
+    });
+    return;
+  }
+
+  // Step > total: NR-AI Central Core Outro
+  if (step > total) {
+    state.currentSpeakerId = "nr_ai_central_intelligence";
+    updateIntroHudSpeaker({
+      name: "NR-AI",
+      role: "Central Intelligence Core",
+      avatar: "🌌",
+      badge: "● SPEAKING",
+      text: state.introOutro,
+      stepText: `Complete (${total} / ${total})`,
+    });
+
+    speakText(state.introOutro, () => {
+      finishIntroduction();
+    });
+  }
+}
+
+function updateIntroHudSpeaker({ name, role, avatar, badge, text, stepText }) {
+  const nameEl = document.getElementById("introSpeakerName");
+  const roleEl = document.getElementById("introSpeakerRole");
+  const avatarEl = document.getElementById("introSpeakerAvatar");
+  const badgeEl = document.getElementById("introSpeakerBadge");
+  const bubbleEl = document.getElementById("introSpeechBubble");
+  const stepEl = document.getElementById("introStepCount");
+
+  if (nameEl) nameEl.textContent = name;
+  if (roleEl) roleEl.textContent = role;
+  if (avatarEl) avatarEl.textContent = avatar;
+  if (badgeEl) badgeEl.textContent = badge;
+  if (bubbleEl) bubbleEl.textContent = `"${text}"`;
+  if (stepEl) stepEl.textContent = stepText;
+}
+
+function advanceIntroStep() {
+  if (!state.introMode || state.introPaused) return;
+  state.introStep++;
+  playIntroStep(state.introStep);
+}
+
+function togglePauseIntroduction() {
+  if (!state.introMode) return;
+  state.introPaused = !state.introPaused;
+
+  const btn = document.getElementById("btnIntroPause");
+  if (state.introPaused) {
+    if (btn) btn.innerHTML = "▶️ Resume";
+    if (state.speechSynth) state.speechSynth.pause();
+    clearTimeout(state.introTimer);
+    state.isSpeakingAudio = false;
+    const eq = document.getElementById("introEqualizer");
+    if (eq) eq.classList.remove("active");
+  } else {
+    if (btn) btn.innerHTML = "⏸️ Pause";
+    if (state.speechSynth && state.speechSynth.paused) {
+      state.speechSynth.resume();
+      state.isSpeakingAudio = true;
+      const eq = document.getElementById("introEqualizer");
+      if (eq) eq.classList.add("active");
+    } else {
+      playIntroStep(state.introStep);
+    }
+  }
+}
+
+function skipIntroduction() {
+  if (!state.introMode) return;
+  if (state.speechSynth) state.speechSynth.cancel();
+  clearTimeout(state.introTimer);
+  state.isSpeakingAudio = false;
+  state.introPaused = false;
+  const btn = document.getElementById("btnIntroPause");
+  if (btn) btn.innerHTML = "⏸️ Pause";
+  advanceIntroStep();
+}
+
+function stopIntroduction() {
+  if (state.speechSynth) state.speechSynth.cancel();
+  clearTimeout(state.introTimer);
+  state.introMode = false;
+  state.introPaused = false;
+  state.introStep = -1;
+  state.currentSpeakerId = null;
+  state.isSpeakingAudio = false;
+
+  const hud = document.getElementById("introHud");
+  if (hud) hud.style.display = "none";
+
+  const btn = document.getElementById("btnIntroPause");
+  if (btn) btn.innerHTML = "⏸️ Pause";
+
+  const eq = document.getElementById("introEqualizer");
+  if (eq) eq.classList.remove("active");
+
+  pollGalaxyState();
+}
+
+function finishIntroduction() {
+  setTimeout(() => {
+    stopIntroduction();
+  }, 2000);
+}
+
+function speakText(text, onComplete) {
+  clearTimeout(state.introTimer);
+  const eq = document.getElementById("introEqualizer");
+  const notice = document.getElementById("introVoiceNotice");
+
+  if (state.ttsEnabled && 'speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    state.isSpeakingAudio = true;
+    if (eq) eq.classList.add("active");
+    if (notice) notice.style.display = "none";
+
+    let completed = false;
+    const finish = () => {
+      if (!completed) {
+        completed = true;
+        state.isSpeakingAudio = false;
+        if (eq) eq.classList.remove("active");
+        if (onComplete) onComplete();
+      }
+    };
+
+    utterance.onend = finish;
+    utterance.onerror = (e) => {
+      console.warn("Speech synthesis error:", e);
+      finish();
+    };
+
+    window.speechSynthesis.speak(utterance);
+
+    // Safety timeout in case speech synthesis hangs or voices unavailable
+    const maxDuration = Math.max(4000, text.length * 85);
+    state.introTimer = setTimeout(finish, maxDuration);
+  } else {
+    // Voice unavailable: display clearly and advance after reading delay
+    state.isSpeakingAudio = false;
+    if (eq) eq.classList.remove("active");
+    if (notice) {
+      notice.style.display = "block";
+      notice.textContent = "VOICE UNAVAILABLE • TEXT DISPLAY";
+    }
+
+    const readDuration = Math.max(3000, Math.min(7500, text.length * 60));
+    state.introTimer = setTimeout(() => {
+      if (onComplete) onComplete();
+    }, readDuration);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Agent Action & Command Execution
+// -----------------------------------------------------------------------------
+async function executeAgentAction(agentId, actionId) {
+  const panel = document.getElementById("agentPanel");
+  if (!panel) return;
+
+  const chatHistory = document.getElementById("panelChatHistory");
   const thinkingMsg = document.createElement("div");
-  thinkingMsg.className = "chat-bubble agent";
-  thinkingMsg.textContent = "Processing action...";
+  thinkingMsg.className = "chat-bubble agent thinking";
+  thinkingMsg.textContent = `Dispatching action '${actionId}' to ${agentId}...`;
   chatHistory.appendChild(thinkingMsg);
+  chatHistory.scrollTop = chatHistory.scrollHeight;
 
   try {
     const res = await fetch(`/api/agent/${agentId}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action_id: actionId, label }),
+      body: JSON.stringify({ action: actionId, parameters: {} }),
     });
-    const data = await res.json();
-    thinkingMsg.textContent = data.result || data.message || "Done, Boss.";
-    if (state.ttsEnabled && thinkingMsg.textContent) {
-      speak(thinkingMsg.textContent);
+    const result = await res.json();
+    thinkingMsg.classList.remove("thinking");
+    thinkingMsg.textContent = result.message || `Action '${actionId}' executed successfully.`;
+
+    if (state.ttsEnabled && !state.introMode) {
+      speakText(thinkingMsg.textContent);
     }
   } catch (err) {
     thinkingMsg.textContent = "Error executing action: " + err;
@@ -563,6 +935,20 @@ async function sendGlobalCommand() {
   input.value = "";
   input.placeholder = "Processing command...";
 
+  // Check if user requested introduction mode
+  const cmdLower = cmd.toLowerCase();
+  const introTriggers = [
+    "introduce yourself", "introduce yourselves", "who are you all",
+    "let every agent introduce themselves", "introduce your agents",
+    "introduce the agents", "who are your agents", "tell me about your agents",
+    "agent introduction", "meet the agents"
+  ];
+  const isIntro = introTriggers.some(t => cmdLower.includes(t));
+
+  if (isIntro) {
+    startIntroductionMode();
+  }
+
   try {
     const res = await fetch("/api/command", {
       method: "POST",
@@ -572,7 +958,11 @@ async function sendGlobalCommand() {
     const data = await res.json();
     const replyText = data.text || data.response || "Command executed.";
 
-    // If an agent panel is open, append to its conversation
+    if (data.data && data.data.introduction_mode && !state.introMode) {
+      startIntroductionMode();
+    }
+
+    // Append to conversation if agent panel is open
     const chatHistory = document.getElementById("panelChatHistory");
     if (chatHistory && state.selectedNode) {
       chatHistory.innerHTML += `
@@ -582,13 +972,13 @@ async function sendGlobalCommand() {
       chatHistory.scrollTop = chatHistory.scrollHeight;
     }
 
-    if (state.ttsEnabled) {
-      speak(replyText);
+    if (state.ttsEnabled && !state.introMode) {
+      speakText(replyText);
     }
   } catch (e) {
     console.error("Command error:", e);
   } finally {
-    input.placeholder = "Ask NR-AI or any agent anything...";
+    input.placeholder = "Ask NR-AI or dispatch any agent...";
     pollGalaxyState();
   }
 }
@@ -622,94 +1012,59 @@ async function pollGalaxyState() {
     if (!data.success) return;
 
     state.galaxy = data;
+    updateHUDTelemetry(data.system_metrics);
 
-    // Update bottom-left real metrics
-    const m = data.system_metrics;
-    if (m) {
-      document.getElementById("metricCpuVal").textContent = `${m.cpu_percent}%`;
-      document.getElementById("metricCpuBar").style.width = `${m.cpu_percent}%`;
-
-      document.getElementById("metricMemVal").textContent = `${m.memory_percent}%`;
-      document.getElementById("metricMemBar").style.width = `${m.memory_percent}%`;
-
-      document.getElementById("metricAgentsVal").textContent = m.agents_metric_display;
-      document.getElementById("metricAgentsBar").style.width = `${(m.active_agents_count / Math.max(m.total_registered_agents, 1)) * 100}%`;
-    }
-
-    // Update Central Core text
-    const core = data.central_core;
-    if (core) {
-      const coreInd = document.getElementById("coreStatusIndicator");
-      if (coreInd) coreInd.textContent = core.status_indicator;
+    // Update Central Core Status
+    const coreStatus = document.getElementById("coreStatusIndicator");
+    if (coreStatus) {
+      coreStatus.textContent = data.central_core.status_indicator || "● OPERATIONAL";
+      coreStatus.style.color = data.central_core.status === "STOPPED" ? "#ef4444" : "#38bdf8";
     }
   } catch (err) {
-    console.warn("Galaxy state poll failed:", err);
+    // Keep running offline or without connection
+  }
+}
+
+function updateHUDTelemetry(metrics) {
+  if (!metrics) return;
+
+  const cpuVal = document.getElementById("metricCpuVal");
+  const cpuBar = document.getElementById("metricCpuBar");
+  if (cpuVal && cpuBar) {
+    cpuVal.textContent = `${metrics.cpu_percent}%`;
+    cpuBar.style.width = `${Math.min(metrics.cpu_percent, 100)}%`;
+  }
+
+  const memVal = document.getElementById("metricMemVal");
+  const memBar = document.getElementById("metricMemBar");
+  if (memVal && memBar) {
+    memVal.textContent = `${metrics.memory_percent}%`;
+    memBar.style.width = `${Math.min(metrics.memory_percent, 100)}%`;
+  }
+
+  const agentsVal = document.getElementById("metricAgentsVal");
+  const agentsBar = document.getElementById("metricAgentsBar");
+  if (agentsVal && agentsBar) {
+    agentsVal.textContent = metrics.agents_metric_display || `${metrics.active_agents_count}/${metrics.total_registered_agents}`;
+    const pct = metrics.total_registered_agents > 0 ? (metrics.active_agents_count / metrics.total_registered_agents) * 100 : 0;
+    agentsBar.style.width = `${pct}%`;
   }
 }
 
 // -----------------------------------------------------------------------------
-// Speech Recognition & Synthesis
+// Filter & Search Controls
 // -----------------------------------------------------------------------------
-function initSpeechRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    const micBtn = document.getElementById("micBtn");
-    if (micBtn) micBtn.title = "Voice recognition not supported in this browser";
-    return;
-  }
-
-  state.recognition = new SpeechRecognition();
-  state.recognition.continuous = false;
-  state.recognition.interimResults = false;
-  state.recognition.lang = "en-US";
-
-  state.recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    const input = document.getElementById("globalCommandInput");
-    if (input) {
-      input.value = transcript;
-      sendGlobalCommand();
-    }
-  };
-
-  state.recognition.onerror = (e) => {
-    console.warn("Speech recognition error:", e.error);
-  };
+function setOrbitFilter(filterType, elem) {
+  state.statusFilter = filterType;
+  document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+  if (elem) elem.classList.add("active");
 }
 
-function toggleVoiceInput() {
-  if (!state.recognition) {
-    alert("Speech recognition is not supported in this browser. Please use text input.");
-    return;
-  }
-  try {
-    state.recognition.start();
-    const micBtn = document.getElementById("micBtn");
-    if (micBtn) micBtn.style.color = "#ef4444";
-  } catch (e) {
-    state.recognition.stop();
-  }
-}
-
-function speak(text) {
-  if (!state.speechSynth || !state.ttsEnabled) return;
-  // Clean markdown and special symbols before speaking
-  const clean = text.replace(/[*#`_~[\]()<>]/g, "").replace(/http\S+/g, "").slice(0, 350);
-  state.speechSynth.cancel();
-  const utter = new SpeechSynthesisUtterance(clean);
-  utter.rate = 1.05;
-  utter.pitch = 1.0;
-  state.speechSynth.speak(utter);
-}
-
-// -----------------------------------------------------------------------------
-// Search & Filter Events
-// -----------------------------------------------------------------------------
 function initEventListeners() {
   const searchInput = document.getElementById("globalSearchInput");
   if (searchInput) {
     searchInput.addEventListener("input", (e) => {
-      state.searchQuery = e.target.value.trim();
+      state.searchQuery = e.target.value;
     });
   }
 
@@ -720,5 +1075,52 @@ function initEventListeners() {
         sendGlobalCommand();
       }
     });
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Voice Recognition (Dictation)
+// -----------------------------------------------------------------------------
+function initSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return;
+
+  state.recognition = new SpeechRecognition();
+  state.recognition.continuous = false;
+  state.recognition.interimResults = false;
+
+  state.recognition.onresult = (event) => {
+    const text = event.results[0][0].transcript;
+    const input = document.getElementById("globalCommandInput");
+    if (input) {
+      input.value = text;
+      sendGlobalCommand();
+    }
+  };
+
+  state.recognition.onerror = (e) => {
+    console.warn("Speech recognition error:", e);
+    const micBtn = document.getElementById("micBtn");
+    if (micBtn) micBtn.classList.remove("listening");
+  };
+
+  state.recognition.onend = () => {
+    const micBtn = document.getElementById("micBtn");
+    if (micBtn) micBtn.classList.remove("listening");
+  };
+}
+
+function toggleVoiceInput() {
+  if (!state.recognition) {
+    alert("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
+    return;
+  }
+  const micBtn = document.getElementById("micBtn");
+  try {
+    state.recognition.start();
+    if (micBtn) micBtn.classList.add("listening");
+  } catch (e) {
+    state.recognition.stop();
+    if (micBtn) micBtn.classList.remove("listening");
   }
 }

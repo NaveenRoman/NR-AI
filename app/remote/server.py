@@ -912,6 +912,11 @@ class SecureDashboardServer:
                     state = gateway_ref.galaxy_engine.get_galaxy_state(companion_snapshot=snapshot)
                     self._send_response(200, "application/json", json.dumps(state, indent=2).encode("utf-8"))
 
+                elif parsed.path in ("/api/galaxy/introduction", "/api/galaxy/introduction/"):
+                    snapshot = gateway_ref.companion.dashboard.get_status_snapshot() if (gateway_ref.companion and hasattr(gateway_ref.companion, "dashboard")) else {}
+                    intro_data = gateway_ref.galaxy_engine.get_agent_introductions(companion_snapshot=snapshot)
+                    self._send_response(200, "application/json", json.dumps(intro_data, indent=2).encode("utf-8"))
+
                 elif parsed.path in ("/api/agents", "/api/agents/"):
                     snapshot = gateway_ref.companion.dashboard.get_status_snapshot() if (gateway_ref.companion and hasattr(gateway_ref.companion, "dashboard")) else {}
                     nodes = gateway_ref.galaxy_engine.build_celestial_nodes(snapshot)

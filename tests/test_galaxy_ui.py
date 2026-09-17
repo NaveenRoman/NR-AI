@@ -32,6 +32,8 @@ from app.agent.factory.specification import (
     ModelRequirement,
     SafetyPolicy,
 )
+from app.brain.companion import NRCompanion, CommandCategory
+from app.voice.listener import VoiceConfig
 from app.remote.emergency import EmergencyStopController
 from app.ui.galaxy_engine import (
     BUILTIN_CELESTIAL_PROFILES,
@@ -235,10 +237,11 @@ class TestGalaxyEngineBasics(unittest.TestCase):
         self.assertIsNone(node)
 
     def test_12_active_working_agent_state(self):
-        """Active agent executing a task shows WORKING status and progress."""
+        """Active agent executing a task shows WORKING status and real progress (zero fake data)."""
         companion_snapshot = {
             "current_agent": "android_unified_agent",
             "current_task_status": "Working: Creating Android project structure...",
+            "task_progress": 45,
         }
         nodes = self.engine.build_celestial_nodes(companion_snapshot=companion_snapshot)
         droid = next((n for n in nodes if n.agent_id == "android_unified_agent"), None)
@@ -246,7 +249,16 @@ class TestGalaxyEngineBasics(unittest.TestCase):
         self.assertEqual(droid.status, "WORKING")
         self.assertEqual(droid.status_color, "#f59e0b")
         self.assertIsNotNone(droid.current_task)
-        self.assertEqual(droid.current_task["progress"], 68)
+        self.assertEqual(droid.current_task["progress"], 45)
+
+        # Without explicit progress, progress is None (never fake hardcoded 68%)
+        snapshot_no_prog = {
+            "current_agent": "android_unified_agent",
+            "current_task_status": "Working: Creating Android project structure...",
+        }
+        nodes_no_prog = self.engine.build_celestial_nodes(companion_snapshot=snapshot_no_prog)
+        droid_no_prog = next((n for n in nodes_no_prog if n.agent_id == "android_unified_agent"), None)
+        self.assertIsNone(droid_no_prog.current_task["progress"])
 
     def test_13_emergency_stop_affects_core_and_nodes(self):
         """Triggering Emergency Stop updates central core and all nodes to STOPPED status."""
@@ -486,6 +498,15 @@ class TestDashboardHTTPServerIntegration(unittest.TestCase):
         # Reset for subsequent tests
         EmergencyStopController().reset()
 
+    def test_28b_get_galaxy_introduction_api(self):
+        """GET /api/galaxy/introduction returns sequence of eligible agents."""
+        code, ctype, body = self._get("/api/galaxy/introduction")
+        self.assertEqual(code, 200)
+        data = json.loads(body.decode("utf-8"))
+        self.assertTrue(data["success"])
+        self.assertIn("Of course, Boss", data["intro_greeting"])
+        self.assertGreaterEqual(data["total_agents"], 10)
+
     def test_29_backward_compatibility_status(self):
         """GET /api/status continues to return companion status snapshot."""
         code, ctype, body = self._get("/api/status")
@@ -501,6 +522,190 @@ class TestDashboardHTTPServerIntegration(unittest.TestCase):
         self.assertEqual(code, 200)
         data = json.loads(body.decode("utf-8"))
         self.assertIn("text", data)
+
+
+class TestGalaxyIntroductionMode(unittest.TestCase):
+    """Dedicated test suite for Galaxy Introduction Mode & UI Refinements."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.emergency_stop = EmergencyStopController()
+        if self.emergency_stop.is_active():
+            self.emergency_stop.reset()
+        self.temp_file = Path(tempfile.gettempdir()) / f"test_intro_{time.time_ns()}.json"
+        self.registry = AgentRegistry(registry_file=self.temp_file)
+        self.engine = GalaxyEngine(registry=self.registry, emergency_stop=self.emergency_stop)
+
+    def tearDown(self):
+        if hasattr(self, "temp_file") and self.temp_file.exists():
+            try:
+                self.temp_file.unlink()
+            except Exception:
+                pass
+
+    def test_31_fixed_composition_no_mouse_zoom(self):
+        """galaxy.js contains no wheel zoom, mousedown drag pan, or mouse-follow camera movement."""
+        js_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app", "ui", "static", "galaxy.js"))
+        with open(js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        # Wheel zoom must be removed
+        self.assertNotIn('canvas.addEventListener("wheel"', js)
+        # Drag start pan must be removed
+        self.assertNotIn("state.dragStartX", js)
+        # Pan/zoom target variables removed from mousemove
+        self.assertNotIn("state.targetPanX = e.clientX", js)
+        # Verify fixed composition translation
+        self.assertIn("ctx.translate(canvas.width / 2, canvas.height / 2);", js)
+        self.assertIn("ctx.scale(1.0, 1.0);", js)
+
+    def test_32_agent_click_without_camera_movement(self):
+        """selectAgent in galaxy.js selects the node without altering camera pan or zoom."""
+        js_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app", "ui", "static", "galaxy.js"))
+        with open(js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        # In selectAgent, targetPan and targetZoom must not be set
+        select_agent_func = js.split("function selectAgent(node) {")[1].split("function renderAgentPanel")[0]
+        self.assertNotIn("targetPanX", select_agent_func)
+        self.assertNotIn("targetZoom", select_agent_func)
+
+    def test_33_introduction_intent_detection_all_phrases(self):
+        """NRCompanion.classify_command recognizes all required introduction triggers."""
+        cfg = VoiceConfig(silent_mode=True, tts_enabled=False)
+        comp = NRCompanion(voice_config=cfg)
+
+        triggers = [
+            "introduce yourself",
+            "introduce yourselves",
+            "who are you all",
+            "let every agent introduce themselves",
+            "NR-AI, introduce yourself and introduce your agents",
+            "who are your agents",
+            "meet the agents",
+            "tell me about your agents",
+            "agent introduction",
+        ]
+        for trig in triggers:
+            cat = comp.classify_command(trig)
+            self.assertEqual(cat, CommandCategory.AGENTS, f"Failed for trigger: '{trig}'")
+
+    def test_34_get_agent_introductions_structure(self):
+        """GalaxyEngine.get_agent_introductions returns greeting, outro, and sequence."""
+        data = self.engine.get_agent_introductions()
+        self.assertTrue(data["success"])
+        self.assertIn("Of course, Boss", data["intro_greeting"])
+        self.assertIn("That's my current agent team", data["intro_outro"])
+        self.assertGreaterEqual(data["total_agents"], 10)
+        self.assertEqual(len(data["sequence"]), data["total_agents"])
+
+    def test_35_introduction_sequence_ordering_and_authentic_content(self):
+        """First agent is Droid, and agents introduce authentic registered capabilities."""
+        data = self.engine.get_agent_introductions()
+        first_agent = data["sequence"][0]
+        self.assertEqual(first_agent["name"], "Droid")
+        self.assertIn("Droid, your Android Agent", first_agent["speech_text"])
+        self.assertIn("debugging, building and verification", first_agent["speech_text"])
+
+        # Check other key agents exist in sequence
+        names = [a["name"] for a in data["sequence"]]
+        self.assertIn("Unity", names)
+        self.assertIn("Unreal", names)
+        self.assertIn("Studio", names)
+        self.assertIn("Knowledge", names)
+
+    def test_36_ineligible_agents_excluded_from_introduction(self):
+        """SUSPENDED, RETIRED, and OFFLINE agents are excluded from introduction sequence."""
+        # Register an approved agent then suspend it
+        suspended_spec = AgentSpecification(
+            agent_id="gen_test_suspended_999",
+            name="Suspended Worker",
+            purpose="Testing suspension exclusion",
+            model_requirement=ModelRequirement(preferred_model="gemini-2.5-pro"),
+            capabilities=["test.suspended"],
+            lifecycle_state=AgentLifecycleState.APPROVED,
+        )
+        self.registry.register_agent(suspended_spec)
+        self.registry.suspend_agent(suspended_spec.agent_id, reason="Testing suspension")
+
+        # Register an approved agent then retire it
+        retired_spec = AgentSpecification(
+            agent_id="gen_test_retired_999",
+            name="Retired Worker",
+            purpose="Testing retirement exclusion",
+            model_requirement=ModelRequirement(preferred_model="gemini-2.5-pro"),
+            capabilities=["test.retired"],
+            lifecycle_state=AgentLifecycleState.APPROVED,
+        )
+        self.registry.register_agent(retired_spec)
+        self.registry.retire_agent(retired_spec.agent_id)
+
+        data = self.engine.get_agent_introductions()
+        seq_ids = [a["agent_id"] for a in data["sequence"]]
+        self.assertNotIn("gen_test_suspended_999", seq_ids)
+        self.assertNotIn("gen_test_retired_999", seq_ids)
+
+    def test_37_dynamic_agent_factory_agent_participates_in_introduction(self):
+        """Newly created agent in AgentRegistry automatically participates in introduction."""
+        dyn_spec = AgentSpecification(
+            agent_id="gen_quantum_opt_888",
+            name="Quantum Optimizer",
+            purpose="Optimize quantum annealing circuits",
+            model_requirement=ModelRequirement(preferred_model="gemini-2.5-pro"),
+            capabilities=["quantum.annealing", "quantum.circuits"],
+            lifecycle_state=AgentLifecycleState.APPROVED,
+        )
+        self.registry.register_agent(dyn_spec)
+        self.registry.activate_agent(dyn_spec.agent_id)
+
+        data = self.engine.get_agent_introductions()
+        seq_ids = [a["agent_id"] for a in data["sequence"]]
+        self.assertIn("gen_quantum_opt_888", seq_ids)
+        dyn_item = next(a for a in data["sequence"] if a["agent_id"] == "gen_quantum_opt_888")
+        self.assertEqual(dyn_item["name"], "Quantum Optimizer")
+        self.assertIn("Hi Boss, I'm Quantum Optimizer", dyn_item["speech_text"])
+
+    def test_38_no_fake_task_progress(self):
+        """build_celestial_nodes does NOT inject fake 68% progress."""
+        nodes = self.engine.build_celestial_nodes()
+        for n in nodes:
+            if n.current_task:
+                self.assertNotEqual(n.current_task.get("progress"), 68, "Found hardcoded 68% progress")
+
+    def test_39_companion_interact_voice_and_text_parity(self):
+        """NRCompanion.interact('Introduce yourselves') returns introduction mode response."""
+        cfg = VoiceConfig(silent_mode=True, tts_enabled=False)
+        comp = NRCompanion(voice_config=cfg)
+        resp = comp.interact("Introduce yourselves", speak_output=False)
+        self.assertEqual(resp.routed_to, "GalaxyIntroduction")
+        self.assertTrue(resp.data.get("introduction_mode"))
+        self.assertIn("NR-AI: Of course, Boss", resp.text)
+        self.assertIn("Droid:", resp.text)
+        self.assertGreaterEqual(resp.data.get("total_agents", 0), 10)
+
+    def test_40_intro_hud_markup_and_css_present(self):
+        """HTML and CSS assets contain required Introduction Mode elements and buttons."""
+        html_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app", "ui", "templates", "galaxy.html"))
+        with open(html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+
+        self.assertIn('id="introHud"', html)
+        self.assertIn('id="btnTriggerIntro"', html)
+        self.assertIn('id="introEqualizer"', html)
+        self.assertIn('id="introSpeechBubble"', html)
+        self.assertIn('id="btnIntroPause"', html)
+        self.assertIn('id="btnIntroSkip"', html)
+        self.assertIn('id="btnIntroStop"', html)
+
+        css_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app", "ui", "static", "galaxy.css"))
+        with open(css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        self.assertIn('.intro-hud', css)
+        self.assertIn('.btn-intro-trigger', css)
+        self.assertIn('.intro-equalizer', css)
+        self.assertIn('.queue-pill', css)
 
 
 if __name__ == "__main__":

@@ -32,6 +32,15 @@
       </div>
 
       <div class="top-right-section">
+        <button 
+          class="btn-intro-trigger" 
+          id="btnTriggerIntro" 
+          onclick="startIntroductionMode()" 
+          title="NR-AI Introduction: Let every agent introduce themselves"
+        >
+          🌟 Introduce Team
+        </button>
+
         <button class="icon-btn-badge" title="Notifications">
           🔔
           <span class="badge-count">3</span>
@@ -107,6 +116,52 @@
         <div class="core-subtitle">CENTRAL INTELLIGENCE</div>
         <div id="coreStatusIndicator" class="core-status" style="font-size: 0.72rem; color: #38bdf8; font-family: var(--font-mono); margin: 4px 0;">● OPTIMAL • MONITORING</div>
         <div class="core-tagline">THINK • PLAN • COORDINATE • EXECUTE</div>
+      </div>
+
+      <!-- Galaxy Introduction Mode HUD Overlay -->
+      <div id="introHud" class="intro-hud" style="display: none;">
+        <div class="intro-hud-header">
+          <div class="intro-badge">
+            <span class="pulse-dot"></span>
+            <span id="introStatusText">GALAXY INTRODUCTION MODE</span>
+          </div>
+          <div class="intro-step-count" id="introStepCount">1 / 14</div>
+        </div>
+
+        <div class="intro-speaker-card">
+          <div class="intro-speaker-avatar" id="introSpeakerAvatar">🌌</div>
+          <div class="intro-speaker-info">
+            <div class="intro-speaker-name" id="introSpeakerName">NR-AI Central Intelligence</div>
+            <div class="intro-speaker-role" id="introSpeakerRole">Central Intelligence Core</div>
+            <div class="intro-speaker-badge" id="introSpeakerBadge">● SPEAKING</div>
+          </div>
+          <div class="intro-equalizer" id="introEqualizer">
+            <span class="eq-bar"></span>
+            <span class="eq-bar"></span>
+            <span class="eq-bar"></span>
+            <span class="eq-bar"></span>
+            <span class="eq-bar"></span>
+          </div>
+        </div>
+
+        <div class="intro-speech-container">
+          <div class="intro-speech-bubble" id="introSpeechBubble">
+            "Of course, Boss. Let me introduce you to my agents."
+          </div>
+          <div class="intro-voice-notice" id="introVoiceNotice" style="display: none;">
+            VOICE UNAVAILABLE • TEXT DISPLAY
+          </div>
+        </div>
+
+        <div class="intro-queue-preview" id="introQueuePreview">
+          <!-- Populated dynamically with sequence pills -->
+        </div>
+
+        <div class="intro-controls">
+          <button class="intro-btn" id="btnIntroPause" onclick="togglePauseIntroduction()" title="Pause / Resume">⏸️ Pause</button>
+          <button class="intro-btn" id="btnIntroSkip" onclick="skipIntroduction()" title="Skip to Next Agent">⏭️ Skip</button>
+          <button class="intro-btn stop" id="btnIntroStop" onclick="stopIntroduction()" title="Stop Introduction">⏹️ Stop</button>
+        </div>
       </div>
 
       <!-- Bottom-Left System Overview Widget -->

@@ -530,6 +530,17 @@ class NRCompanion:
         if self._is_conversation_reference(c_candidate):
             return CommandCategory.CONVERSATION
 
+        # 1b. Galaxy Introduction Mode & Team Meet Requests (Preempts generic knowledge "tell me about")
+        c_low_intro = c_candidate.lower().strip()
+        intro_phrases = (
+            "introduce yourself", "introduce yourselves", "who are you all",
+            "let every agent introduce themselves", "introduce your agents",
+            "introduce the agents", "who are your agents", "tell me about your agents",
+            "agent introduction", "meet the agents", "introduce yourself and introduce your agents"
+        )
+        if any(p in c_low_intro for p in intro_phrases):
+            return CommandCategory.AGENTS
+
         # 2. Universal Knowledge & Research Inquiries (Takes precedence over generic news keywords)
         knowledge_prefixes = (
             "what is", "what are", "what was", "what were", "who was", "who is", "who were",
@@ -551,8 +562,17 @@ class NRCompanion:
         if any(w in c for w in ["news", "headlines", "world news", "india news", "tech news", "gaming news"]):
             return CommandCategory.NEWS_GENERAL
 
-        # 5. Agent Factory & Agent Creation Requests (Prioritized over generic create/build)
+        # 5. Agent Factory, Introduction Mode & Agent Inquiries (Prioritized over generic create/build)
         c_low_agent = c_candidate.lower().strip()
+        intro_phrases = (
+            "introduce yourself", "introduce yourselves", "who are you all",
+            "let every agent introduce themselves", "introduce your agents",
+            "introduce the agents", "who are your agents", "tell me about your agents",
+            "agent introduction", "meet the agents", "introduce yourself and introduce your agents"
+        )
+        if any(p in c_low_agent for p in intro_phrases):
+            return CommandCategory.AGENTS
+
         if any(c_low_agent.startswith(pfx) or f" {pfx} " in f" {c_low_agent} " for pfx in (
             "i need an agent", "create an agent", "build an agent", "make an agent",
             "generate an agent", "agent factory", "registered agents", "list agents"
@@ -2163,6 +2183,49 @@ class NRCompanion:
                 model_router=self.router,
                 audit_logger=self.audit,
                 config=self.config,
+            )
+
+        # Check if this is an "Introduce yourself" / "Introduce yourselves" request
+        intro_phrases = (
+            "introduce yourself", "introduce yourselves", "who are you all",
+            "let every agent introduce themselves", "introduce your agents",
+            "introduce the agents", "who are your agents", "tell me about your agents",
+            "agent introduction", "meet the agents", "introduce yourself and introduce your agents"
+        )
+        if any(p in c_low for p in intro_phrases):
+            self.avatar.set_speaking("Introducing the NR-AI agent team...")
+            self.current_route = "GalaxyIntroduction"
+            self.current_agent = "NR-AI Central Intelligence"
+            self.current_task_status = "Galaxy Introduction Mode"
+
+            from app.ui.galaxy_engine import GalaxyEngine
+            galaxy_engine = getattr(self, "galaxy_engine", None)
+            if galaxy_engine is None:
+                estop = getattr(self, "emergency_stop", None) or getattr(self.agent_factory, "emergency_stop", None)
+                galaxy_engine = GalaxyEngine(registry=self.agent_factory.registry, emergency_stop=estop)
+
+            intro_data = galaxy_engine.get_agent_introductions()
+            greeting = intro_data["intro_greeting"]
+            outro = intro_data["intro_outro"]
+            lines = [f"NR-AI: {greeting}\n"]
+            for a in intro_data["sequence"]:
+                lines.append(f"{a['name']}: \"{a['speech_text']}\"")
+            lines.append(f"\nNR-AI: {outro}")
+            full_speech = "\n".join(lines)
+
+            return CompanionResponse(
+                text=full_speech,
+                category=CommandCategory.AGENTS,
+                routed_to="GalaxyIntroduction",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.HAPPY,
+                data={
+                    "introduction_mode": True,
+                    "sequence": intro_data["sequence"],
+                    "intro_greeting": greeting,
+                    "intro_outro": outro,
+                    "total_agents": intro_data["total_agents"],
+                },
             )
 
         # Check if this is an Agent Factory / creation request

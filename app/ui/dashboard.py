@@ -221,6 +221,13 @@ class CompanionDashboard:
                     payload = json.dumps(state, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
+                # 1b. Galaxy Introduction API
+                elif parsed.path in ("/api/galaxy/introduction", "/api/galaxy/introduction/"):
+                    snapshot = dashboard_ref.get_status_snapshot()
+                    intro_data = dashboard_ref.galaxy_engine.get_agent_introductions(companion_snapshot=snapshot)
+                    payload = json.dumps(intro_data, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
                 # 2. Agent List API
                 elif parsed.path in ("/api/agents", "/api/agents/"):
                     nodes = dashboard_ref.galaxy_engine.build_celestial_nodes(dashboard_ref.get_status_snapshot())

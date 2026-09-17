@@ -383,6 +383,10 @@ class GalaxyEngine:
             model_name = spec.model_requirement.preferred_model if spec else "gemini-3.6-flash"
             version = spec.version if spec else "1.0.0"
 
+            # Real backend task progress only: zero fake percentages
+            real_progress = companion_snapshot.get("task_progress") if isinstance(companion_snapshot.get("task_progress"), (int, float)) else None
+            curr_task = {"description": task_status, "progress": real_progress} if status == "WORKING" else None
+
             node = CelestialNode(
                 agent_id=aid,
                 friendly_name=profile["friendly_name"],
@@ -402,7 +406,7 @@ class GalaxyEngine:
                 version=version,
                 is_builtin=True,
                 suggested_actions=profile["suggested_actions"],
-                current_task={"description": task_status, "progress": 68 if status == "WORKING" else 0} if status == "WORKING" else None,
+                current_task=curr_task,
             )
             nodes.append(node)
 
@@ -511,3 +515,114 @@ class GalaxyEngine:
             "system_metrics": metrics,
             "timestamp": time.time(),
         }
+
+    def get_agent_introductions(self, companion_snapshot: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Dynamically generates the sequential agent introduction script from the AgentRegistry
+        and celestial profiles. Excludes SUSPENDED, RETIRED, and OFFLINE agents.
+        Never hardcodes the agent list; reflects current live registry state.
+        """
+        nodes = self.build_celestial_nodes(companion_snapshot)
+
+        # Ineligible for introduction: SUSPENDED, RETIRED, OFFLINE, STOPPED
+        ineligible_statuses = {"SUSPENDED", "RETIRED", "OFFLINE", "STOPPED"}
+        eligible_nodes = [n for n in nodes if n.status not in ineligible_statuses]
+
+        sequence: List[Dict[str, Any]] = []
+        for node in eligible_nodes:
+            speech_text = self._format_agent_introduction(node)
+            sequence.append({
+                "agent_id": node.agent_id,
+                "name": node.friendly_name,
+                "role": node.role,
+                "category": node.category,
+                "color": node.color,
+                "glow": node.glow,
+                "status": node.status,
+                "capabilities": node.capabilities,
+                "orbit_radius": node.orbit_radius,
+                "orbit_angle": node.orbit_angle,
+                "icon_type": node.icon_type,
+                "speech_text": speech_text,
+            })
+
+        return {
+            "success": True,
+            "intro_greeting": "Of course, Boss. Let me introduce you to my agents.",
+            "intro_outro": "That's my current agent team, Boss. Tell me what you want to build, learn, research, or solve.",
+            "total_agents": len(sequence),
+            "emergency_stop_active": self.emergency_stop.is_active(),
+            "sequence": sequence,
+        }
+
+    def _format_agent_introduction(self, node: CelestialNode) -> str:
+        """
+        Generates genuine introduction text from actual agent metadata.
+        Never invents capabilities.
+        """
+        cap_map = {
+            "android.gradle": "Android application development and Gradle builds",
+            "android.build": "building Android projects",
+            "android.debug": "debugging Android applications",
+            "android.aapt2_repair": "AAPT2 error repair",
+            "vs.build": "MSBuild solution compilation",
+            "vs.diagnose": "diagnosing C++ and C# errors",
+            "unity.project": "Unity project management",
+            "unity.scene": "scene validation and C# script repair",
+            "unreal.ubt": "UnrealBuildTool orchestration and C++ build automation",
+            "knowledge.search": "searching verified facts, scientific research, and documentation",
+            "computer.windows": "system inspection and desktop window automation",
+            "orchestrator.coordinate": "multi-agent goal decomposition and workflow routing",
+            "security.audit": "enforcing zero-shell security invariants and credential protection",
+            "research.query": "scholarly literature analysis across arXiv and PubMed",
+            "voice.audio": "natural language voice recognition and audio speech synthesis",
+            "vision.grounding": "visual grounding, screen inspection, and OCR detection",
+            "code.scaffolding": "project tree scaffolding and code generation",
+            "ui.visualization": "command center UI rendering and real-time telemetry",
+        }
+
+        # Check for registered builtins with personalized descriptions
+        if node.agent_id == "android_unified_agent":
+            return "Hi Boss, I'm Droid, your Android Agent. I handle Android application development, debugging, building and verification."
+        elif node.agent_id == "unity_autonomous_agent":
+            return "Hi Boss, I'm Unity, your game development agent. I help create, edit, build and test Unity projects."
+        elif node.agent_id == "unreal_autonomous_agent":
+            return "Hi Boss, I'm Unreal, your Unreal Engine agent. I handle C++ source parsing, UBT builds, and project verification."
+        elif node.agent_id == "vs_unified_agent":
+            return "Hi Boss, I'm Studio, your Visual Studio Agent. I inspect solutions, build MSBuild targets, and diagnose compilation errors."
+        elif node.agent_id == "universal_knowledge_engine":
+            return "Hi Boss, I'm Knowledge, your Universal Knowledge Agent. I query local FTS5 stores, arXiv, and verified news for factual answers."
+        elif node.agent_id == "vision_agent":
+            return "Hi Boss, I'm Vision, your visual grounding and OCR Agent. I inspect screen pixels, detect UI hierarchies, and identify visual targets."
+        elif node.agent_id == "voice_agent":
+            return "Hi Boss, I'm Echo, your Voice and Audio Agent. I listen for natural language commands and synthesize audio responses."
+        elif node.agent_id == "computer_control_agent":
+            return "Hi Boss, I'm Sentinel, your unified computer and system agent. I inspect desktop windows and verify application health."
+        elif node.agent_id == "nexus_coordinator":
+            return "Hi Boss, I'm Nexus, your Multi-Agent Orchestrator. I decompose multi-disciplinary goals and coordinate specialized agents."
+        elif node.agent_id == "security_agent":
+            return "Hi Boss, I'm Shield, your Security Agent. I audit execution safety, enforce zero-shell invariants, and guard credentials."
+        elif node.agent_id == "research_agent":
+            return "Hi Boss, I'm Quest, your Deep Research Agent. I formulate queries, analyze academic literature, and synthesize scientific papers."
+        elif node.agent_id == "forge_dev_agent":
+            return "Hi Boss, I'm Forge, your Scaffolding and Code Generation Agent. I create sandboxed project trees and developer workflows."
+        elif node.agent_id == "pixel_ui_agent":
+            return "Hi Boss, I'm Pixel, your UI and Visualization Agent. I maintain the living Galaxy command center and HUD interfaces."
+
+        # Dynamic fallback for AgentFactory-generated agents
+        caps_readable = []
+        for c in node.capabilities:
+            matched = False
+            for k, v in cap_map.items():
+                if k in c:
+                    caps_readable.append(v)
+                    matched = True
+                    break
+            if not matched:
+                caps_readable.append(c.replace("_", " ").replace(".", " "))
+
+        if caps_readable:
+            caps_str = ", ".join(caps_readable[:3])
+            return f"Hi Boss, I'm {node.friendly_name}, your {node.role}. I handle {caps_str}."
+        return f"Hi Boss, I'm {node.friendly_name}, your {node.role}. I am ready to execute tasks in my domain."
+
