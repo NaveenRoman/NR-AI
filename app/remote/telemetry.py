@@ -32,6 +32,19 @@ class TelemetryEventType(str, Enum):
     FRAME_AVAILABLE = "FRAME_AVAILABLE"
 
 
+class VoiceTelemetryEventType(str, Enum):
+    VOICE_RECEIVED = "VOICE_RECEIVED"
+    VOICE_VALIDATED = "VOICE_VALIDATED"
+    VOICE_TRANSCRIBING = "VOICE_TRANSCRIBING"
+    VOICE_TRANSCRIBED = "VOICE_TRANSCRIBED"
+    VOICE_INTENT_DETECTED = "VOICE_INTENT_DETECTED"
+    VOICE_CONFIRMATION_REQUIRED = "VOICE_CONFIRMATION_REQUIRED"
+    VOICE_EXECUTED = "VOICE_EXECUTED"
+    VOICE_COMPLETED = "VOICE_COMPLETED"
+    VOICE_FAILED = "VOICE_FAILED"
+    VOICE_CANCELLED = "VOICE_CANCELLED"
+
+
 @dataclass
 class TelemetryEvent:
     event_id: str
@@ -101,7 +114,7 @@ def parse_and_validate_telemetry_event(raw_data: str) -> Tuple[bool, Optional[Te
 
     # Validate event_type against known types
     event_type_str = str(data["event_type"]).strip()
-    valid_types = {e.value for e in TelemetryEventType}
+    valid_types = {e.value for e in TelemetryEventType} | {e.value for e in VoiceTelemetryEventType}
     if event_type_str not in valid_types:
         return False, None, f"UNKNOWN_EVENT_TYPE: '{event_type_str}'"
 
@@ -197,7 +210,7 @@ class TelemetryDispatcher:
                 event_id=f"EVT-{secrets.token_hex(8).upper()}",
                 device_id=device_id,
                 session_id=session_id,
-                event_type=event_type.value,
+                event_type=event_type.value if hasattr(event_type, "value") else str(event_type),
                 timestamp=time.time(),
                 sequence_number=current_seq,
                 payload=clean_payload,

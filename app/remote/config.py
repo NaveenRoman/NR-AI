@@ -59,3 +59,37 @@ MAX_RECONNECT_ATTEMPTS: int = 3          # Max 3 reconnect attempts before strea
 MAX_RECONNECT_WINDOW_SECONDS: int = 60   # 60s window to reconnect
 MAX_CONCURRENT_STREAMS_PER_DEVICE: int = 1 # Max 1 active screen stream per device
 MAX_GLOBAL_CONCURRENT_STREAMS: int = 5    # Max 5 active screen streams across all devices
+
+# Step 10 Phase 3 — Voice Command & Audio Pipeline Bounds
+MAX_AUDIO_BYTES: int = 10485760             # 10 MB hard ceiling for audio requests
+MAX_AUDIO_DURATION_SECONDS: float = 60.0    # 60 seconds maximum audio duration
+MIN_AUDIO_DURATION_SECONDS: float = 0.1     # 100 milliseconds minimum audio duration
+MAX_AUDIO_SAMPLE_RATE: int = 48000          # 48 kHz max sample rate
+MIN_AUDIO_SAMPLE_RATE: int = 8000           # 8 kHz min sample rate
+MAX_AUDIO_CHANNELS: int = 2                 # Stereo max
+MIN_AUDIO_CHANNELS: int = 1                 # Mono min
+MAX_AUDIO_REQUESTS_PER_MINUTE: int = 20     # Max 20 voice requests per minute per device
+MAX_TRANSCRIPTION_SECONDS: float = 60.0     # 60s timeout for transcription processing
+MAX_TRANSCRIPTION_ATTEMPTS: int = 2         # Maximum 2 transcription attempts per request
+MAX_CONCURRENT_VOICE_SESSIONS_PER_DEVICE: int = 1 # Max 1 active voice session per device
+MAX_GLOBAL_CONCURRENT_VOICE_SESSIONS: int = 5    # Max 5 active voice sessions globally
+VOICE_SESSION_TTL_SECONDS: float = 120.0    # 2 minutes session lifetime
+VOICE_CONFIRMATION_TIMEOUT_SECONDS: float = 30.0 # 30s window to confirm sensitive actions
+
+# Deterministic Validation Error Codes
+AUDIO_TOO_LARGE: str = "AUDIO_TOO_LARGE"
+AUDIO_TOO_LONG: str = "AUDIO_TOO_LONG"
+AUDIO_TOO_SHORT: str = "AUDIO_TOO_SHORT"
+INVALID_SAMPLE_RATE: str = "INVALID_SAMPLE_RATE"
+INVALID_CHANNEL_COUNT: str = "INVALID_CHANNEL_COUNT"
+UNSUPPORTED_AUDIO_FORMAT: str = "UNSUPPORTED_AUDIO_FORMAT"
+EMPTY_AUDIO: str = "EMPTY_AUDIO"
+INVALID_AUDIO_REQUEST: str = "INVALID_AUDIO_REQUEST"
+AUDIO_RATE_LIMITED: str = "AUDIO_RATE_LIMITED"
+TRANSCRIPTION_TIMEOUT: str = "TRANSCRIPTION_TIMEOUT"
+TRANSCRIPTION_FAILED: str = "TRANSCRIPTION_FAILED"
+VOICE_SESSION_EXPIRED: str = "VOICE_SESSION_EXPIRED"
+VOICE_PERMISSION_DENIED: str = "VOICE_PERMISSION_DENIED"
+AUDIO_CHECKSUM_MISMATCH: str = "AUDIO_CHECKSUM_MISMATCH"
+AUDIO_REPLAY_DETECTED: str = "AUDIO_REPLAY_DETECTED"
+SPEECH_TO_TEXT_UNAVAILABLE: str = "SPEECH_TO_TEXT_UNAVAILABLE"

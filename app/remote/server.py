@@ -39,12 +39,28 @@ from app.remote.protocol import (
     SecureResponse,
     parse_and_validate_request,
 )
-from app.remote.rate_limiter import RateLimiter
+from app.remote.rate_limiter import RateLimiter, VoiceRateLimiter
 from app.remote.frame import FrameEncoding, StreamFrame
 from app.remote.screen_capture import MockScreenCaptureEngine, ScreenCaptureEngine
 from app.remote.stream import StreamManager, StreamSession, StreamState
 from app.remote.telemetry import TelemetryDispatcher, TelemetryEvent, TelemetryEventType
 from app.remote.transport import SecureTransport, TransportSecurityMode
+from app.remote.audio import (
+    AudioFormat,
+    AudioRequest,
+    VoiceResponse,
+    create_audio_request,
+    validate_audio_request,
+)
+from app.remote.speech_to_text import (
+    DevelopmentSpeechToTextProvider,
+    SpeechToTextProvider,
+)
+from app.remote.voice_session import (
+    VoiceCommandSession,
+    VoiceSessionManager,
+    VoiceSessionState,
+)
 
 logger = logging.getLogger("NRAI.SecureServer")
 
@@ -71,6 +87,9 @@ class SecureGateway:
         telemetry_dispatcher: Optional[TelemetryDispatcher] = None,
         stream_manager: Optional[StreamManager] = None,
         capture_engine: Optional[ScreenCaptureEngine] = None,
+        voice_session_manager: Optional[VoiceSessionManager] = None,
+        voice_rate_limiter: Optional[VoiceRateLimiter] = None,
+        stt_provider: Optional[SpeechToTextProvider] = None,
         transport_mode: TransportSecurityMode = TransportSecurityMode.ENCRYPTED_SESSION,
     ):
         self.companion = companion
@@ -84,6 +103,14 @@ class SecureGateway:
         self.stream_manager = stream_manager or StreamManager(
             capture_engine=capture_engine,
             emergency_stop=self.emergency_stop,
+        )
+        self.voice_rate_limiter = voice_rate_limiter or VoiceRateLimiter()
+        self.voice_session_manager = voice_session_manager or VoiceSessionManager(
+            stt_provider=stt_provider,
+            emergency_controller=self.emergency_stop,
+            command_router_fn=(lambda cmd: self.companion.interact(cmd, speak_output=False).to_dict()) if self.companion and hasattr(self.companion, "interact") else None,
+            audit_logger_fn=self.audit_logger.log_event,
+            telemetry_event_fn=self.telemetry_dispatcher.dispatch if hasattr(self.telemetry_dispatcher, "dispatch") else None,
         )
 
     def handle_pairing_request(self, body: Dict[str, Any], client_ip: str) -> SecureResponse:
@@ -492,6 +519,55 @@ class SecureGateway:
                 return {"status": "NOT_FOUND"}
             return stream.to_dict()
 
+        elif action == "voice.audio_upload":
+            import hashlib
+            payload_hex = str(req.payload.get("payload_hex", ""))
+            try:
+                raw_bytes = bytes.fromhex(payload_hex) if payload_hex else req.payload.get("audio_bytes", b"")
+                if isinstance(raw_bytes, str):
+                    raw_bytes = raw_bytes.encode("utf-8")
+            except Exception:
+                raw_bytes = b""
+            fmt = str(req.payload.get("audio_format", "WAV")).upper()
+            sr = int(req.payload.get("sample_rate", 16000))
+            ch = int(req.payload.get("channels", 1))
+            dur = float(req.payload.get("duration_ms", 1000.0))
+            audio_req = AudioRequest(
+                request_id=req.request_id,
+                session_id=req.session_id,
+                device_id=req.device_id,
+                timestamp=req.timestamp,
+                nonce=req.nonce,
+                audio_format=fmt,
+                sample_rate=sr,
+                channels=ch,
+                duration_ms=dur,
+                payload_size=len(raw_bytes),
+                checksum=req.payload.get("checksum") or hashlib.sha256(raw_bytes).hexdigest(),
+                audio_bytes=raw_bytes,
+                metadata=req.payload.get("metadata", {}),
+            )
+            v_resp = self.voice_session_manager.process_voice_request(audio_req, session.scopes)
+            return v_resp.to_dict()
+
+        elif action == "voice.confirm":
+            cid = str(req.payload.get("confirmation_id", "")).strip()
+            conf = bool(req.payload.get("confirmed", True))
+            ok, msg, v_resp = self.voice_session_manager.confirm_action(req.session_id, cid, conf)
+            if not ok or not v_resp:
+                return {"status": "ERROR", "reason": msg}
+            return v_resp.to_dict()
+
+        elif action == "voice.cancel":
+            ok, msg = self.voice_session_manager.cancel_session(req.session_id)
+            return {"status": "CANCELLED" if ok else "ERROR", "reason": msg}
+
+        elif action == "voice.status":
+            sess = self.voice_session_manager.get_session(req.session_id)
+            if not sess:
+                return {"status": "NOT_FOUND"}
+            return sess.to_dict()
+
         raise ValueError(f"Unhandled action: {action}")
 
 
@@ -605,6 +681,24 @@ class SecureDashboardServer:
                         return
                     payload = frame.to_json().encode("utf-8")
                     self._send_response(200, "application/json", payload)
+
+                # Phase 3: Secure voice session status endpoint
+                elif parsed.path == "/api/v2/secure/voice/status":
+                    params = urllib.parse.parse_qs(parsed.query)
+                    session_id = params.get("session_id", [""])[0]
+                    device_id = params.get("device_id", [""])[0]
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or (
+                        PhonePermissionScope.READ_STATUS not in sess.scopes and
+                        PhonePermissionScope.VOICE_COMMAND not in sess.scopes
+                    ):
+                        self._send_response(403, "application/json", json.dumps({"error": "VOICE_STATUS_ACCESS_DENIED"}).encode("utf-8"))
+                        return
+                    v_sess = gateway_ref.voice_session_manager.get_session(session_id)
+                    if not v_sess:
+                        self._send_response(404, "application/json", json.dumps({"error": "VOICE_SESSION_NOT_FOUND"}).encode("utf-8"))
+                        return
+                    self._send_response(200, "application/json", json.dumps(v_sess.to_dict()).encode("utf-8"))
 
                 else:
                     self._send_response(404, "text/plain", b"Not Found")
@@ -722,6 +816,102 @@ class SecureDashboardServer:
                     ok, msg = gateway_ref.stream_manager.resume_stream(stream_id, session_id)
                     code = 200 if ok else 400
                     self._send_response(code, "application/json", json.dumps({"status": "ACTIVE" if ok else "ERROR", "message": msg}).encode("utf-8"))
+
+                # Phase 3: Secure voice audio upload endpoint
+                elif parsed.path == "/api/v2/secure/voice/upload":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or PhonePermissionScope.VOICE_COMMAND not in sess.scopes:
+                        self._send_response(403, "application/json", json.dumps({"error": "VOICE_PERMISSION_DENIED"}).encode("utf-8"))
+                        return
+
+                    # Voice rate limit check
+                    allowed, r_reason, retry_after = gateway_ref.voice_rate_limiter.allow_request(f"voice:{device_id}")
+                    if not allowed:
+                        gateway_ref.audit_logger.log_event("VOICE_RATE_LIMIT", "BLOCKED", device_id=device_id, session_id=session_id, client_ip=client_ip, reason=r_reason)
+                        self._send_response(429, "application/json", json.dumps({"error": "AUDIO_RATE_LIMITED", "reason": r_reason}).encode("utf-8"))
+                        return
+
+                    # Extract audio payload
+                    import hashlib
+                    payload_hex = str(data.get("payload_hex", ""))
+                    try:
+                        raw_audio = bytes.fromhex(payload_hex) if payload_hex else data.get("audio_bytes", b"")
+                        if isinstance(raw_audio, str):
+                            raw_audio = raw_audio.encode("utf-8")
+                    except Exception:
+                        raw_audio = b""
+
+                    audio_req = AudioRequest(
+                        request_id=str(data.get("request_id", f"AUD-{secrets.token_hex(6)}")),
+                        session_id=session_id,
+                        device_id=device_id,
+                        timestamp=float(data.get("timestamp", time.time())),
+                        nonce=str(data.get("nonce", secrets.token_hex(8))),
+                        audio_format=str(data.get("audio_format", "WAV")).upper(),
+                        sample_rate=int(data.get("sample_rate", 16000)),
+                        channels=int(data.get("channels", 1)),
+                        duration_ms=float(data.get("duration_ms", 1000.0)),
+                        payload_size=len(raw_audio),
+                        checksum=data.get("checksum") or hashlib.sha256(raw_audio).hexdigest(),
+                        audio_bytes=raw_audio,
+                        metadata=data.get("metadata", {}),
+                    )
+
+                    # Process voice pipeline
+                    v_resp = gateway_ref.voice_session_manager.process_voice_request(audio_req, sess.scopes)
+
+                    # Audit logging (strictly metadata only, zero raw audio)
+                    gateway_ref.audit_logger.log_event(
+                        "VOICE_COMMAND_PROCESSED",
+                        "SUCCESS" if v_resp.status in ("SUCCESS", "CONFIRMATION_REQUIRED") else "DENIED",
+                        device_id=device_id,
+                        session_id=session_id,
+                        client_ip=client_ip,
+                        metadata=audio_req.to_metadata_dict(),
+                    )
+                    code = 200 if v_resp.status in ("SUCCESS", "CONFIRMATION_REQUIRED") else (403 if v_resp.status == "DENIED" else 400)
+                    self._send_response(code, "application/json", v_resp.to_json().encode("utf-8"))
+
+                # Phase 3: Secure voice confirmation endpoint
+                elif parsed.path == "/api/v2/secure/voice/confirm":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    cid = str(data.get("confirmation_id", "")).strip()
+                    conf = bool(data.get("confirmed", True))
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or PhonePermissionScope.VOICE_COMMAND not in sess.scopes:
+                        self._send_response(403, "application/json", json.dumps({"error": "VOICE_PERMISSION_DENIED"}).encode("utf-8"))
+                        return
+                    ok, msg, v_resp = gateway_ref.voice_session_manager.confirm_action(session_id, cid, conf)
+                    code = 200 if ok else 400
+                    resp_dict = v_resp.to_dict() if v_resp else {"error": msg}
+                    self._send_response(code, "application/json", json.dumps(resp_dict).encode("utf-8"))
+
+                # Phase 3: Secure voice cancel endpoint
+                elif parsed.path == "/api/v2/secure/voice/cancel":
+                    try:
+                        data = json.loads(body_str)
+                    except Exception:
+                        data = {}
+                    session_id = str(data.get("session_id", "")).strip()
+                    device_id = str(data.get("device_id", "")).strip()
+                    valid, msg, sess = gateway_ref.session_manager.validate_session(session_id, device_id)
+                    if not valid or not sess or PhonePermissionScope.VOICE_COMMAND not in sess.scopes:
+                        self._send_response(403, "application/json", json.dumps({"error": "VOICE_PERMISSION_DENIED"}).encode("utf-8"))
+                        return
+                    ok, msg = gateway_ref.voice_session_manager.cancel_session(session_id)
+                    code = 200 if ok else 400
+                    self._send_response(code, "application/json", json.dumps({"status": "CANCELLED" if ok else "ERROR", "message": msg}).encode("utf-8"))
 
                 # 5. Legacy Android Companion /api/command POST
                 elif parsed.path in ("/api/command", "/command"):

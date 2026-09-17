@@ -18,6 +18,7 @@ class PhonePermissionScope(str, Enum):
     EMERGENCY_STOP = "EMERGENCY_STOP"
     READ_TELEMETRY = "READ_TELEMETRY"
     READ_SCREEN_STREAM = "READ_SCREEN_STREAM"
+    VOICE_TRANSCRIPTION = "VOICE_TRANSCRIPTION"
 
 
 # Default scopes assigned to a newly paired companion device
@@ -26,6 +27,7 @@ DEFAULT_COMPANION_SCOPES: Set[PhonePermissionScope] = {
     PhonePermissionScope.READ_DEVICE_INFO,
     PhonePermissionScope.SEND_COMMAND,
     PhonePermissionScope.VOICE_COMMAND,
+    PhonePermissionScope.VOICE_TRANSCRIPTION,
     PhonePermissionScope.EMERGENCY_STOP,
     PhonePermissionScope.READ_TELEMETRY,
 }
@@ -36,6 +38,11 @@ ACTION_SCOPE_MAP: Dict[str, PhonePermissionScope] = {
     "device.info": PhonePermissionScope.READ_DEVICE_INFO,
     "command.send": PhonePermissionScope.SEND_COMMAND,
     "voice.command": PhonePermissionScope.VOICE_COMMAND,
+    "voice.audio_upload": PhonePermissionScope.VOICE_COMMAND,
+    "voice.transcribe": PhonePermissionScope.VOICE_TRANSCRIPTION,
+    "voice.confirm": PhonePermissionScope.VOICE_COMMAND,
+    "voice.cancel": PhonePermissionScope.VOICE_COMMAND,
+    "voice.status": PhonePermissionScope.READ_STATUS,
     "action.approved_execute": PhonePermissionScope.APPROVED_COMPUTER_ACTION,
     "emergency.stop": PhonePermissionScope.EMERGENCY_STOP,
     "emergency.status": PhonePermissionScope.READ_STATUS,
@@ -183,10 +190,11 @@ class ModelIsolationGate:
         if clean in PROHIBITED_ACTIONS:
             return False, f"Prohibited action: '{clean}' cannot be executed directly by model."
 
-        # Model is blocked from direct screen capture, stream, socket, queue, shell, adb
+        # Model is blocked from direct screen capture, stream, socket, queue, shell, adb, audio
         blocked_keywords = (
             "capture", "stream", "socket", "queue", "shell", "powershell",
-            "cmd", "adb", "pixel", "network", "bind", "listen"
+            "cmd", "adb", "pixel", "network", "bind", "listen",
+            "audio", "microphone", "mic", "record"
         )
         for kw in blocked_keywords:
             if kw in clean:

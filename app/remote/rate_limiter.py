@@ -146,3 +146,22 @@ class RateLimiter:
             if rec and rec.locked_until and now < rec.locked_until:
                 return True, rec.locked_until - now
             return False, None
+
+
+class VoiceRateLimiter(RateLimiter):
+    """
+    Dedicated voice rate limiter enforcing bounded voice requests per minute (default 20 req/min).
+    """
+
+    def __init__(
+        self,
+        requests_per_minute: int = 20,
+        burst_limit: int = 3,
+    ):
+        rps = float(requests_per_minute) / 60.0
+        super().__init__(
+            rate_limit_rps=rps,
+            burst_limit=burst_limit,
+            max_auth_failures=MAX_FAILED_AUTH_ATTEMPTS,
+            lockout_duration_seconds=AUTH_LOCKOUT_SECONDS,
+        )
