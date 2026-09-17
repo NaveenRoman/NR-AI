@@ -10,6 +10,7 @@ from dataclasses import asdict
 import http.server
 import json
 import logging
+import os
 import socketserver
 import threading
 import time
@@ -164,6 +165,8 @@ class SecureGateway:
             audit_logger=self.audit_logger,
             computer_agent=comp_agent,
         )
+        from app.ui.galaxy_engine import GalaxyEngine
+        self.galaxy_engine = GalaxyEngine(emergency_stop=self.emergency_stop)
 
     def handle_pairing_request(self, body: Dict[str, Any], client_ip: str) -> SecureResponse:
         device_id = str(body.get("device_id", "")).strip()
@@ -903,6 +906,63 @@ class SecureDashboardServer:
                     }
                     self._send_response(200, "application/json", json.dumps(data).encode("utf-8"))
 
+                # Phase 6: Galaxy UI & Celestial State Endpoints
+                elif parsed.path in ("/api/galaxy/state", "/api/galaxy/state/"):
+                    snapshot = gateway_ref.companion.dashboard.get_status_snapshot() if (gateway_ref.companion and hasattr(gateway_ref.companion, "dashboard")) else {}
+                    state = gateway_ref.galaxy_engine.get_galaxy_state(companion_snapshot=snapshot)
+                    self._send_response(200, "application/json", json.dumps(state, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/agents", "/api/agents/"):
+                    snapshot = gateway_ref.companion.dashboard.get_status_snapshot() if (gateway_ref.companion and hasattr(gateway_ref.companion, "dashboard")) else {}
+                    nodes = gateway_ref.galaxy_engine.build_celestial_nodes(snapshot)
+                    payload = json.dumps({"success": True, "count": len(nodes), "agents": [n.to_dict() for n in nodes]}, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
+                elif parsed.path.startswith("/api/agent/"):
+                    agent_id = parsed.path[len("/api/agent/"):].strip("/")
+                    snapshot = gateway_ref.companion.dashboard.get_status_snapshot() if (gateway_ref.companion and hasattr(gateway_ref.companion, "dashboard")) else {}
+                    nodes = gateway_ref.galaxy_engine.build_celestial_nodes(snapshot)
+                    matching = next((n for n in nodes if n.agent_id == agent_id), None)
+                    if matching:
+                        payload = json.dumps({"success": True, "agent": matching.to_dict()}, indent=2).encode("utf-8")
+                        self._send_response(200, "application/json", payload)
+                    else:
+                        payload = json.dumps({"success": False, "error": f"Agent '{agent_id}' not found"}).encode("utf-8")
+                        self._send_response(404, "application/json", payload)
+
+                elif parsed.path.startswith("/static/"):
+                    static_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui", "static"))
+                    req_file = parsed.path[len("/static/"):].split("?")[0]
+                    file_path = os.path.abspath(os.path.join(static_dir, req_file))
+                    if file_path.startswith(static_dir) and os.path.isfile(file_path):
+                        content_type = "application/octet-stream"
+                        if file_path.endswith(".css"):
+                            content_type = "text/css; charset=utf-8"
+                        elif file_path.endswith(".js"):
+                            content_type = "application/javascript; charset=utf-8"
+                        elif file_path.endswith(".html"):
+                            content_type = "text/html; charset=utf-8"
+                        elif file_path.endswith(".png"):
+                            content_type = "image/png"
+                        elif file_path.endswith(".svg"):
+                            content_type = "image/svg+xml"
+                        elif file_path.endswith(".json"):
+                            content_type = "application/json"
+                        with open(file_path, "rb") as f:
+                            file_data = f.read()
+                        self._send_response(200, content_type, file_data)
+                    else:
+                        self._send_response(404, "application/json", json.dumps({"error": "STATIC_FILE_NOT_FOUND"}).encode("utf-8"))
+
+                elif parsed.path in ("/", "/galaxy", "/index.html"):
+                    template_path = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui", "templates", "galaxy.html"))
+                    if os.path.isfile(template_path):
+                        with open(template_path, "rb") as f:
+                            html_content = f.read()
+                        self._send_response(200, "text/html; charset=utf-8", html_content)
+                    else:
+                        self._send_response(200, "text/html; charset=utf-8", b"<h1>NR-AI Galaxy UI</h1>")
+
                 else:
                     self._send_response(404, "text/plain", b"Not Found")
 
@@ -1320,6 +1380,48 @@ class SecureDashboardServer:
                         payload = json.dumps(resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}).encode("utf-8")
                     else:
                         payload = json.dumps({"text": f"Simulated execution: {cmd}", "category": "GENERAL"}).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
+                # Emergency Stop Trigger
+                elif parsed.path in ("/api/emergency_stop", "/api/emergency_stop/"):
+                    try:
+                        body_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        body_data = {}
+                    by = body_data.get("triggered_by", "GalaxyUI_Operator")
+                    status = gateway_ref.emergency_stop.trigger(triggered_by=by, reason=reason)
+                    payload = json.dumps({
+                        "success": status.is_active,
+                        "message": f"EMERGENCY STOP TRIGGERED by {by}: {reason}",
+                        "emergency_stop": status.is_active,
+                        "triggered_at": status.triggered_at,
+                    }, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
+                # Agent Specific Action
+                elif parsed.path.startswith("/api/agent/") and parsed.path.endswith("/action"):
+                    path_parts = parsed.path.strip("/").split("/")
+                    agent_id = path_parts[2] if len(path_parts) >= 4 else "unknown"
+                    try:
+                        action_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        action_data = {}
+                    action_id = action_data.get("action_id", "")
+                    label = action_data.get("label", action_id)
+
+                    prompt = f"Agent '{agent_id}' executing action: {label}"
+                    if gateway_ref.companion and hasattr(gateway_ref.companion, "interact"):
+                        resp = gateway_ref.companion.interact(prompt, speak_output=False)
+                        reply_text = getattr(resp, "text", str(resp))
+                    else:
+                        reply_text = f"Action '{label}' executed for agent '{agent_id}'."
+
+                    payload = json.dumps({
+                        "success": True,
+                        "agent_id": agent_id,
+                        "action_id": action_id,
+                        "result": reply_text,
+                    }, indent=2).encode("utf-8")
                     self._send_response(200, "application/json", payload)
 
                 else:

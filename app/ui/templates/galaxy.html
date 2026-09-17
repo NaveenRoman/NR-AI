@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NR-AI — Galaxy UI Command Center</title>
+  <link rel="stylesheet" href="/static/galaxy.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app-container">
+    <!-- 1. Top Navigation HUD -->
+    <header class="top-nav">
+      <div class="brand-section">
+        <div class="brand-logo">
+          <span>🌌</span> NR-AI
+        </div>
+        <div class="brand-tagline">UNIFIED AGENT UNIVERSE</div>
+      </div>
+
+      <div class="search-section">
+        <span class="search-icon">🔍</span>
+        <input 
+          id="globalSearchInput" 
+          type="text" 
+          class="search-input" 
+          placeholder="Filter agents by name, role, capability (e.g. droid, unity, security)..."
+          autocomplete="off"
+        >
+      </div>
+
+      <div class="top-right-section">
+        <button class="icon-btn-badge" title="Notifications">
+          🔔
+          <span class="badge-count">3</span>
+        </button>
+
+        <button 
+          class="icon-btn-badge" 
+          id="emergencyStopBtn" 
+          onclick="triggerEmergencyStop()" 
+          title="EMERGENCY STOP — 1-touch global halt"
+          style="background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.6); color: #ef4444;"
+        >
+          🛑
+        </button>
+
+        <div class="user-profile-pill">
+          <div class="avatar-circle">👑</div>
+          <div class="user-info">
+            <span class="user-name">Naveen Roman</span>
+            <span class="user-status">OPERATOR • ONLINE</span>
+          </div>
+        </div>
+
+        <div class="clock-display">
+          <span id="clockTime" class="clock-time">--:--:--</span>
+          <span id="clockDate" class="clock-date">---</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. Left HUD Sidebar -->
+    <aside class="left-sidebar">
+      <nav class="nav-list">
+        <a class="nav-item active" onclick="setOrbitFilter('ALL', this)">
+          <span class="nav-icon">🪐</span>
+          <span>All Agents</span>
+        </a>
+        <a class="nav-item" onclick="setOrbitFilter('DEV', this)">
+          <span class="nav-icon">⚡</span>
+          <span>Development</span>
+        </a>
+        <a class="nav-item" onclick="setOrbitFilter('GAMES', this)">
+          <span class="nav-icon">🎮</span>
+          <span>Engines</span>
+        </a>
+        <a class="nav-item" onclick="setOrbitFilter('KNOWLEDGE', this)">
+          <span class="nav-icon">📚</span>
+          <span>Knowledge</span>
+        </a>
+        <a class="nav-item" onclick="setOrbitFilter('SECURITY', this)">
+          <span class="nav-icon">🛡️</span>
+          <span>Security &amp; Core</span>
+        </a>
+        <a class="nav-item" onclick="setOrbitFilter('DYNAMIC', this)">
+          <span class="nav-icon">✨</span>
+          <span>Dynamic Agents</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-quote">
+        "The cosmos is within us. We are made of star-stuff. We are a way for the cosmos to know itself."
+        <cite>— Carl Sagan</cite>
+      </div>
+    </aside>
+
+    <!-- 3. Central Galaxy Viewport -->
+    <main class="galaxy-viewport">
+      <canvas id="galaxyCanvas"></canvas>
+
+      <!-- Central Black Hole Overlay Label -->
+      <div class="central-core-label">
+        <div class="core-title">NR-AI</div>
+        <div class="core-subtitle">CENTRAL INTELLIGENCE</div>
+        <div id="coreStatusIndicator" class="core-status" style="font-size: 0.72rem; color: #38bdf8; font-family: var(--font-mono); margin: 4px 0;">● OPTIMAL • MONITORING</div>
+        <div class="core-tagline">THINK • PLAN • COORDINATE • EXECUTE</div>
+      </div>
+
+      <!-- Bottom-Left System Overview Widget -->
+      <div class="system-overview-card">
+        <div class="widget-title">
+          <span>📊</span>
+          <span>SYSTEM OVERVIEW</span>
+        </div>
+
+        <div class="metric-row">
+          <div class="metric-label">
+            <span>⚡</span>
+            <span>CPU Usage</span>
+          </div>
+          <div class="metric-bar-container">
+            <div id="metricCpuBar" class="metric-bar-fill" style="width: 0%; background: #38bdf8;"></div>
+          </div>
+          <span id="metricCpuVal" class="metric-value">--%</span>
+        </div>
+
+        <div class="metric-row">
+          <div class="metric-label">
+            <span>💾</span>
+            <span>Memory</span>
+          </div>
+          <div class="metric-bar-container">
+            <div id="metricMemBar" class="metric-bar-fill" style="width: 0%; background: #8b5cf6;"></div>
+          </div>
+          <span id="metricMemVal" class="metric-value">--%</span>
+        </div>
+
+        <div class="metric-row">
+          <div class="metric-label">
+            <span>🤖</span>
+            <span>Active Agents</span>
+          </div>
+          <div class="metric-bar-container">
+            <div id="metricAgentsBar" class="metric-bar-fill" style="width: 0%; background: #10b981;"></div>
+          </div>
+          <span id="metricAgentsVal" class="metric-value">--/--</span>
+        </div>
+
+        <svg class="widget-waveform" viewBox="0 0 200 24" preserveAspectRatio="none">
+          <path d="M0,12 Q20,3 40,12 T80,12 T120,12 T160,12 T200,12" fill="none" stroke="#38bdf8" stroke-width="1.8" opacity="0.75">
+            <animate attributeName="d" dur="3s" repeatCount="indefinite"
+              values="
+                M0,12 Q25,2 50,12 T100,12 T150,12 T200,12;
+                M0,12 Q25,22 50,12 T100,12 T150,12 T200,12;
+                M0,12 Q25,2 50,12 T100,12 T150,12 T200,12
+              "
+            />
+          </path>
+        </svg>
+      </div>
+
+      <!-- Bottom-Center Command Console -->
+      <div class="bottom-command-bar">
+        <div class="command-input-pill">
+          <button id="micBtn" class="action-btn" onclick="toggleVoiceInput()" title="Voice Dictation">
+            🎙️
+          </button>
+          <input 
+            id="globalCommandInput" 
+            type="text" 
+            class="command-input" 
+            placeholder="Ask NR-AI or dispatch any agent (e.g. 'Droid, build modern Android app')..."
+          >
+          <button class="send-btn" onclick="sendGlobalCommand()" title="Execute Command">
+            ➔
+          </button>
+        </div>
+
+        <div class="model-pill-row">
+          <span class="model-pill active">Auto-Route Intelligence</span>
+          <span class="model-pill">Gemini 2.5 Pro</span>
+          <span class="model-pill">Claude 3.7 Sonnet</span>
+          <span class="model-pill">DeepSeek R1</span>
+          <span class="model-pill">Local Deterministic</span>
+        </div>
+
+        <div class="bottom-tagline">
+          SECURE AGENT ECOSYSTEM • 100% LIVE TELEMETRY • DETERMINISTIC SAFETY GATE
+        </div>
+      </div>
+
+      <!-- Right-Side Agent Detail & Interaction Panel -->
+      <aside id="agentPanel" class="agent-panel">
+        <div class="panel-header">
+          <div class="agent-identity">
+            <div id="panelAgentAvatar" class="agent-avatar-ring">🤖</div>
+            <div class="agent-name-role">
+              <span id="panelAgentName" class="agent-name">Agent Name</span>
+              <span id="panelAgentRole" class="agent-role">Platform Specialist</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div id="panelStatusPill" class="status-indicator-pill">● IDLE</div>
+            <button class="panel-close-btn" onclick="closeAgentPanel()" title="Close Panel">✕</button>
+          </div>
+        </div>
+
+        <!-- Greeting Speech Card -->
+        <div id="panelGreeting" class="agent-greeting-box">
+          Ready for instructions, Boss.
+        </div>
+
+        <!-- Capability Action Buttons -->
+        <div>
+          <div style="font-size: 0.72rem; font-weight: bold; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.08em;">
+            INSTANT CAPABILITY ACTIONS
+          </div>
+          <div id="panelActionsGrid" class="actions-grid">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Current Task Progress (if working) -->
+        <div id="panelTaskCard" class="task-card" style="display: none;">
+          <div class="task-header">ACTIVE WORKFLOW EXECUTION</div>
+          <div id="panelTaskTitle" class="task-title">Creating Android project structure...</div>
+          <div class="task-progress-bar">
+            <div id="panelTaskProgress" class="task-progress-fill" style="width: 68%;"></div>
+          </div>
+          <div class="task-steps-list">
+            <div class="task-step done">
+              <span class="task-step-icon">✓</span>
+              <span>Project scaffold initialized</span>
+            </div>
+            <div class="task-step active">
+              <span class="task-step-icon">▶</span>
+              <span>Writing clean architecture modules</span>
+            </div>
+            <div class="task-step">
+              <span class="task-step-icon">○</span>
+              <span>Verifying gradle dependencies</span>
+            </div>
+          </div>
+          <button class="stop-task-btn" onclick="triggerEmergencyStop()">
+            🛑 HALT THIS AGENT
+          </button>
+        </div>
+
+        <!-- Agent Metadata Grid -->
+        <div class="agent-metrics-grid">
+          <div class="agent-metric-item">
+            <span>Isolation:</span>
+            <strong>Standard</strong>
+          </div>
+          <div class="agent-metric-item">
+            <span>Model:</span>
+            <strong>Auto-Routed</strong>
+          </div>
+          <div class="agent-metric-item">
+            <span>Safety Gate:</span>
+            <strong style="color: #10b981;">Enforced</strong>
+          </div>
+          <div class="agent-metric-item">
+            <span>Audit State:</span>
+            <strong style="color: #38bdf8;">Verified</strong>
+          </div>
+        </div>
+
+        <!-- Agent Chat Conversation -->
+        <div class="agent-chat-box">
+          <div style="font-size: 0.72rem; font-weight: bold; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.08em;">
+            DIRECT AGENT DIALOGUE
+          </div>
+          <div id="panelChatHistory" class="chat-history">
+            <!-- Messages added here -->
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="/static/galaxy.js"></script>
+</body>
+</html>

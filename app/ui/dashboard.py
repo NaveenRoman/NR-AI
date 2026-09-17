@@ -17,6 +17,7 @@ from dataclasses import asdict, dataclass
 import http.server
 import json
 import logging
+import os
 import socketserver
 import threading
 import time
@@ -24,6 +25,7 @@ from typing import Any, Dict, List, Optional
 import urllib.parse
 
 from app.ui.avatar_state import AvatarMode
+from app.remote.emergency import EmergencyStopController
 
 logger = logging.getLogger("NRAI.Dashboard")
 
@@ -42,6 +44,8 @@ class CompanionDashboard:
         self._server_thread: Optional[threading.Thread] = None
         self._httpd: Optional[socketserver.TCPServer] = None
         self.port: int = 8585
+        from app.ui.galaxy_engine import GalaxyEngine
+        self.galaxy_engine = GalaxyEngine()
 
     def get_status_snapshot(self) -> Dict[str, Any]:
         """Collect real-time operational status across all NR-AI companion components."""
@@ -107,6 +111,7 @@ class CompanionDashboard:
         model_exec.setdefault("actual_model_used", "NONE")
         model_exec.setdefault("provider", "None")
         model_exec.setdefault("live_api_success", "NO")
+        model_exec.setdefault("cloud_request_success", "NO")
         model_exec.setdefault("http_status", "NOT_CALLED")
         model_exec.setdefault("cloud_ai_status", "QUOTA EXHAUSTED (OpenAI) / NO CREDENTIALS (Gemini)")
         model_exec.setdefault("fallback_used", "NO")
@@ -190,59 +195,176 @@ class CompanionDashboard:
         dashboard_ref = self
 
         class DashboardHTTPHandler(http.server.BaseHTTPRequestHandler):
+            def _send_json(self, code: int, payload: bytes):
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def _send_bytes(self, code: int, content_type: str, data: bytes):
+                self.send_response(code)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(data)
+
             def do_GET(self):
                 parsed = urllib.parse.urlparse(self.path)
-                if parsed.path in ("/api/status", "/status"):
+
+                # 1. Galaxy State API
+                if parsed.path in ("/api/galaxy/state", "/api/galaxy/state/"):
+                    snapshot = dashboard_ref.get_status_snapshot()
+                    state = dashboard_ref.galaxy_engine.get_galaxy_state(companion_snapshot=snapshot)
+                    payload = json.dumps(state, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 2. Agent List API
+                elif parsed.path in ("/api/agents", "/api/agents/"):
+                    nodes = dashboard_ref.galaxy_engine.build_celestial_nodes(dashboard_ref.get_status_snapshot())
+                    agents = [n.to_dict() for n in nodes]
+                    payload = json.dumps({"success": True, "count": len(agents), "agents": agents}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 3. Specific Agent API
+                elif parsed.path.startswith("/api/agent/"):
+                    agent_id = parsed.path[len("/api/agent/"):].strip("/")
+                    nodes = dashboard_ref.galaxy_engine.build_celestial_nodes(dashboard_ref.get_status_snapshot())
+                    matching = next((n for n in nodes if n.agent_id == agent_id), None)
+                    if matching:
+                        payload = json.dumps({"success": True, "agent": matching.to_dict()}, indent=2).encode("utf-8")
+                        self._send_json(200, payload)
+                    else:
+                        payload = json.dumps({"success": False, "error": f"Agent '{agent_id}' not found"}).encode("utf-8")
+                        self._send_json(404, payload)
+
+                # 4. Static Assets (CSS, JS, Fonts, Images)
+                elif parsed.path.startswith("/static/"):
+                    static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static"))
+                    req_file = parsed.path[len("/static/"):].split("?")[0]
+                    file_path = os.path.abspath(os.path.join(static_dir, req_file))
+                    if file_path.startswith(static_dir) and os.path.isfile(file_path):
+                        content_type = "application/octet-stream"
+                        if file_path.endswith(".css"):
+                            content_type = "text/css; charset=utf-8"
+                        elif file_path.endswith(".js"):
+                            content_type = "application/javascript; charset=utf-8"
+                        elif file_path.endswith(".html"):
+                            content_type = "text/html; charset=utf-8"
+                        elif file_path.endswith(".png"):
+                            content_type = "image/png"
+                        elif file_path.endswith(".svg"):
+                            content_type = "image/svg+xml"
+                        elif file_path.endswith(".json"):
+                            content_type = "application/json"
+                        with open(file_path, "rb") as f:
+                            file_data = f.read()
+                        self._send_bytes(200, content_type, file_data)
+                    else:
+                        self._send_json(404, json.dumps({"error": "STATIC_FILE_NOT_FOUND"}).encode("utf-8"))
+
+                # 5. Legacy/Standard Companion Status API
+                elif parsed.path in ("/api/status", "/status"):
                     data = dashboard_ref.get_status_snapshot()
                     payload = json.dumps(data, indent=2).encode("utf-8")
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.send_header("Content-Length", str(len(payload)))
-                    self.send_header("Access-Control-Allow-Origin", "*")
-                    self.end_headers()
-                    self.wfile.write(payload)
+                    self._send_json(200, payload)
+
+                # 6. Companion Command GET
                 elif parsed.path in ("/api/command", "/command"):
                     params = urllib.parse.parse_qs(parsed.query)
                     cmd = params.get("text", [""])[0] or params.get("command", [""])[0]
                     resp = dashboard_ref.companion.interact(cmd, speak_output=False)
-                    payload = json.dumps(resp.to_dict(), indent=2).encode("utf-8")
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.send_header("Content-Length", str(len(payload)))
-                    self.send_header("Access-Control-Allow-Origin", "*")
-                    self.end_headers()
-                    self.wfile.write(payload)
+                    payload = json.dumps(resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 7. Galaxy UI Dashboard (Default Route) or Legacy Fallback
+                elif parsed.path in ("/", "/galaxy", "/index.html"):
+                    params = urllib.parse.parse_qs(parsed.query)
+                    if "legacy" in params:
+                        data = dashboard_ref.get_status_snapshot()
+                        html_content = dashboard_ref._render_html_page(data).encode("utf-8")
+                        self._send_bytes(200, "text/html; charset=utf-8", html_content)
+                    else:
+                        template_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "templates", "galaxy.html"))
+                        if os.path.isfile(template_path):
+                            with open(template_path, "rb") as f:
+                                html_content = f.read()
+                            self._send_bytes(200, "text/html; charset=utf-8", html_content)
+                        else:
+                            data = dashboard_ref.get_status_snapshot()
+                            html_content = dashboard_ref._render_html_page(data).encode("utf-8")
+                            self._send_bytes(200, "text/html; charset=utf-8", html_content)
+
                 else:
                     data = dashboard_ref.get_status_snapshot()
-                    html_content = dashboard_ref._render_html_page(data)
-                    payload = html_content.encode("utf-8")
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.send_header("Content-Length", str(len(payload)))
-                    self.end_headers()
-                    self.wfile.write(payload)
+                    html_content = dashboard_ref._render_html_page(data).encode("utf-8")
+                    self._send_bytes(200, "text/html; charset=utf-8", html_content)
 
             def do_POST(self):
                 parsed = urllib.parse.urlparse(self.path)
+                content_len = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else ""
+
+                # 1. Global Command Execution
                 if parsed.path in ("/api/command", "/command"):
-                    content_len = int(self.headers.get("Content-Length", 0))
-                    body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else ""
                     try:
                         data = json.loads(body)
                         cmd = data.get("command") or data.get("text") or ""
                     except Exception:
                         cmd = body.strip()
                     resp = dashboard_ref.companion.interact(cmd, speak_output=False)
-                    payload = json.dumps(resp.to_dict(), indent=2).encode("utf-8")
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.send_header("Content-Length", str(len(payload)))
-                    self.send_header("Access-Control-Allow-Origin", "*")
-                    self.end_headers()
-                    self.wfile.write(payload)
+                    payload = json.dumps(resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 2. Emergency Stop Trigger
+                elif parsed.path in ("/api/emergency_stop", "/api/emergency_stop/"):
+                    try:
+                        body_data = json.loads(body) if body else {}
+                    except Exception:
+                        body_data = {}
+                    by = body_data.get("triggered_by", "GalaxyUI_Operator")
+                    reason = body_data.get("reason", "Operator triggered 1-touch Emergency Stop")
+                    estop = EmergencyStopController()
+                    status = estop.trigger(triggered_by=by, reason=reason)
+                    payload = json.dumps({
+                        "success": status.is_active,
+                        "message": f"EMERGENCY STOP TRIGGERED by {by}: {reason}",
+                        "emergency_stop": status.is_active,
+                        "triggered_at": status.triggered_at,
+                    }, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 3. Agent Specific Action
+                elif parsed.path.startswith("/api/agent/") and parsed.path.endswith("/action"):
+                    path_parts = parsed.path.strip("/").split("/")
+                    # path_parts: ["api", "agent", "<agent_id>", "action"]
+                    agent_id = path_parts[2] if len(path_parts) >= 4 else "unknown"
+                    try:
+                        action_data = json.loads(body) if body else {}
+                    except Exception:
+                        action_data = {}
+                    action_id = action_data.get("action_id", "")
+                    label = action_data.get("label", action_id)
+
+                    prompt = f"Agent '{agent_id}' executing action: {label}"
+                    if dashboard_ref.companion and hasattr(dashboard_ref.companion, "interact"):
+                        resp = dashboard_ref.companion.interact(prompt, speak_output=False)
+                        reply_text = getattr(resp, "text", str(resp))
+                    else:
+                        reply_text = f"Action '{label}' executed for agent '{agent_id}'."
+
+                    payload = json.dumps({
+                        "success": True,
+                        "agent_id": agent_id,
+                        "action_id": action_id,
+                        "result": reply_text,
+                    }, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
                 else:
-                    self.send_response(404)
-                    self.end_headers()
+                    self._send_json(404, json.dumps({"error": "NOT_FOUND"}).encode("utf-8"))
 
             def log_message(self, format, *args):
                 pass  # suppress HTTP request logs in console
