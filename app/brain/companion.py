@@ -185,6 +185,8 @@ class NRCompanion:
         self.current_route: str = "CompanionPersona"
         self.current_agent: str = "Agent-1-Architect (Idle)"
         self.current_task_status: str = "Idle"
+        self.last_knowledge_subject: Optional[str] = None
+        self.recent_knowledge_entities: List[str] = []
 
         # Model Execution Evidence Tracker (Safe Metadata, No API Keys)
         gemini_ready = self.config.has_gemini_credentials()
@@ -556,13 +558,27 @@ class NRCompanion:
         # 2. Universal Knowledge & Research Inquiries (Takes precedence over generic news keywords)
         knowledge_prefixes = (
             "what is", "what are", "what was", "what were", "who was", "who is", "who were",
+            "who created", "who invented", "who founded", "who developed", "who wrote", "who discovered",
+            "who made", "where is", "where was", "which country", "which city",
             "tell me about", "explain", "how does", "how do", "how can", "how is", "why does",
             "why is", "when did", "when was", "compare", "difference between",
-            "history of", "theory of", "algorithm for", "principles of",
+            "history of", "theory of", "algorithm for", "principles of", "timeline of", "evolution of",
             "is agi", "is it possible", "is there", "will humans", "will ai", "will agi", "can ai"
         )
         if any(c_candidate.lower().startswith(pfx + " ") or c_candidate.lower() == pfx or f" {pfx} " in f" {c_candidate.lower()} " for pfx in knowledge_prefixes):
             return CommandCategory.KNOWLEDGE
+
+        # Check follow-up coreference knowledge queries when previous subject exists
+        if getattr(self, "last_knowledge_subject", None):
+            followup_patterns = (
+                r"^(?:who\s+(?:created|invented|founded|developed|wrote|discovered|made)\s+(?:it|this|that|him|her))[.?!]*$",
+                r"^(?:when\s+was\s+(?:it|this|that)\s+(?:created|invented|founded|released|discovered|made))[.?!]*$",
+                r"^(?:what\s+is\s+its\s+(?:architecture|version|capital|population|speed|purpose|meaning))[.?!]*$",
+                r"^(?:tell\s+me\s+more\s+about\s+(?:it|this|that))[.?!]*$",
+                r"^(?:how\s+does\s+(?:it|this)\s+work)[.?!]*$",
+            )
+            if any(re.match(p, c_candidate.lower()) for p in followup_patterns):
+                return CommandCategory.KNOWLEDGE
 
         # 3. AI News
         if ("ai" in c or "artificial intelligence" in c or "machine learning" in c) and any(
@@ -2543,14 +2559,20 @@ class NRCompanion:
             # Dispatch PowerShell cmdlets via powershell, standard tools via shell
             is_ps_cmdlet = base_bin in {"get-childitem", "gci", "get-command", "gcm", "get-process", "gps"}
             if is_ps_cmdlet:
-                exec_cmd = f'powershell -NoProfile -NonInteractive -Command "{cmd}"'
+                exec_cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", cmd]
+            elif isinstance(cmd, str):
+                import shlex
+                try:
+                    exec_cmd = shlex.split(cmd, posix=False)
+                except Exception:
+                    exec_cmd = cmd.split()
             else:
-                exec_cmd = cmd
+                exec_cmd = list(cmd)
 
             try:
                 proc = subprocess.run(
                     exec_cmd,
-                    shell=True,
+                    shell=False,
                     env=exec_env,
                     capture_output=True,
                     text=True,
@@ -2982,10 +3004,26 @@ class NRCompanion:
         self.current_agent = "Agent-1-Architect (Knowledge Engine)"
         self.current_task_status = "Retrieving Knowledge"
 
-        card = self.knowledge_engine.query_companion_card(command)
+        session_ctx = {
+            "last_subject": self.last_knowledge_subject,
+            "recent_entities": self.recent_knowledge_entities,
+        }
+        card = self.knowledge_engine.query_companion_card(command, session_context=session_ctx)
         e_type = card.get("epistemic_type", "VERIFIED_FACT")
         badge_tag = card.get("badge", {}).get("tag", "[VERIFIED FACT]")
         display_text = f"{badge_tag}\n\n{card['display_text']}"
+
+        # Update conversational memory for multi-turn coreference follow-ups
+        try:
+            understood = self.knowledge_engine.query_understanding.understand(command, session_context=session_ctx)
+            if understood.primary_subject:
+                self.last_knowledge_subject = understood.primary_subject
+                if understood.primary_subject not in self.recent_knowledge_entities:
+                    self.recent_knowledge_entities.append(understood.primary_subject)
+                    if len(self.recent_knowledge_entities) > 10:
+                        self.recent_knowledge_entities.pop(0)
+        except Exception as e:
+            logger.warning(f"Failed to update conversational knowledge context: {e}")
 
         self.last_model_execution = {
             "configured_role": "UNIVERSAL_KNOWLEDGE_ENGINE",

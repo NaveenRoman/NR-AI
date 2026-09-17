@@ -18,6 +18,9 @@ from typing import Any, Dict, List, Optional
 
 from app.agent.news_agent import NewsAgent
 from app.knowledge.contradiction import ContradictionDetector
+from app.knowledge.graph import KnowledgeGraph
+from app.knowledge.grounding import AnswerGroundingGate
+from app.knowledge.query_understanding import QueryUnderstandingEngine
 from app.knowledge.research import ResearchEngine
 from app.knowledge.scheduler import ContinuousLearningScheduler
 from app.knowledge.seeds import populate_knowledge_store
@@ -30,6 +33,7 @@ from app.knowledge.taxonomy import (
     KnowledgeSource,
     ResearchReport,
 )
+from app.knowledge.timeline import KnowledgeTimelineEngine, TimelineEvent
 
 logger = logging.getLogger("NRAI.UniversalKnowledgeEngine")
 
@@ -37,6 +41,8 @@ logger = logging.getLogger("NRAI.UniversalKnowledgeEngine")
 class UniversalKnowledgeEngine:
     """
     Central Cognitive Brain for Universal Knowledge and Continuous Learning.
+    Coordinates Query Understanding, Grounding Gate, Timeline (1880–2026),
+    Knowledge Graph, Hybrid Store, and Multi-Source Research.
     """
 
     def __init__(
@@ -50,6 +56,10 @@ class UniversalKnowledgeEngine:
         self.store = HybridKnowledgeStore(db_path=db_path, workspace=str(self.workspace))
         self.news_agent = NewsAgent()
         self.research_engine = ResearchEngine(store=self.store)
+        self.query_understanding = self.research_engine.query_understanding
+        self.timeline = self.research_engine.timeline
+        self.graph = self.research_engine.graph
+        self.grounding_gate = AnswerGroundingGate
         self.contradiction_detector = ContradictionDetector(store=self.store)
         self.scheduler = ContinuousLearningScheduler(
             store=self.store,
@@ -67,6 +77,7 @@ class UniversalKnowledgeEngine:
         text: str,
         domain: Optional[str] = None,
         allow_web: bool = True,
+        session_context: Optional[Dict[str, Any]] = None,
     ) -> ResearchReport:
         """
         Executes an epistemic knowledge lookup or multi-hop research inquiry.
@@ -75,19 +86,20 @@ class UniversalKnowledgeEngine:
             query=text,
             domain=domain,
             allow_web=allow_web,
+            session_context=session_context,
         )
 
-    def query_speech(self, text: str) -> str:
+    def query_speech(self, text: str, session_context: Optional[Dict[str, Any]] = None) -> str:
         """Returns a concise, voice-synthesizable text response with epistemic context."""
-        report = self.query(text)
+        report = self.query(text, session_context=session_context)
         return report.format_speech()
 
-    def query_companion_card(self, text: str) -> Dict[str, Any]:
+    def query_companion_card(self, text: str, session_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Generates a structured payload optimized for the mobile companion app,
         desktop avatar, and WebSocket telemetry streams.
         """
-        report = self.query(text)
+        report = self.query(text, session_context=session_context)
         badge = report.badges[0] if report.badges else EpistemicBadge.from_type(report.epistemic_type, report.confidence)
 
         return {
@@ -104,6 +116,18 @@ class UniversalKnowledgeEngine:
             "nodes_consulted": report.nodes_consulted,
             "timestamp": report.timestamp,
         }
+
+    def query_timeline_year(self, year: int) -> List[TimelineEvent]:
+        """Queries historical continuum events for a given year."""
+        return self.timeline.lookup_year(year)
+
+    def query_evolution(self, topic: str, start_year: int = 1880, end_year: int = 2026) -> str:
+        """Synthesizes chronological technological or historical evolution for a topic."""
+        return self.timeline.synthesize_evolution(topic, start_year, end_year)
+
+    def query_graph(self, subject: str, attribute_or_relation: str) -> List[Dict[str, Any]]:
+        """Queries the entity-relationship knowledge graph."""
+        return self.graph.query_attribute(subject, attribute_or_relation)
 
     def start_scheduler(self) -> None:
         """Starts background continuous learning worker."""

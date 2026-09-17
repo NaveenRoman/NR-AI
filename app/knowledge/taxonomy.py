@@ -41,21 +41,157 @@ class KnowledgeDomain(str, Enum):
     """Supported Knowledge Domains in NR-AI Universal Knowledge Brain."""
     HISTORY = "history"
     STEM = "stem"
+    SCIENCE = "science"
+    MATHEMATICS = "mathematics"
+    PHYSICS = "physics"
+    CHEMISTRY = "chemistry"
+    BIOLOGY = "biology"
+    MEDICINE = "medicine"
     COMPUTER_SCIENCE = "computer_science"
+    PROGRAMMING = "programming"
     AI_ML = "ai_ml"
     ROBOTICS = "robotics"
     CYBERSECURITY = "cybersecurity"
     NETWORKING = "networking"
     DATABASES = "databases"
     CLOUD = "cloud"
+    HARDWARE = "hardware"
+    ELECTRONICS = "electronics"
+    SEMICONDUCTOR = "semiconductor"
+    AEROSPACE = "aerospace"
+    AUTOMOTIVE = "automotive"
+    AGRICULTURE = "agriculture"
+    ECONOMICS = "economics"
     BUSINESS = "business"
+    LAW = "law"
+    GEOGRAPHY = "geography"
+    LITERATURE = "literature"
+    PHILOSOPHY = "philosophy"
+    HUMANITIES = "humanities"
     EDUCATION = "education"
     SPACE = "space"
-    ELECTRONICS = "electronics"
-    HARDWARE = "hardware"
     CURRENT_EVENTS = "current_events"
     FUTURE_TECH = "future_tech"
     GENERAL = "general"
+
+
+class TaxonomyRegistry:
+    """
+    Dynamic Taxonomy Registry supporting domain registration, aliases,
+    and keyword matching for universal knowledge fabric across all human knowledge.
+    """
+    _domains: Dict[str, str] = {}
+    _aliases: Dict[str, str] = {}
+
+    @classmethod
+    def initialize(cls):
+        """Pre-populates registry with core KnowledgeDomain entries and aliases."""
+        cls._domains.clear()
+        cls._aliases.clear()
+
+        for member in KnowledgeDomain:
+            cls._domains[member.value] = f"Universal domain: {member.value.replace('_', ' ').title()}"
+
+        # Standard domain aliases
+        aliases = {
+            "math": "mathematics",
+            "maths": "mathematics",
+            "phys": "physics",
+            "chem": "chemistry",
+            "bio": "biology",
+            "health": "medicine",
+            "medical": "medicine",
+            "pharma": "medicine",
+            "cs": "computer_science",
+            "computing": "computer_science",
+            "coding": "programming",
+            "software": "programming",
+            "software_engineering": "programming",
+            "dev": "programming",
+            "development": "programming",
+            "ai": "ai_ml",
+            "ml": "ai_ml",
+            "deep_learning": "ai_ml",
+            "llm": "ai_ml",
+            "nlp": "ai_ml",
+            "cv": "ai_ml",
+            "vision": "ai_ml",
+            "speech": "ai_ml",
+            "cyber": "cybersecurity",
+            "security": "cybersecurity",
+            "infosec": "cybersecurity",
+            "net": "networking",
+            "network": "networking",
+            "db": "databases" ,
+            "sql": "databases",
+            "nosql": "databases",
+            "devops": "cloud",
+            "infra": "cloud",
+            "infrastructure": "cloud",
+            "semi": "semiconductor",
+            "chips": "semiconductor",
+            "silicon": "semiconductor",
+            "space_exploration": "space",
+            "astronomy": "space",
+            "cosmology": "space",
+            "aero": "aerospace",
+            "aviation": "aerospace",
+            "auto": "automotive",
+            "vehicles": "automotive",
+            "agri": "agriculture",
+            "farming": "agriculture",
+            "finance": "economics",
+            "macroeconomics": "economics",
+            "legal": "law",
+            "jurisprudence": "law",
+            "geo": "geography",
+            "earth_science": "geography",
+            "lit": "literature",
+            "books": "literature",
+            "arts": "humanities",
+            "history_science": "history",
+            "tech": "computer_science",
+        }
+        for alias, canonical in aliases.items():
+            cls._aliases[alias] = canonical
+
+    @classmethod
+    def register_domain(cls, name: str, description: str = "", aliases: Optional[List[str]] = None) -> None:
+        canonical = name.strip().lower().replace(" ", "_")
+        cls._domains[canonical] = description or f"Domain: {canonical.title()}"
+        if aliases:
+            for alias in aliases:
+                cls._aliases[alias.strip().lower().replace(" ", "_")] = canonical
+
+    @classmethod
+    def get_canonical_domain(cls, name_or_alias: str) -> str:
+        cleaned = name_or_alias.strip().lower().replace(" ", "_")
+        if cleaned in cls._domains:
+            return cleaned
+        if cleaned in cls._aliases:
+            return cls._aliases[cleaned]
+        # Partial match fallback
+        for alias, canonical in cls._aliases.items():
+            if alias in cleaned:
+                return canonical
+        for dom in cls._domains:
+            if dom in cleaned:
+                return dom
+        return KnowledgeDomain.GENERAL.value
+
+    @classmethod
+    def is_valid_domain(cls, name: str) -> bool:
+        cleaned = name.strip().lower().replace(" ", "_")
+        return cleaned in cls._domains or cleaned in cls._aliases
+
+    @classmethod
+    def list_domains(cls) -> List[str]:
+        return sorted(list(cls._domains.keys()))
+
+
+# Initialize default taxonomy registry
+TaxonomyRegistry.initialize()
+
 
 
 # Human-readable labels and badge styling
@@ -214,6 +350,11 @@ class KnowledgeNode:
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    version: int = 1
+    effective_from: Optional[float] = None
+    effective_until: Optional[float] = None
+    supersedes: Optional[str] = None
+    superseded_by: Optional[str] = None
 
     def is_expired(self, current_time: Optional[float] = None) -> bool:
         """Returns True if the node has an active TTL that has elapsed."""
@@ -227,7 +368,7 @@ class KnowledgeNode:
         badge = EpistemicBadge.from_type(self.epistemic_type, self.confidence)
         lines = [
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-            f"{badge.format_tag()} {self.title}",
+            f"{badge.format_tag()} {self.title} (v{self.version})",
             f"Domain: {self.domain} | Topic: {self.topic}",
         ]
         if self.temporal_anchor:
@@ -255,6 +396,11 @@ class KnowledgeNode:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "metadata": self.metadata,
+            "version": self.version,
+            "effective_from": self.effective_from,
+            "effective_until": self.effective_until,
+            "supersedes": self.supersedes,
+            "superseded_by": self.superseded_by,
         }
 
     @classmethod
@@ -283,6 +429,11 @@ class KnowledgeNode:
             created_at=float(data.get("created_at", time.time())),
             updated_at=float(data.get("updated_at", time.time())),
             metadata=dict(data.get("metadata", {})),
+            version=int(data.get("version", 1)),
+            effective_from=data.get("effective_from"),
+            effective_until=data.get("effective_until"),
+            supersedes=data.get("supersedes"),
+            superseded_by=data.get("superseded_by"),
         )
 
 

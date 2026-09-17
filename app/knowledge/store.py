@@ -50,9 +50,15 @@ GENERIC_QUERY_MODIFIERS: Set[str] = {
     "development", "developments", "advancement", "advancements", "concept", "concepts",
     "principles", "principle", "system", "systems", "work", "works", "world", "status",
     "compare", "comparison", "contrasting", "versus", "vs", "details", "detailed", "detail",
-    "architecture", "architectural", "technical", "specs", "specifications",
+    "technical", "specs", "specifications",
     # Freshness markers
     "today", "now", "latest", "current", "recently", "recent", "newest", "breaking", "announced",
+}
+
+QUESTION_ATTRIBUTE_WORDS: Set[str] = {
+    "capital", "creator", "inventor", "author", "founder", "definition", "meaning",
+    "version", "speed", "population", "currency", "date", "created", "invented", "founded",
+    "developer", "developed", "maker", "made", "father", "origin", "type", "purpose", "architecture",
 }
 
 
@@ -60,18 +66,23 @@ def extract_subject_tokens(raw_query: str) -> List[str]:
     """
     Extracts core subject/entity tokens from a raw query, excluding standard
     stopwords and generic query modifiers (temporal spans, framing verbs).
+    Disambiguates subject nouns from question attribute target words (e.g. 'capital', 'creator').
     """
     if not raw_query or not raw_query.strip():
         return []
     cleaned = re.sub(r"[^\w\s\-]", " ", raw_query)
     all_tokens = [t.strip().lower() for t in cleaned.split() if len(t.strip()) > 1]
-    subject_tokens = [
+    content_tokens = [
         t for t in all_tokens
         if t not in STOPWORDS
         and t not in GENERIC_QUERY_MODIFIERS
         and not (t.isdigit() and len(t) == 4)  # filter out 4-digit years from core subject tokens
     ]
-    return subject_tokens
+    # If specific non-attribute tokens exist (e.g. 'australia' when query has 'capital of australia'),
+    # prioritize them as the primary subject constraint
+    specific_tokens = [t for t in content_tokens if t not in QUESTION_ATTRIBUTE_WORDS]
+    return specific_tokens if specific_tokens else content_tokens
+
 
 
 def sanitize_fts5_query(raw_query: str) -> str:
@@ -166,13 +177,32 @@ class HybridKnowledgeStore:
                     ttl_seconds INTEGER,
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL,
-                    metadata_json TEXT NOT NULL
+                    metadata_json TEXT NOT NULL,
+                    version INTEGER DEFAULT 1,
+                    effective_from REAL,
+                    effective_until REAL,
+                    supersedes TEXT,
+                    superseded_by TEXT
                 );
             """)
 
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_kn_domain ON knowledge_nodes(domain);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_kn_topic ON knowledge_nodes(topic);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_kn_epistemic ON knowledge_nodes(epistemic_type);")
+
+            # Check and run migrations if table already exists without version columns
+            cursor.execute("PRAGMA table_info(knowledge_nodes);")
+            existing_cols = {row["name"] for row in cursor.fetchall()}
+            if "version" not in existing_cols:
+                cursor.execute("ALTER TABLE knowledge_nodes ADD COLUMN version INTEGER DEFAULT 1;")
+            if "effective_from" not in existing_cols:
+                cursor.execute("ALTER TABLE knowledge_nodes ADD COLUMN effective_from REAL;")
+            if "effective_until" not in existing_cols:
+                cursor.execute("ALTER TABLE knowledge_nodes ADD COLUMN effective_until REAL;")
+            if "supersedes" not in existing_cols:
+                cursor.execute("ALTER TABLE knowledge_nodes ADD COLUMN supersedes TEXT;")
+            if "superseded_by" not in existing_cols:
+                cursor.execute("ALTER TABLE knowledge_nodes ADD COLUMN superseded_by TEXT;")
 
             # 2. SQLite FTS5 Full-Text Search Virtual Table
             cursor.execute("""
@@ -246,8 +276,9 @@ class HybridKnowledgeStore:
                 INSERT INTO knowledge_nodes (
                     node_id, domain, topic, title, content,
                     epistemic_type, confidence, sources_json, tags_json,
-                    temporal_anchor, ttl_seconds, created_at, updated_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    temporal_anchor, ttl_seconds, created_at, updated_at, metadata_json,
+                    version, effective_from, effective_until, supersedes, superseded_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(node_id) DO UPDATE SET
                     domain=excluded.domain,
                     topic=excluded.topic,
@@ -260,7 +291,12 @@ class HybridKnowledgeStore:
                     temporal_anchor=excluded.temporal_anchor,
                     ttl_seconds=excluded.ttl_seconds,
                     updated_at=excluded.updated_at,
-                    metadata_json=excluded.metadata_json;
+                    metadata_json=excluded.metadata_json,
+                    version=excluded.version,
+                    effective_from=excluded.effective_from,
+                    effective_until=excluded.effective_until,
+                    supersedes=excluded.supersedes,
+                    superseded_by=excluded.superseded_by;
             """, (
                 node.node_id,
                 node.domain,
@@ -276,9 +312,63 @@ class HybridKnowledgeStore:
                 node.created_at,
                 node.updated_at,
                 metadata_json,
+                node.version,
+                node.effective_from,
+                node.effective_until,
+                node.supersedes,
+                node.superseded_by,
             ))
             conn.commit()
             return True
+
+    def supersede_node(self, old_node_id: str, new_node: KnowledgeNode) -> bool:
+        """
+        Marks an old node as superseded by a new version and indexes the new version.
+        Preserves complete version history and provenance.
+        """
+        old_node = self.get_node(old_node_id)
+        now = time.time()
+        if old_node:
+            old_node.superseded_by = new_node.node_id
+            old_node.effective_until = now
+            old_node.updated_at = now
+            self.upsert_node(old_node)
+            new_node.supersedes = old_node_id
+            new_node.version = old_node.version + 1
+
+        if not new_node.effective_from:
+            new_node.effective_from = now
+        return self.upsert_node(new_node)
+
+    def get_node_history(self, node_id: str) -> List[KnowledgeNode]:
+        """Traverses the supersedes / superseded_by chain to return full node history."""
+        history: List[KnowledgeNode] = []
+        current = self.get_node(node_id)
+        if not current:
+            return []
+
+        # Walk backward to find root
+        root = current
+        visited: Set[str] = {root.node_id}
+        while root.supersedes:
+            prev = self.get_node(root.supersedes)
+            if not prev or prev.node_id in visited:
+                break
+            visited.add(prev.node_id)
+            root = prev
+
+        # Walk forward from root
+        curr: Optional[KnowledgeNode] = root
+        visited.clear()
+        while curr and curr.node_id not in visited:
+            history.append(curr)
+            visited.add(curr.node_id)
+            if curr.superseded_by:
+                curr = self.get_node(curr.superseded_by)
+            else:
+                break
+
+        return sorted(history, key=lambda x: x.version)
 
     def get_node(self, node_id: str) -> Optional[KnowledgeNode]:
         """Retrieves a specific node by its unique node_id."""
@@ -309,6 +399,7 @@ class HybridKnowledgeStore:
         limit: int = 10,
         min_confidence: float = 0.0,
         include_expired: bool = False,
+        primary_subject: Optional[str] = None,
     ) -> List[Tuple[KnowledgeNode, float]]:
         """
         Executes an FTS5 full-text search with BM25 ranking.
@@ -316,7 +407,9 @@ class HybridKnowledgeStore:
         """
         sanitized = sanitize_fts5_query(query)
         if not sanitized:
-            return self._fallback_search(query, domain=domain, limit=limit, min_confidence=min_confidence)
+            return self._fallback_search(
+                query, domain=domain, limit=limit, min_confidence=min_confidence, primary_subject=primary_subject
+            )
 
         # FTS5 BM25 with column weights:
         # col 0 (node_id): 0.0, col 1 (domain): 2.0, col 2 (topic): 3.0,
@@ -330,8 +423,13 @@ class HybridKnowledgeStore:
         params: List[Any] = [sanitized]
 
         if domain:
-            sql += " AND kn.domain = ?"
-            params.append(domain)
+            if domain in ("science", "stem", "physics", "chemistry", "biology"):
+                sql += " AND kn.domain IN ('science', 'stem', 'physics', 'chemistry', 'biology')"
+            elif domain in ("computer_science", "programming", "software"):
+                sql += " AND kn.domain IN ('computer_science', 'programming', 'software')"
+            else:
+                sql += " AND kn.domain = ?"
+                params.append(domain)
 
         if min_confidence > 0.0:
             sql += " AND kn.confidence >= ?"
@@ -343,6 +441,14 @@ class HybridKnowledgeStore:
         params.append(candidate_limit)
 
         subject_tokens = extract_subject_tokens(query)
+        if primary_subject and primary_subject.strip():
+            ps_tokens = [
+                t.lower() for t in re.sub(r"[^\w\s\-]", " ", primary_subject).split()
+                if len(t) > 1 and t.lower() not in STOPWORDS
+            ]
+            if ps_tokens:
+                subject_tokens = ps_tokens
+
         results: List[Tuple[KnowledgeNode, float]] = []
         now = time.time()
 
@@ -353,7 +459,9 @@ class HybridKnowledgeStore:
                 rows = cursor.fetchall()
             except sqlite3.OperationalError as e:
                 logger.warning(f"FTS5 query failed ('{sanitized}'): {e}. Falling back to LIKE search.")
-                return self._fallback_search(query, domain=domain, limit=limit, min_confidence=min_confidence)
+                return self._fallback_search(
+                    query, domain=domain, limit=limit, min_confidence=min_confidence, primary_subject=primary_subject
+                )
 
             for row in rows:
                 node = self._row_to_node(row)
@@ -361,9 +469,8 @@ class HybridKnowledgeStore:
                     continue
 
                 # Topical relevance check:
-                # If query contains core subject tokens (e.g. 'java', 'quantum', 'raft'), candidate
+                # If query contains core subject tokens (e.g. 'australia', 'transformer', 'linux'), candidate
                 # document MUST match at least one subject token in title, tags, or content.
-                # If a document only matched generic temporal modifiers (e.g. '1990s', 'modern'), disqualify it.
                 if subject_tokens:
                     doc_title_lower = node.title.lower()
                     doc_tags_lower = [t.lower() for t in node.tags]
@@ -381,16 +488,22 @@ class HybridKnowledgeStore:
                 # In SQLite FTS5, bm25() values are negative; lower (more negative) is better.
                 raw_rank = float(row["rank"]) if "rank" in row.keys() else 0.0
                 abs_rank = abs(raw_rank)
-                score = round(max(0.5, abs_rank / (1.0 + abs_rank)), 3)
+                score = round(max(0.35, abs_rank / (1.0 + abs_rank)), 3)
 
                 # Boost score when core subject tokens appear prominently in title or tags
                 if subject_tokens:
                     doc_title_lower = node.title.lower()
                     doc_tags_lower = [t.lower() for t in node.tags]
+                    doc_content_lower = node.content.lower()
                     if any(st in doc_title_lower for st in subject_tokens):
-                        score = min(1.0, round(score + 0.15, 3))
+                        score = min(1.0, round(score + 0.35, 3))
                     elif any(any(st in tag for tag in doc_tags_lower) for st in subject_tokens):
-                        score = min(1.0, round(score + 0.10, 3))
+                        score = min(1.0, round(score + 0.20, 3))
+                    elif any(st in doc_content_lower for st in subject_tokens):
+                        score = min(1.0, round(score + 0.05, 3))
+
+                if score < min_confidence:
+                    continue
 
                 results.append((node, score))
                 if len(results) >= limit:
@@ -398,7 +511,9 @@ class HybridKnowledgeStore:
 
         # If FTS returns 0 hits, try fallback LIKE search for fuzzy / partial strings
         if not results:
-            return self._fallback_search(query, domain=domain, limit=limit, min_confidence=min_confidence)
+            return self._fallback_search(
+                query, domain=domain, limit=limit, min_confidence=min_confidence, primary_subject=primary_subject
+            )
 
         return results
 
@@ -408,16 +523,24 @@ class HybridKnowledgeStore:
         domain: Optional[str] = None,
         limit: int = 5,
         min_confidence: float = 0.0,
+        primary_subject: Optional[str] = None,
     ) -> List[Tuple[KnowledgeNode, float]]:
         """Fallback substring search for queries that don't match FTS5 stems."""
         if not query or not query.strip():
             return []
 
         subject_tokens = extract_subject_tokens(query)
+        if primary_subject and primary_subject.strip():
+            ps_tokens = [
+                t.lower() for t in re.sub(r"[^\w\s\-]", " ", primary_subject).split()
+                if len(t) > 1 and t.lower() not in STOPWORDS
+            ]
+            if ps_tokens:
+                subject_tokens = ps_tokens
+
         cleaned = re.sub(r"[^\w\s\-]", " ", query)
         all_tokens = [t.strip().lower() for t in cleaned.split() if len(t.strip()) > 1]
         content_tokens = [t for t in all_tokens if t not in STOPWORDS]
-        # Prefer subject tokens so generic modifiers do not pollute substring queries
         tokens = subject_tokens if subject_tokens else (content_tokens if content_tokens else all_tokens)
         if not tokens:
             return []
@@ -432,15 +555,20 @@ class HybridKnowledgeStore:
         sql += " OR ".join(conds) + ")"
 
         if domain:
-            sql += " AND domain = ?"
-            params.append(domain)
+            if domain in ("science", "stem", "physics", "chemistry", "biology"):
+                sql += " AND domain IN ('science', 'stem', 'physics', 'chemistry', 'biology')"
+            elif domain in ("computer_science", "programming", "software"):
+                sql += " AND domain IN ('computer_science', 'programming', 'software')"
+            else:
+                sql += " AND domain = ?"
+                params.append(domain)
 
         if min_confidence > 0.0:
             sql += " AND confidence >= ?"
             params.append(min_confidence)
 
         sql += " LIMIT ?"
-        params.append(limit)
+        params.append(max(limit * 2, 10))
 
         results: List[Tuple[KnowledgeNode, float]] = []
         now = time.time()
@@ -450,7 +578,14 @@ class HybridKnowledgeStore:
             for row in cursor.fetchall():
                 node = self._row_to_node(row)
                 if not node.is_expired(now):
-                    results.append((node, 0.5))  # Moderate baseline score for substring fallback
+                    # Enforce subject constraint
+                    if subject_tokens:
+                        doc_text = f"{node.title} {' '.join(node.tags)} {node.content}".lower()
+                        if not any(st in doc_text for st in subject_tokens):
+                            continue
+                    results.append((node, 0.5))
+                    if len(results) >= limit:
+                        break
 
         return results
 
@@ -631,6 +766,7 @@ class HybridKnowledgeStore:
         except ValueError:
             e_type = EpistemicType.VERIFIED_FACT
 
+        cols = row.keys()
         return KnowledgeNode(
             node_id=row["node_id"],
             domain=row["domain"],
@@ -646,4 +782,9 @@ class HybridKnowledgeStore:
             created_at=float(row["created_at"]),
             updated_at=float(row["updated_at"]),
             metadata=meta,
+            version=int(row["version"]) if "version" in cols and row["version"] is not None else 1,
+            effective_from=float(row["effective_from"]) if "effective_from" in cols and row["effective_from"] is not None else None,
+            effective_until=float(row["effective_until"]) if "effective_until" in cols and row["effective_until"] is not None else None,
+            supersedes=str(row["supersedes"]) if "supersedes" in cols and row["supersedes"] is not None else None,
+            superseded_by=str(row["superseded_by"]) if "superseded_by" in cols and row["superseded_by"] is not None else None,
         )

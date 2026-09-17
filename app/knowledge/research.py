@@ -25,6 +25,16 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
+from app.knowledge.graph import KnowledgeGraph
+from app.knowledge.grounding import AnswerGroundingGate, GroundingResult
+from app.knowledge.query_understanding import (
+    EntityCandidate,
+    FreshnessRequirement,
+    QueryIntent,
+    QueryUnderstandingEngine,
+    TimeScope,
+    UnderstoodQuery,
+)
 from app.knowledge.store import HybridKnowledgeStore
 from app.knowledge.taxonomy import (
     EpistemicBadge,
@@ -34,6 +44,7 @@ from app.knowledge.taxonomy import (
     KnowledgeSource,
     ResearchReport,
 )
+from app.knowledge.timeline import KnowledgeTimelineEngine, TimelineEvent
 
 logger = logging.getLogger("NRAI.ResearchEngine")
 
@@ -428,13 +439,18 @@ class ResearchEngine:
         store: Optional[HybridKnowledgeStore] = None,
         model_router: Optional[Any] = None,
         timeout: float = 8.0,
+        allow_web: bool = True,
     ):
         self.store = store or HybridKnowledgeStore()
         self.router = model_router
         self.timeout = timeout
+        self.allow_web = allow_web
         self.wiki = WikipediaProvider()
         self.arxiv = ArXivProvider()
         self.ddg = DuckDuckGoProvider()
+        self.query_understanding = QueryUnderstandingEngine()
+        self.timeline = KnowledgeTimelineEngine()
+        self.graph = KnowledgeGraph()
 
     def decompose_query(self, complex_query: str) -> List[str]:
         """
@@ -505,22 +521,38 @@ class ResearchEngine:
         self,
         query: str,
         domain: Optional[str] = None,
-        allow_web: bool = True,
+        allow_web: Optional[bool] = None,
+        session_context: Optional[Dict[str, Any]] = None,
     ) -> ResearchReport:
         """
-        Executes complete multi-tier research flow:
-        Tier 1: Local Hybrid Knowledge Store (FTS5 BM25)
-        Tier 2: Public Scholarly & Encyclopedic Web APIs (ArXiv, Wikipedia, DuckDuckGo)
-        Tier 3: Epistemic Synthesis & Report Generation
+        Executes complete multi-tier universal research flow:
+        Tier 0: Query Understanding Layer & Disambiguation
+        Tier 0.1: Chronological Anachronism & Speculative checks
+        Tier 0.2: Knowledge Graph Canonical Triples
+        Tier 0.3: Chronological Timeline Continuum (1880–2026)
+        Tier 1: Local Hybrid Knowledge Store (FTS5 BM25 + Grounding Gate)
+        Tier 2: Public Scholarly & Encyclopedic Web APIs (ArXiv, Wikipedia, DuckDuckGo, NewsAgent)
+        Tier 3: Epistemic Answer Grounding & Versioned Indexing
         """
         t0 = time.time()
         q_stripped = query.strip()
-        requires_freshness = has_freshness_trigger(q_stripped)
+        effective_allow_web = self.allow_web if allow_web is None else allow_web
 
         # ---------------------------------------------------------------------
-        # Tier 0: Chronological Anachronism Check
+        # Tier 0: Query Understanding Layer
         # ---------------------------------------------------------------------
-        anachronism = check_anachronism(q_stripped)
+        u_query = self.query_understanding.understand(q_stripped, session_context=session_context)
+        effective_query = u_query.repaired_query
+        effective_domain = domain or u_query.domain
+        requires_freshness = (
+            u_query.freshness in (FreshnessRequirement.REALTIME, FreshnessRequirement.DAILY, FreshnessRequirement.WEEKLY)
+            or has_freshness_trigger(effective_query)
+        )
+
+        # ---------------------------------------------------------------------
+        # Tier 0.1: Chronological Anachronism Check
+        # ---------------------------------------------------------------------
+        anachronism = check_anachronism(effective_query)
         if anachronism:
             elapsed_ms = (time.time() - t0) * 1000
             return ResearchReport(
@@ -534,9 +566,9 @@ class ResearchEngine:
             )
 
         # ---------------------------------------------------------------------
-        # Tier 0.5: Unreleased / Speculative Frontier Technology Check
+        # Tier 0.2: Unreleased / Speculative Frontier Technology Check
         # ---------------------------------------------------------------------
-        unreleased_info = check_unreleased_tech(q_stripped)
+        unreleased_info = check_unreleased_tech(effective_query)
         if unreleased_info:
             unrel_text, unrel_epistemic, unrel_conf = unreleased_info
             elapsed_ms = (time.time() - t0) * 1000
@@ -551,43 +583,101 @@ class ResearchEngine:
             )
 
         # ---------------------------------------------------------------------
-        # Tier 1: Local Hybrid Knowledge Store Query
+        # Tier 0.3: Knowledge Graph Canonical Triples
         # ---------------------------------------------------------------------
-        local_hits = self.store.search_bm25(query=q_stripped, domain=domain, limit=3)
+        if u_query.primary_subject and u_query.target_attribute:
+            graph_results = self.graph.query_attribute(u_query.primary_subject, u_query.target_attribute)
+            if graph_results:
+                top_match = graph_results[0]
+                if top_match["type"] == "relation":
+                    graph_ans = f"The {u_query.target_attribute.replace('_', ' ')} of {top_match['source']} is {top_match['target']}."
+                elif top_match["type"] == "inverse_relation":
+                    graph_ans = f"The {u_query.target_attribute.replace('_', ' ')} of {top_match['target']} is {top_match['source']}."
+                else:
+                    graph_ans = f"The {u_query.target_attribute.replace('_', ' ')} of {top_match['source']} is {top_match['value']}."
+
+                src = KnowledgeSource(name="NR-AI Universal Knowledge Graph", publisher="Canonical Factual Consensus", reliability_weight=1.0)
+                g_eval = AnswerGroundingGate.verify_grounding(u_query, graph_ans, sources=[src])
+                if g_eval.is_grounded:
+                    elapsed_ms = (time.time() - t0) * 1000
+                    return g_eval.to_report(query, elapsed_ms, retrieval_tier="knowledge_graph")
+
+        # ---------------------------------------------------------------------
+        # Tier 0.4: Chronological Timeline Index (1880–2026)
+        # ---------------------------------------------------------------------
+        if u_query.time_anchor and u_query.time_anchor.isdigit():
+            year_int = int(u_query.time_anchor)
+            events = self.timeline.lookup_year(year_int)
+            if events:
+                matched_event = None
+                if u_query.primary_subject:
+                    sub_low = u_query.primary_subject.lower()
+                    for ev in events:
+                        if any(sub_low in e.lower() or e.lower() in sub_low for e in ev.entities) or sub_low in ev.title.lower():
+                            matched_event = ev
+                            break
+                if not matched_event and events:
+                    matched_event = events[0]
+
+                if matched_event:
+                    ans = f"In {matched_event.year}, {matched_event.title}: {matched_event.description}"
+                    src = KnowledgeSource(name=", ".join(matched_event.sources) or "Historical Annals", publisher="Universal Chronological Continuum", reliability_weight=1.0)
+                    g_eval = AnswerGroundingGate.verify_grounding(u_query, ans, sources=[src])
+                    if g_eval.is_grounded:
+                        elapsed_ms = (time.time() - t0) * 1000
+                        return g_eval.to_report(query, elapsed_ms, retrieval_tier="timeline_continuum")
+
+        # ---------------------------------------------------------------------
+        # Tier 1: Local Hybrid Knowledge Store Query (FTS5 BM25 + Grounding Gate)
+        # ---------------------------------------------------------------------
+        search_domain = domain if (domain and domain != "general") else (effective_domain if (effective_domain and effective_domain != "general") else None)
+        local_hits = self.store.search_bm25(
+            query=effective_query,
+            domain=search_domain,
+            limit=5,
+            primary_subject=u_query.primary_subject,
+        )
         if local_hits:
-            best_node, score = local_hits[0]
-            # Freshness override: historical nodes or nodes without CURRENT_INFORMATION
-            # cannot satisfy queries demanding current/today freshness.
-            can_satisfy_freshness = True
-            if requires_freshness:
-                if best_node.domain == "history":
-                    can_satisfy_freshness = False
-                elif any(w in q_stripped.lower() for w in ("today", "breaking", "announced today", "this week", "latest model")):
-                    if best_node.epistemic_type != EpistemicType.CURRENT_INFORMATION:
+            for cand_node, score in local_hits:
+                can_satisfy_freshness = True
+                if requires_freshness:
+                    if cand_node.domain == "history":
                         can_satisfy_freshness = False
-                elif best_node.temporal_anchor and not any(y in str(best_node.temporal_anchor) for y in ("2025", "2026", "present")):
-                    can_satisfy_freshness = False
+                    elif any(w in effective_query.lower() for w in ("today", "breaking", "announced today", "this week", "latest model")):
+                        if cand_node.epistemic_type != EpistemicType.CURRENT_INFORMATION:
+                            can_satisfy_freshness = False
+                    elif cand_node.temporal_anchor and not any(y in str(cand_node.temporal_anchor) for y in ("2025", "2026", "present")):
+                        can_satisfy_freshness = False
 
-            if can_satisfy_freshness and score >= 0.35:
-                elapsed_ms = (time.time() - t0) * 1000
-                return ResearchReport(
-                    query=query,
-                    primary_answer=best_node.content,
-                    epistemic_type=best_node.epistemic_type,
-                    confidence=best_node.confidence,
-                    badges=[EpistemicBadge.from_type(best_node.epistemic_type, best_node.confidence)],
-                    nodes_consulted=[best_node.node_id],
-                    sources=best_node.sources,
-                    retrieval_tier="local_store",
-                    latency_ms=elapsed_ms,
+                if not can_satisfy_freshness or score < 0.35:
+                    continue
+
+                g_eval = AnswerGroundingGate.verify_grounding(
+                    u_query,
+                    cand_node.content,
+                    evidence_snippets=[cand_node.title] + (cand_node.tags or []),
+                    sources=cand_node.sources,
                 )
+                if g_eval.is_grounded:
+                    elapsed_ms = (time.time() - t0) * 1000
+                    return ResearchReport(
+                        query=query,
+                        primary_answer=g_eval.verified_answer,
+                        epistemic_type=g_eval.epistemic_type,
+                        confidence=g_eval.confidence,
+                        badges=[EpistemicBadge.from_type(g_eval.epistemic_type, g_eval.confidence)],
+                        nodes_consulted=[cand_node.node_id],
+                        sources=cand_node.sources,
+                        retrieval_tier="local_store",
+                        latency_ms=elapsed_ms,
+                    )
 
-        if not allow_web:
+        if not effective_allow_web:
             elapsed_ms = (time.time() - t0) * 1000
             ans_msg = (
                 f"Query '{query}' demands current/fresh information, but local historical records cannot satisfy freshness and live web research is disabled."
                 if requires_freshness
-                else f"No verified local facts found for '{query}'. Web research is disabled."
+                else f"[UNCERTAINTY | 0%] I do not have enough verified information to answer that question confidently."
             )
             return ResearchReport(
                 query=query,
@@ -602,18 +692,18 @@ class ResearchEngine:
         # ---------------------------------------------------------------------
         # Tier 2: Multi-Hop External Web & Scholarly Research
         # ---------------------------------------------------------------------
-        sub_queries = self.decompose_query(q_stripped)
+        sub_queries = list(dict.fromkeys(u_query.search_queries + self.decompose_query(effective_query)))
         web_items: List[Dict[str, Any]] = []
-        is_ai_or_math = any(kw in q_stripped.lower() for kw in ("paper", "arxiv", "attention", "transformer", "neural", "algorithm", "quantum", "llm", "deep learning"))
+        is_ai_or_math = any(kw in effective_query.lower() for kw in ("paper", "arxiv", "attention", "transformer", "neural", "algorithm", "quantum", "llm", "deep learning"))
 
         # For freshness queries or AI/tech announcements, query live verified news feeds
-        if requires_freshness or any(w in q_stripped.lower() for w in ("model", "announced", "news", "released", "launch")):
+        if requires_freshness or any(w in effective_query.lower() for w in ("model", "announced", "news", "released", "launch")):
             try:
                 from app.agent.news_agent import NewsAgent
                 if not hasattr(self, "_news_agent") or self._news_agent is None:
                     self._news_agent = NewsAgent()
 
-                cats = ["AI"] if any(w in q_stripped.lower() for w in ("ai", "model", "llm", "intelligence", "gpt", "gemini", "claude", "deepseek")) else ["Technology"]
+                cats = ["AI"] if any(w in effective_query.lower() for w in ("ai", "model", "llm", "intelligence", "gpt", "gemini", "claude", "deepseek")) else ["Technology"]
                 news_rep = self._news_agent.fetch_verified_news(categories=cats, force_live=True)
                 if news_rep.get("success"):
                     verified_items = news_rep.get("verified_multi_source", []) or news_rep.get("single_source", [])
@@ -638,25 +728,20 @@ class ResearchEngine:
                 logger.warning(f"NewsAgent live lookup encountered error: {e}")
 
         for sq in sub_queries:
-            # 1. Wikipedia Search
             wiki_res = self.wiki.search(sq, limit=2, timeout=self.timeout)
             web_items.extend(wiki_res)
 
-            # 2. ArXiv Search for scientific / AI queries
             if is_ai_or_math:
                 arxiv_res = self.arxiv.search(sq, limit=1, timeout=self.timeout)
                 web_items.extend(arxiv_res)
 
-            # 3. DuckDuckGo Instant Answers
             ddg_res = self.ddg.search(sq, timeout=self.timeout)
             web_items.extend(ddg_res)
 
             if len(web_items) >= 4:
                 break
 
-        # If external research yielded verified information
         if web_items:
-            # Deduplicate by URL
             seen_urls = set()
             deduped_items = []
             for it in web_items:
@@ -679,69 +764,40 @@ class ResearchEngine:
                 for it in deduped_items[:3]
             ]
 
-            # Assemble synthesized answer from best snippets
-            synthesized_text = "\n\n".join([f"• {it['title']}: {it['snippet']}" for it in deduped_items[:3]])
+            snippets = [it["snippet"] for it in deduped_items[:3]]
+            candidate_synthesized = "\n\n".join([f"• {it['title']}: {it['snippet']}" for it in deduped_items[:3]])
 
-            # Infer epistemic type based on freshness and content
-            q_low = q_stripped.lower()
-            if any(k in q_low for k in ("future", "will", "prediction", "forecast", "2030", "agi")):
-                e_type = EpistemicType.SPECULATION_PREDICTION
-                conf = 0.75
-            elif requires_freshness or any(k in q_low for k in ("today", "current", "latest", "now", "price", "release", "announced")):
-                e_type = EpistemicType.CURRENT_INFORMATION
-                conf = 0.95
-            else:
-                e_type = EpistemicType.VERIFIED_FACT
-                conf = 0.95
-
-            # Save the synthesized node to local knowledge store for future instant lookups
-            node_id = f"web-{int(time.time())}-{abs(hash(q_stripped)) % 10000}"
-            inferred_domain = domain or ("ai_ml" if is_ai_or_math else "general")
-            learned_node = KnowledgeNode(
-                node_id=node_id,
-                domain=inferred_domain,
-                topic="web_research",
-                title=deduped_items[0]["title"],
-                content=synthesized_text,
-                epistemic_type=e_type,
-                confidence=conf,
+            # Evaluate with AnswerGroundingGate
+            grounding = AnswerGroundingGate.verify_grounding(
+                u_query,
+                candidate_synthesized,
+                evidence_snippets=snippets,
                 sources=sources,
-                ttl_seconds=86400 * 7,  # Cache web findings for 7 days
-            )
-            self.store.upsert_node(learned_node)
-
-            elapsed_ms = (time.time() - t0) * 1000
-            return ResearchReport(
-                query=query,
-                primary_answer=synthesized_text,
-                epistemic_type=e_type,
-                confidence=conf,
-                badges=[EpistemicBadge.from_type(e_type, conf)],
-                nodes_consulted=[node_id],
-                sources=sources,
-                retrieval_tier="web_research",
-                latency_ms=elapsed_ms,
             )
 
-        # Fallback if no web results could be found
+            if grounding.is_grounded:
+                node_id = f"web-{int(time.time())}-{abs(hash(q_stripped)) % 10000}"
+                learned_node = KnowledgeNode(
+                    node_id=node_id,
+                    domain=effective_domain,
+                    topic=u_query.primary_subject or "web_research",
+                    title=deduped_items[0]["title"],
+                    content=grounding.verified_answer,
+                    epistemic_type=grounding.epistemic_type,
+                    confidence=grounding.confidence,
+                    sources=sources,
+                    ttl_seconds=86400 * 7,
+                    version=1,
+                    effective_from=time.time(),
+                )
+                self.store.upsert_node(learned_node)
+                elapsed_ms = (time.time() - t0) * 1000
+                return grounding.to_report(query, elapsed_ms, retrieval_tier="web_research")
+
+        # Fallback when external research failed or could not ground the answer
         elapsed_ms = (time.time() - t0) * 1000
-        q_low_check = q_stripped.lower()
-        if any(w in q_low_check for w in ("gpt-7", "gpt 7", "gpt7", "claude 9", "quantum iphone", "hypothetical")):
-            fallback_msg = f"No verified architectural details, benchmark results, or official technical papers exist for '{query}'. This refers to an unreleased, hypothetical, or speculative technology."
-            fallback_epistemic = EpistemicType.UNCERTAINTY
-        elif requires_freshness:
-            fallback_msg = f"No verified model announcements or breaking developments were confirmed for '{query}' across live feeds today."
-            fallback_epistemic = EpistemicType.CURRENT_INFORMATION
-        else:
-            fallback_msg = f"I was unable to verify factual information for '{query}' across local and online knowledge sources."
-            fallback_epistemic = EpistemicType.UNCERTAINTY
-
-        return ResearchReport(
-            query=query,
-            primary_answer=fallback_msg,
-            epistemic_type=fallback_epistemic,
-            confidence=0.1 if fallback_epistemic == EpistemicType.UNCERTAINTY else 0.85,
-            badges=[EpistemicBadge.from_type(fallback_epistemic, 0.1 if fallback_epistemic == EpistemicType.UNCERTAINTY else 0.85)],
-            retrieval_tier="web_research",
-            latency_ms=elapsed_ms,
+        fallback_grounding = AnswerGroundingGate.verify_grounding(
+            u_query,
+            AnswerGroundingGate.HONEST_UNKNOWN_TEMPLATE,
         )
+        return fallback_grounding.to_report(query, elapsed_ms, retrieval_tier="unverified_fallback")
