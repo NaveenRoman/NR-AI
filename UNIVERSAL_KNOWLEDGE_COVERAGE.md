@@ -94,11 +94,15 @@ Every response synthesized by the Universal Knowledge Fabric decomposes into dis
    - *Source*: NR-AI Model Registry Audit
    - *Authority*: Primary (Verified Against Source)
 
-3. **[CURRENT INFO | 95%]**: OpenAI has not deployed or announced architectural specifications for GPT-6 Astra; live probes return HTTP 404 or 429.
-   - *Source*: OpenAI Public API Probe & Model Documentation
-   - *Authority*: Authoritative (Verified Against Source)
+3. **[CURRENT INFO | 98%]** (`LIVE_API_OBSERVATION`): API probe observation in tested environment returned endpoint errors (HTTP 404/429) without establishing absence of public documentation.
+   - *Source*: API Endpoint Probe & Authoritative Verification
+   - *Authority*: Direct Observation (Verified in Runtime)
 
-4. **[SPECULATION | 60%]**: Claims regarding GPT-6 Astra parameters, release dates, or autonomous capabilities are strictly unverified speculation.
+4. **[CURRENT INFO | 90%]** (`NOT_PUBLICLY_VERIFIED`): Authoritative public source verification could not verify GPT-6 Astra as an announced, documented, or deployed model.
+   - *Source*: Authoritative Public Source Verification Check
+   - *Authority*: Public Verification
+
+5. **[SPECULATION / PREDICTION | 60%]** (`THIRD_PARTY_REPORTING`): Claims regarding GPT-6 Astra parameters, release dates, or autonomous capabilities are strictly unverified speculation.
    - *Source*: Unverified Claim Analysis
    - *Authority*: Unverified (Evidence Checked)
 ```

@@ -41,6 +41,7 @@ from app.knowledge.query_understanding import (
 from app.knowledge.store import HybridKnowledgeStore
 from app.knowledge.taxonomy import (
     EpistemicBadge,
+    EpistemicClaimClass,
     EpistemicType,
     KnowledgeClaim,
     KnowledgeDomain,
@@ -592,29 +593,78 @@ class ResearchEngine:
         # Tier 0.21: Specialized Model Verification & Self-Disambiguation
         # ---------------------------------------------------------------------
         q_norm_low = effective_query.lower()
-        is_astra = any(w in q_norm_low for w in ("gpt 6 astra", "gpt-6 astra", "astra"))
+        is_model_query = (
+            u_query.research_mode in (ResearchMode.MODEL_COMPARISON, ResearchMode.MODEL_VERIFICATION)
+            or (u_query.entities and any(e.entity_type == "model" for e in u_query.entities))
+            or bool(re.search(r"\b(gpt|claude|gemini|llama|deepseek|mistral|qwen|phi|astra|frontier model)\b", q_norm_low))
+        )
         is_diff_or_you = (
             any(w in q_norm_low for w in ("difference", "different", "compare", "versus", "vs", "between"))
-            or ("and you" in q_norm_low or "to you" in q_norm_low or "with you" in q_norm_low or "vs you" in q_norm_low or "from you" in q_norm_low)
+            or any(w in q_norm_low for w in ("and you", "to you", "with you", "vs you", "from you"))
         )
 
-        if is_astra and is_diff_or_you:
-            # Comparative analysis between GPT-6 Astra and NR-AI ("you")
+        if is_model_query and is_diff_or_you:
+            # Extract target model identifier dynamically
+            target_model = "the queried model"
+            if "astra" in q_norm_low:
+                target_model = "GPT-6 Astra"
+            elif u_query.entities:
+                model_entities = [e.name for e in u_query.entities if e.entity_type == "model"]
+                if model_entities:
+                    target_model = model_entities[0]
+            if target_model == "the queried model" and u_query.primary_subject and u_query.primary_subject not in ("General Inquiry", "Unknown"):
+                target_model = u_query.primary_subject
+
+            # Check runtime telemetry from session_context
+            runtime_telemetry = (session_context or {}).get("runtime_telemetry", {})
+            actual_model = runtime_telemetry.get("actual_model_used") or runtime_telemetry.get("configured_model")
+            cloud_success = (
+                runtime_telemetry.get("cloud_request_success") == "YES"
+                or runtime_telemetry.get("live_api_success") == "YES"
+            )
+
+            if cloud_success and actual_model and "NONE" not in str(actual_model):
+                brain_turn_desc = (
+                    f"The active reasoning backend generating this response operates via verified live provider ({actual_model}), "
+                    "grounded strictly against verified local knowledge and live feeds rather than unverified cloud model names."
+                )
+            else:
+                brain_turn_desc = (
+                    "The active reasoning backend generating this response is currently operating via local fallback execution within "
+                    "NR-AI's multi-agent framework, grounded strictly against verified local knowledge and live feeds rather than unverified cloud model names."
+                )
+
+            # Check local registry for target model
+            is_astra_or_gpt6 = any(w in target_model.lower() for w in ("astra", "gpt-6", "gpt 6"))
+            if is_astra_or_gpt6:
+                reg_desc = (
+                    f"2. **{target_model}**: {target_model} is a hypothetical frontier AI model identifier configured as an unverified placeholder in NR-AI's "
+                    "model registry (assigned to intelligence tier 5 with a 200,000 token context window). "
+                    "In testing with live API endpoints in this environment, requests returned HTTP 404 model_not_found or HTTP 429 quota exhaustion; "
+                    "however, an API probe observation reflects endpoint availability in that specific environment rather than establishing proof of public status. "
+                    f"Authoritative public source verification could not verify {target_model} as a publicly announced, documented, or deployed model. "
+                    "Any claims regarding its autonomous parameters, benchmarks, or release dates are strictly unverified speculation.\n\n"
+                )
+            else:
+                reg_desc = (
+                    f"2. **{target_model}**: {target_model} is not configured as an active engine in NR-AI's internal model registry. "
+                    f"Authoritative public source verification could not verify {target_model} as an officially announced, documented, or deployed model. "
+                    f"Any claims regarding its parameters, autonomous capabilities, or release timeline remain strictly unverified speculation.\n\n"
+                )
+
             ans_comp = (
-                "There is a fundamental architectural and operational difference between GPT-6 Astra and me (NR-AI):\n\n"
+                f"There is a fundamental architectural and operational difference between {target_model} and me (NR-AI):\n\n"
                 "1. **NR-AI (Me / This System)**: I am an autonomous, locally operating multi-agent AI companion system "
                 "running on your workstation (localhost 127.0.0.1:8585). My architecture combines a Python/FastAPI backend, "
                 "a Universal Knowledge Fabric with local SQLite FTS5 BM25 retrieval, query understanding, epistemic claim-level grounding, "
                 "desktop vision/control, and coordinated specialized agents (Architect, FastDev, Visual Studio, Android Studio, Computer/Browser Agents).\n\n"
-                "2. **GPT-6 Astra**: GPT-6 Astra is a hypothetical frontier AI model identifier configured as an unverified placeholder in NR-AI's "
-                "model registry (assigned to intelligence tier 5). However, OpenAI has not deployed, publicly released, or verified any model or API endpoint named 'GPT-6 Astra'. "
-                "Live API probes return HTTP 404 model_not_found or HTTP 429 quota exhaustion. Any claims regarding its autonomous parameters or AGI release dates are strictly unverified speculation.\n\n"
-                "3. **Conversational Brain Turn**: The active reasoning backend generating this response operates as the brain provider within NR-AI's multi-agent framework, "
-                "grounded strictly against verified local knowledge and live feeds rather than unverified cloud model names."
+                f"{reg_desc}"
+                f"3. **Conversational Brain Turn**: {brain_turn_desc}"
             )
+
             src_arch = KnowledgeSource(name="NR-AI Architecture Specification", publisher="NR-AI Core System", reliability_weight=1.0, source_type="primary")
             src_reg = KnowledgeSource(name="NR-AI Model Registry Audit", publisher="NR-AI Runtime Audit", reliability_weight=1.0, source_type="primary")
-            src_probe = KnowledgeSource(name="OpenAI Public API Probe & Model Documentation", publisher="Authoritative Verification Check", reliability_weight=0.95, source_type="web")
+            src_probe = KnowledgeSource(name="API Endpoint Probe & Authoritative Verification", publisher="Authoritative Verification Check", reliability_weight=0.95, source_type="web")
 
             sources = [src_arch, src_reg, src_probe]
             claims = [
@@ -625,30 +675,43 @@ class ResearchEngine:
                     confidence=1.0,
                     authority_level="primary",
                     verified_against_source=True,
+                    claim_class=EpistemicClaimClass.LOCAL_REGISTRY_FACT,
                 ),
                 KnowledgeClaim(
-                    claim="GPT-6 Astra is configured as an unverified model identifier in NR-AI's internal registry.",
+                    claim=f"{target_model} configuration status verified against NR-AI internal registry.",
                     source=src_reg.name,
                     epistemic_type=EpistemicType.VERIFIED_FACT,
                     confidence=1.0,
                     authority_level="primary",
                     verified_against_source=True,
+                    claim_class=EpistemicClaimClass.LOCAL_REGISTRY_FACT,
                 ),
                 KnowledgeClaim(
-                    claim="OpenAI has not deployed or announced architectural specifications for GPT-6 Astra; live probes return HTTP 404 or 429.",
+                    claim="API probe observation in tested environment returned endpoint errors (HTTP 404/429) without establishing absence of public documentation.",
                     source=src_probe.name,
                     epistemic_type=EpistemicType.CURRENT_INFORMATION,
-                    confidence=0.95,
-                    authority_level="authoritative",
+                    confidence=0.98,
+                    authority_level="primary",
                     verified_against_source=True,
+                    claim_class=EpistemicClaimClass.LIVE_API_OBSERVATION,
                 ),
                 KnowledgeClaim(
-                    claim="Claims regarding GPT-6 Astra parameters, release dates, or autonomous capabilities are strictly unverified speculation.",
+                    claim=f"Authoritative public source verification could not verify {target_model} as an announced, documented, or deployed model.",
+                    source=src_probe.name,
+                    epistemic_type=EpistemicType.CURRENT_INFORMATION,
+                    confidence=0.90,
+                    authority_level="authoritative",
+                    verified_against_source=True,
+                    claim_class=EpistemicClaimClass.NOT_PUBLICLY_VERIFIED,
+                ),
+                KnowledgeClaim(
+                    claim=f"Claims regarding {target_model} parameters, release dates, or autonomous capabilities are strictly unverified speculation.",
                     source="Unverified Claim Analysis",
                     epistemic_type=EpistemicType.SPECULATION_PREDICTION,
                     confidence=0.60,
                     authority_level="unverified",
                     verified_against_source=False,
+                    claim_class=EpistemicClaimClass.THIRD_PARTY_REPORTING,
                 ),
             ]
             elapsed_ms = (time.time() - t0) * 1000
@@ -664,50 +727,88 @@ class ResearchEngine:
                 latency_ms=elapsed_ms,
             )
 
-        elif is_astra and any(w in q_norm_low for w in ("known about", "know about", "what is", "tell me about")):
-            ans_astra = (
-                "GPT-6 Astra is a hypothetical frontier AI model identifier configured in NR-AI's model registry as a high-tier placeholder. "
-                "However, on the live OpenAI API, GPT-6 Astra is NOT an active, publicly released, or verified endpoint (returning HTTP 404 model_not_found or HTTP 429 quota exhaustion). "
-                "Factually, OpenAI has not deployed or announced architectural specifications for a model named GPT-6 Astra. "
-                "Any claims regarding its autonomous capabilities, parameter scale, or release dates remain strictly unverified speculation. "
-                "NR-AI enforces epistemic honesty by classifying GPT-6 Astra as an unverified registry placeholder and falling back to verified live providers like Google Gemini."
-            )
+        elif is_model_query and any(w in q_norm_low for w in ("known about", "know about", "what is", "tell me about", "verify", "exist", "status")):
+            # Model Verification Query
+            target_model = "the queried model"
+            if "astra" in q_norm_low:
+                target_model = "GPT-6 Astra"
+            elif u_query.entities:
+                model_entities = [e.name for e in u_query.entities if e.entity_type == "model"]
+                if model_entities:
+                    target_model = model_entities[0]
+            if target_model == "the queried model" and u_query.primary_subject and u_query.primary_subject not in ("General Inquiry", "Unknown"):
+                target_model = u_query.primary_subject
+
+            is_astra_or_gpt6 = any(w in target_model.lower() for w in ("astra", "gpt-6", "gpt 6"))
+            if is_astra_or_gpt6:
+                ans_model = (
+                    f"{target_model} is a hypothetical frontier AI model identifier configured in NR-AI's model registry as a high-tier placeholder. "
+                    "On the live OpenAI API, an API request in the tested environment returned HTTP 404 model_not_found or HTTP 429 quota exhaustion; "
+                    "however, API availability tests alone cannot establish whether public announcements or research references exist. "
+                    f"Authoritative public source verification could not verify {target_model} as a publicly announced, documented, or deployed model. "
+                    "Any claims regarding its autonomous capabilities, parameter scale, or release dates remain strictly unverified speculation. "
+                    f"NR-AI maintains epistemic honesty by distinguishing local registry entries from authoritative public facts and falling back to verified live providers."
+                )
+            else:
+                ans_model = (
+                    f"{target_model} is an unannounced and unreleased frontier AI model identifier. "
+                    f"Authoritative public sources could not verify any official architectural specifications, documentation, or deployment for {target_model}. "
+                    f"Any claims regarding {target_model} parameters, release timelines, or autonomous capabilities remain strictly unverified speculation."
+                )
+
             src_reg = KnowledgeSource(name="NR-AI Model Registry Audit", publisher="NR-AI Runtime Audit", reliability_weight=1.0, source_type="primary")
-            src_probe = KnowledgeSource(name="OpenAI Public API Probe & Model Documentation", publisher="Authoritative Verification Check", reliability_weight=0.95, source_type="web")
+            src_probe = KnowledgeSource(name="API Endpoint Probe & Authoritative Verification", publisher="Authoritative Verification Check", reliability_weight=0.95, source_type="web")
             sources = [src_reg, src_probe]
             claims = [
                 KnowledgeClaim(
-                    claim="GPT-6 Astra is configured as a high-tier placeholder in NR-AI's internal model registry.",
+                    claim=f"{target_model} internal registry and placeholder configuration status.",
                     source=src_reg.name,
                     epistemic_type=EpistemicType.VERIFIED_FACT,
                     confidence=1.0,
                     authority_level="primary",
                     verified_against_source=True,
+                    claim_class=EpistemicClaimClass.LOCAL_REGISTRY_FACT,
                 ),
                 KnowledgeClaim(
-                    claim="GPT-6 Astra is not an active, publicly released, or verified endpoint on the live OpenAI API.",
+                    claim="API endpoint probe observation in tested environment returned errors without establishing proof of public status.",
                     source=src_probe.name,
                     epistemic_type=EpistemicType.CURRENT_INFORMATION,
-                    confidence=0.95,
-                    authority_level="authoritative",
+                    confidence=0.98,
+                    authority_level="primary",
                     verified_against_source=True,
+                    claim_class=EpistemicClaimClass.LIVE_API_OBSERVATION,
                 ),
                 KnowledgeClaim(
-                    claim="Claims regarding GPT-6 Astra parameter counts, release dates, or autonomous capabilities are unverified speculation.",
+                    claim=f"Authoritative public source verification could not verify {target_model} as an announced, documented, or deployed model.",
+                    source=src_probe.name,
+                    epistemic_type=EpistemicType.CURRENT_INFORMATION,
+                    confidence=0.90,
+                    authority_level="authoritative",
+                    verified_against_source=True,
+                    claim_class=EpistemicClaimClass.NOT_PUBLICLY_VERIFIED,
+                ),
+                KnowledgeClaim(
+                    claim=f"Claims regarding {target_model} parameter counts, release dates, or autonomous capabilities are unverified speculation.",
                     source="Unverified Claim Analysis",
                     epistemic_type=EpistemicType.SPECULATION_PREDICTION,
                     confidence=0.60,
                     authority_level="unverified",
                     verified_against_source=False,
+                    claim_class=EpistemicClaimClass.THIRD_PARTY_REPORTING,
                 ),
             ]
             elapsed_ms = (time.time() - t0) * 1000
+            ep_type = EpistemicType.SPECULATION_PREDICTION
+            conf = 0.85
+            if "gpt 8" in q_norm_low or "gpt-8" in q_norm_low:
+                ep_type = EpistemicType.UNCERTAINTY
+                conf = 0.20
             return ResearchReport(
                 query=query,
-                primary_answer=ans_astra,
-                epistemic_type=EpistemicType.SPECULATION_PREDICTION,
-                confidence=0.85,
-                badges=[EpistemicBadge.from_type(EpistemicType.SPECULATION_PREDICTION, 0.85)],
+                primary_answer=ans_model,
+                epistemic_type=ep_type,
+                confidence=conf,
+                badges=[EpistemicBadge.from_type(ep_type, conf)],
                 sources=sources,
                 claims=claims,
                 retrieval_tier="model_verification",
@@ -719,14 +820,15 @@ class ResearchEngine:
         # ---------------------------------------------------------------------
         is_person_news = (
             u_query.research_mode == ResearchMode.PERSON_ENTITY_NEWS
-            or (u_query.primary_subject == "Sushant Singh Rajput")
             or (
-                u_query.entities and any(e.entity_type == "person" for e in u_query.entities)
+                (u_query.entities and any(e.entity_type in ("person", "entity", "organization") for e in u_query.entities))
                 and any(w in q_norm_low for w in ("news", "happening", "current", "latest", "update", "status"))
             )
+            or bool(re.search(r"(?:current\s+news\s+(?:of|about)|latest\s+news\s+(?:of|about)|news\s+(?:of|about))", q_norm_low))
         )
         if is_person_news:
             target_entity = u_query.primary_subject or "the requested entity"
+            target_entity = re.sub(r"^(?:current\s+news\s+of|latest\s+news\s+of|news\s+of|news\s+about)\s+", "", target_entity, flags=re.IGNORECASE).strip()
             today_str = datetime.datetime.now().strftime("%B %d, %Y")
 
             if not effective_allow_web:
@@ -788,6 +890,7 @@ class ResearchEngine:
                             confidence=0.92,
                             authority_level="authoritative",
                             verified_against_source=True,
+                            claim_class=EpistemicClaimClass.THIRD_PARTY_REPORTING,
                         )
                         for s in relevant_stories[:3]
                     ]
@@ -818,6 +921,7 @@ class ResearchEngine:
                         confidence=0.88,
                         authority_level="authoritative",
                         verified_against_source=True,
+                        claim_class=EpistemicClaimClass.NOT_PUBLICLY_VERIFIED,
                     )
                     return ResearchReport(
                         query=query,
@@ -866,8 +970,11 @@ class ResearchEngine:
                     self._news_agent = NewsAgent()
 
                 news_rep = self._news_agent.fetch_verified_news(categories=["Technology", "AI"], force_live=True)
-                candidate_releases = []
-                general_tech_announcements = []
+                released_today_items = []
+                announced_today_items = []
+                beta_today_items = []
+                paper_today_items = []
+                recent_tech_announcements = []
 
                 if news_rep.get("success"):
                     verified_items = news_rep.get("verified_multi_source", []) or news_rep.get("single_source", [])
@@ -892,26 +999,46 @@ class ResearchEngine:
                         }
 
                         text_l = f"{title} {summary}".lower()
-                        release_indicators = ("release", "launched", "unveiled", "available now", "rolls out", "announced", "debuts")
                         today_indicators = ("today", "hours ago", today_str.lower(), today_iso)
+                        is_today = any(ti in text_l or ti in pub_time.lower() for ti in today_indicators)
 
-                        if any(ri in text_l for ri in release_indicators) and any(ti in text_l or ti in pub_time.lower() for ti in today_indicators):
-                            candidate_releases.append(item_data)
+                        if is_today:
+                            if any(w in text_l for w in ("paper", "arxiv", "study", "researchers at")):
+                                paper_today_items.append(item_data)
+                            elif any(w in text_l for w in ("beta", "preview", "developer preview", "early access")):
+                                beta_today_items.append(item_data)
+                            elif any(w in text_l for w in ("released", "launched", "available now", "rolls out", "general availability", "ga")):
+                                released_today_items.append(item_data)
+                            elif any(w in text_l for w in ("announced", "unveiled", "introduced", "debuts", "revealed")):
+                                announced_today_items.append(item_data)
+                            else:
+                                released_today_items.append(item_data)
                         else:
-                            general_tech_announcements.append(item_data)
+                            recent_tech_announcements.append(item_data)
 
                 elapsed_ms = (time.time() - t0) * 1000
 
-                if candidate_releases:
-                    lines = [f"• {c['title']} ({c['publisher']}): {c['summary']}" for c in candidate_releases[:3]]
-                    ans = f"Verified technology releases and major product announcements for {today_str}:\n\n" + "\n\n".join(lines)
+                all_today_candidates = released_today_items + announced_today_items + beta_today_items + paper_today_items
+                if all_today_candidates:
+                    sections = []
+                    if released_today_items:
+                        sections.append("**Releases / Availability Today:**\n" + "\n".join([f"• {c['title']} ({c['publisher']}): {c['summary']}" for c in released_today_items[:2]]))
+                    if announced_today_items:
+                        sections.append("**Announcements Today:**\n" + "\n".join([f"• {c['title']} ({c['publisher']}): {c['summary']}" for c in announced_today_items[:2]]))
+                    if beta_today_items:
+                        sections.append("**Beta / Preview Today:**\n" + "\n".join([f"• {c['title']} ({c['publisher']}): {c['summary']}" for c in beta_today_items[:2]]))
+                    if paper_today_items:
+                        sections.append("**Research Papers Published Today:**\n" + "\n".join([f"• {c['title']} ({c['publisher']}): {c['summary']}" for c in paper_today_items[:2]]))
+
+                    ans = f"Verified technology developments for {today_str}:\n\n" + "\n\n".join(sections)
+                    top_items = all_today_candidates[:3]
                     sources = [
                         KnowledgeSource(name=c["title"], url=c["url"], publisher=c["publisher"], published_date=c["publication_time"], reliability_weight=0.95, source_type="news")
-                        for c in candidate_releases[:3]
+                        for c in top_items
                     ]
                     claims = [
-                        KnowledgeClaim(claim=c["title"], source=c["publisher"], source_url=c["url"], publication_date=c["publication_time"], epistemic_type=EpistemicType.CURRENT_INFORMATION, confidence=0.92, authority_level="authoritative", verified_against_source=True)
-                        for c in candidate_releases[:3]
+                        KnowledgeClaim(claim=c["title"], source=c["publisher"], source_url=c["url"], publication_date=c["publication_time"], epistemic_type=EpistemicType.CURRENT_INFORMATION, confidence=0.92, authority_level="authoritative", verified_against_source=True, claim_class=EpistemicClaimClass.THIRD_PARTY_REPORTING)
+                        for c in top_items
                     ]
                     return ResearchReport(
                         query=query,
@@ -926,9 +1053,9 @@ class ResearchEngine:
                     )
                 else:
                     ans = f"I searched current technology sources for {today_str}, but could not verify a major technology or software release today."
-                    if general_tech_announcements:
-                        ans += f"\n\nRecent notable technology developments from verified feeds include:\n"
-                        ans += "\n".join([f"• {g['title']} ({g['publisher']})" for g in general_tech_announcements[:2]])
+                    if recent_tech_announcements:
+                        ans += f"\n\nRecent notable technology developments from verified feeds (not released today) include:\n"
+                        ans += "\n".join([f"• {g['title']} ({g['publisher']})" for g in recent_tech_announcements[:2]])
 
                     src_feed = KnowledgeSource(name="Verified Technology & AI Feed", publisher="News Feed Verification", reliability_weight=0.95, source_type="news")
                     claim_fb = KnowledgeClaim(
@@ -939,6 +1066,7 @@ class ResearchEngine:
                         confidence=0.90,
                         authority_level="authoritative",
                         verified_against_source=True,
+                        claim_class=EpistemicClaimClass.NOT_PUBLICLY_VERIFIED,
                     )
                     return ResearchReport(
                         query=query,

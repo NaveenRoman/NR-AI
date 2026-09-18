@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from app.knowledge.query_understanding import UnderstoodQuery, QueryIntent, TimeScope
 from app.knowledge.taxonomy import (
     EpistemicBadge,
+    EpistemicClaimClass,
     EpistemicType,
     KnowledgeClaim,
     KnowledgeSource,
@@ -57,6 +58,8 @@ class AnswerGroundingGate:
     """
     Deterministic gate that verifies answers against the question intent,
     primary subject, target attribute, and temporal scope.
+    Enforces fine-grained claim-level epistemic separation and prevents
+    epistemic over-claiming (e.g. converting absence of evidence into proof of non-existence).
     """
 
     HONEST_UNKNOWN_TEMPLATE = (
@@ -103,9 +106,10 @@ class AnswerGroundingGate:
         sources: Optional[List[KnowledgeSource]] = None,
     ) -> List[KnowledgeClaim]:
         """
-        Decomposes candidate answer into individual claims and applies claim-level
-        epistemic classification and provenance tracking.
+        Decomposes candidate answer into individual claims and applies fine-grained claim-level
+        epistemic classification (EpistemicClaimClass) and provenance tracking.
         Prevents composite answers with speculative/unverified elements from being blanket-labeled 100% verified.
+        Ensures negative claims clearly distinguish 'not found' vs 'not publicly verified' vs 'verified negative'.
         """
         sources = sources or []
         primary_source_name = sources[0].name if sources else "NR-AI Evidence Base"
@@ -120,20 +124,21 @@ class AnswerGroundingGate:
         for s in raw_sentences:
             s_low = s.lower()
 
-            # Rule A: Local NR-AI Configuration / Registry Claims
-            if "registry" in s_low or "configured in nr-ai" in s_low or "local configuration" in s_low:
+            # Rule A: Local NR-AI Configuration / Registry / Architecture Facts
+            if any(w in s_low for w in ("registry", "configured in nr-ai", "local configuration", "nr-ai is an autonomous", "nr-ai (me", "nr-ai's internal registry", "localhost 127.0.0.1", "multi-agent framework")):
                 claims.append(KnowledgeClaim(
                     claim=s,
-                    source="NR-AI Local Model Registry",
+                    source="NR-AI Local System Architecture & Model Registry",
                     source_url=None,
                     epistemic_type=EpistemicType.VERIFIED_FACT,
                     confidence=1.0,
                     authority_level="primary",
                     verified_against_source=True,
+                    claim_class=EpistemicClaimClass.LOCAL_REGISTRY_FACT,
                 ))
 
-            # Rule B: API Probe / Runtime Observation Claims
-            elif any(w in s_low for w in ("http 404", "http 429", "model_not_found", "quota exhaustion", "live api", "api probe")):
+            # Rule B: API Probe / Runtime Observation Claims (Empirical observations of endpoints)
+            elif any(w in s_low for w in ("http 404", "http 429", "http 200", "model_not_found", "quota exhaustion", "live api probe", "api probe", "tested environment returned", "endpoint response")):
                 claims.append(KnowledgeClaim(
                     claim=s,
                     source="NR-AI Runtime API Probe Verification",
@@ -142,10 +147,28 @@ class AnswerGroundingGate:
                     confidence=0.98,
                     authority_level="primary",
                     verified_against_source=True,
+                    claim_class=EpistemicClaimClass.LIVE_API_OBSERVATION,
                 ))
 
-            # Rule C: Public Release & Announcement Status Claims
-            elif any(w in s_low for w in ("not an active, publicly released", "has not deployed", "cannot verify from authoritative public information", "unannounced", "unreleased")):
+            # Rule C: Verified Historical Anachronisms / Proved Non-existence
+            elif any(w in s_low for w in ("did not exist in", "was not invented until", "chronological anachronism", "historically impossible")):
+                claims.append(KnowledgeClaim(
+                    claim=s,
+                    source="Historical Chronological Evidence",
+                    source_url=None,
+                    epistemic_type=EpistemicType.VERIFIED_FACT,
+                    confidence=1.0,
+                    authority_level="primary",
+                    verified_against_source=True,
+                    claim_class=EpistemicClaimClass.VERIFIED_NEGATIVE,
+                ))
+
+            # Rule D: Public Release & Announcement Status (Absence of public verification)
+            elif any(w in s_low for w in (
+                "could not verify", "cannot verify from authoritative public",
+                "not publicly verified", "unannounced", "unreleased", "no official public documentation",
+                "absence of verified", "not an active, publicly released"
+            )):
                 claims.append(KnowledgeClaim(
                     claim=s,
                     source="Authoritative Public Verification Check",
@@ -154,10 +177,37 @@ class AnswerGroundingGate:
                     confidence=0.90,
                     authority_level="authoritative",
                     verified_against_source=True,
+                    claim_class=EpistemicClaimClass.NOT_PUBLICLY_VERIFIED,
                 ))
 
-            # Rule D: Speculative Parameters, Hypothetical Features & AGI Projections
-            elif any(w in s_low for w in ("strictly unverified speculation", "hypothetical", "speculative", "agi-level", "200,000 token", "claims regarding")):
+            # Rule E: Unknown / Insufficient Evidence Fallbacks
+            elif any(w in s_low for w in ("do not have enough verified", "could not find substantial", "cannot determine", "insufficient verified")):
+                claims.append(KnowledgeClaim(
+                    claim=s,
+                    source="Knowledge Boundary Verification",
+                    source_url=None,
+                    epistemic_type=EpistemicType.UNCERTAINTY,
+                    confidence=0.0,
+                    authority_level="primary",
+                    verified_against_source=True,
+                    claim_class=EpistemicClaimClass.UNKNOWN,
+                ))
+
+            # Rule F: Comparative Inferences / Deductions
+            elif any(w in s_low for w in ("fundamental architectural", "in comparison", "whereas nr-ai", "difference between", "comparing the two")):
+                claims.append(KnowledgeClaim(
+                    claim=s,
+                    source="NR-AI Architectural Comparison",
+                    source_url=None,
+                    epistemic_type=EpistemicType.INFERENCE,
+                    confidence=0.90,
+                    authority_level="authoritative",
+                    verified_against_source=True,
+                    claim_class=EpistemicClaimClass.INFERENCE,
+                ))
+
+            # Rule G: Speculative Parameters, Hypothetical Features & Rumors
+            elif any(w in s_low for w in ("strictly unverified speculation", "hypothetical", "speculative", "agi-level", "claims regarding", "rumored")):
                 claims.append(KnowledgeClaim(
                     claim=s,
                     source="Unverified Claim Analysis",
@@ -166,9 +216,23 @@ class AnswerGroundingGate:
                     confidence=0.60,
                     authority_level="unverified",
                     verified_against_source=False,
+                    claim_class=EpistemicClaimClass.THIRD_PARTY_REPORTING,
                 ))
 
-            # Rule E: General Historical or Scientific Consensus
+            # Rule H: Third-Party Journalism / News Feeds
+            elif any(src.source_type == "news" for src in sources) or any(w in s_low for w in ("reported by", "according to", "verified reporting")):
+                claims.append(KnowledgeClaim(
+                    claim=s,
+                    source=primary_source_name,
+                    source_url=primary_url,
+                    epistemic_type=EpistemicType.CURRENT_INFORMATION,
+                    confidence=0.92,
+                    authority_level="authoritative",
+                    verified_against_source=True,
+                    claim_class=EpistemicClaimClass.THIRD_PARTY_REPORTING,
+                ))
+
+            # Rule I: Official Public Documentation / Consensus Facts
             else:
                 c_type = EpistemicType.VERIFIED_FACT
                 c_conf = 1.0 if any(src.reliability_weight >= 1.0 for src in sources) else 0.95
@@ -180,6 +244,7 @@ class AnswerGroundingGate:
                     confidence=c_conf,
                     authority_level="primary" if c_conf >= 1.0 else "authoritative",
                     verified_against_source=True,
+                    claim_class=EpistemicClaimClass.OFFICIAL_PUBLIC_SOURCE,
                 ))
 
         return claims
@@ -294,23 +359,22 @@ class AnswerGroundingGate:
         if has_uncertainty or contradictions:
             epistemic_type = EpistemicType.UNCERTAINTY
             confidence = 0.50
-        elif has_speculation or getattr(understood_query, "research_mode", None) == ResearchMode.MODEL_VERIFICATION:
-            # When claims include speculation or hypothetical model notes (e.g. GPT-6 Astra)
-            epistemic_type = (
-                EpistemicType.SPECULATION_PREDICTION
-                if (understood_query.intent == QueryIntent.SPECULATION or getattr(understood_query, "research_mode", None) == ResearchMode.MODEL_VERIFICATION)
-                else EpistemicType.CURRENT_INFORMATION
-            )
-            confidence = 0.85
+        elif (
+            understood_query.intent == QueryIntent.COMPARISON
+            or getattr(understood_query, "research_mode", None) == ResearchMode.MODEL_COMPARISON
+        ):
+            epistemic_type = EpistemicType.INFERENCE
+            confidence = 0.90
+        elif (
+            has_speculation
+            or understood_query.intent == QueryIntent.SPECULATION
+            or getattr(understood_query, "research_mode", None) == ResearchMode.MODEL_VERIFICATION
+        ):
+            epistemic_type = EpistemicType.SPECULATION_PREDICTION
+            confidence = 0.85 if getattr(understood_query, "research_mode", None) == ResearchMode.MODEL_VERIFICATION else 0.70
         elif has_current_info or understood_query.temporal_scope == TimeScope.REALTIME or understood_query.temporal_scope == TimeScope.CURRENT:
             epistemic_type = EpistemicType.CURRENT_INFORMATION
             confidence = 0.92
-        elif understood_query.intent == QueryIntent.SPECULATION:
-            epistemic_type = EpistemicType.SPECULATION_PREDICTION
-            confidence = 0.70
-        elif understood_query.intent == QueryIntent.COMPARISON:
-            epistemic_type = EpistemicType.INFERENCE
-            confidence = 0.90
         elif any(s.source_type == "claim" for s in sources):
             epistemic_type = EpistemicType.SOURCE_ATTRIBUTED_CLAIM
             confidence = 0.85

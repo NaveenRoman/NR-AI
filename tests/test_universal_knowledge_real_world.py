@@ -42,6 +42,7 @@ from app.knowledge.query_understanding import (
 )
 from app.knowledge.research import SSRFGuard
 from app.knowledge.taxonomy import (
+    EpistemicClaimClass,
     EpistemicType,
     KnowledgeClaim,
     KnowledgeSource,
@@ -323,6 +324,168 @@ class TestUniversalKnowledgeRealWorld(unittest.TestCase):
         for url in unsafe_urls:
             is_safe, reason = SSRFGuard.is_safe_url(url)
             self.assertFalse(is_safe, f"Expected {url} to be blocked, but was allowed: {reason}")
+
+    # =========================================================================
+    # 23. UNKNOWN / UNANNOUNCED MODEL VERIFICATION
+    # =========================================================================
+    def test_23_unknown_unannounced_model_verification(self):
+        """Validates query regarding arbitrary unknown model (e.g. DeepSeek R3) avoids false verification."""
+        rep = self.engine.query("tell me about deepseek r3", allow_web=True)
+        self.assertIsNotNone(rep)
+        self.assertNotEqual(rep.epistemic_type, EpistemicType.VERIFIED_FACT)
+        self.assertIn(rep.epistemic_type, (EpistemicType.SPECULATION_PREDICTION, EpistemicType.UNCERTAINTY, EpistemicType.CURRENT_INFORMATION))
+        ans_low = rep.primary_answer.lower()
+        self.assertTrue("could not verify" in ans_low or "unannounced" in ans_low or "speculation" in ans_low)
+        claim_classes = {c.claim_class for c in rep.claims}
+        self.assertTrue(
+            EpistemicClaimClass.NOT_PUBLICLY_VERIFIED in claim_classes
+            or EpistemicClaimClass.THIRD_PARTY_REPORTING in claim_classes
+            or EpistemicClaimClass.UNKNOWN in claim_classes
+        )
+
+    # =========================================================================
+    # 24. UNKNOWN COMPANY TARGETED NEWS
+    # =========================================================================
+    def test_24_unknown_company_targeted_news(self):
+        """Validates targeted news search for unknown company returns honest fallback without hallucination."""
+        rep = self.engine.query("current news of Aetherium Robotics Corp", allow_web=True)
+        self.assertIsNotNone(rep)
+        ans_low = rep.primary_answer.lower()
+        self.assertNotIn("swedish", ans_low)
+        self.assertNotIn("election", ans_low)
+        self.assertTrue("aetherium robotics" in ans_low or "could not find substantial" in ans_low or "reporting" in ans_low)
+        self.assertEqual(rep.retrieval_tier, "targeted_entity_news")
+
+    # =========================================================================
+    # 25. UNKNOWN PERSON TARGETED NEWS
+    # =========================================================================
+    def test_25_unknown_person_targeted_news(self):
+        """Validates targeted news search for unknown person avoids substituting world news."""
+        rep = self.engine.query("current news of Jonathan Zephyr", allow_web=True)
+        self.assertIsNotNone(rep)
+        ans_low = rep.primary_answer.lower()
+        self.assertNotIn("gaza", ans_low)
+        self.assertNotIn("ukraine", ans_low)
+        self.assertTrue("jonathan zephyr" in ans_low or "could not find" in ans_low or "reporting" in ans_low)
+
+    # =========================================================================
+    # 26. NONEXISTENT / SCI-FI TECHNOLOGY SPECULATION
+    # =========================================================================
+    def test_26_nonexistent_technology_query(self):
+        """Validates inquiry about hypothetical faster-than-light hyperdrive engine."""
+        rep = self.engine.query("what is the faster-than-light hyperdrive engine")
+        self.assertIsNotNone(rep)
+        self.assertNotEqual(rep.epistemic_type, EpistemicType.VERIFIED_FACT)
+
+    # =========================================================================
+    # 27. API PROBE OBSERVATION VS PUBLIC VERIFICATION DISTINCTION
+    # =========================================================================
+    def test_27_api_probe_observation_epistemic_class(self):
+        """Validates that HTTP 404/429 probe is classified as LIVE_API_OBSERVATION, not NOT_PUBLICLY_VERIFIED."""
+        probe_claim = "In testing with live API endpoints in this environment, requests returned HTTP 404 model_not_found or HTTP 429 quota exhaustion."
+        uq = self.engine.research_engine.query_understanding.understand("do you know about gpt 6 astra")
+        claims = AnswerGroundingGate.extract_and_verify_claims(uq, probe_claim)
+        self.assertTrue(len(claims) > 0)
+        self.assertEqual(claims[0].claim_class, EpistemicClaimClass.LIVE_API_OBSERVATION)
+        self.assertEqual(claims[0].source, "NR-AI Runtime API Probe Verification")
+
+    # =========================================================================
+    # 28. PUBLIC SOURCE VERIFICATION STATUS CLAIM CLASS
+    # =========================================================================
+    def test_28_not_publicly_verified_claim_class(self):
+        """Validates that statement of absence of public verification is classified as NOT_PUBLICLY_VERIFIED."""
+        unverif_claim = "Authoritative public source verification could not verify GPT-6 Astra as a publicly announced, documented, or deployed model."
+        uq = self.engine.research_engine.query_understanding.understand("do you know about gpt 6 astra")
+        claims = AnswerGroundingGate.extract_and_verify_claims(uq, unverif_claim)
+        self.assertTrue(len(claims) > 0)
+        self.assertEqual(claims[0].claim_class, EpistemicClaimClass.NOT_PUBLICLY_VERIFIED)
+
+    # =========================================================================
+    # 29. LOCAL REGISTRY FACT CLAIM CLASS
+    # =========================================================================
+    def test_29_local_registry_fact_claim_class(self):
+        """Validates that internal registry placeholder statement is classified as LOCAL_REGISTRY_FACT."""
+        reg_claim = "GPT-6 Astra is configured as an unverified model identifier in NR-AI's internal registry."
+        uq = self.engine.research_engine.query_understanding.understand("what is the different between gpt 6 astra and you")
+        claims = AnswerGroundingGate.extract_and_verify_claims(uq, reg_claim)
+        self.assertTrue(len(claims) > 0)
+        self.assertEqual(claims[0].claim_class, EpistemicClaimClass.LOCAL_REGISTRY_FACT)
+
+    # =========================================================================
+    # 30. NOT FOUND VS VERIFIED NEGATIVE (ANACHRONISM)
+    # =========================================================================
+    def test_30_not_found_vs_verified_negative(self):
+        """Validates epistemic distinction: absence of news vs proven historical falsification."""
+        # 1. Anachronism -> VERIFIED_NEGATIVE
+        anachronism_text = "The Internet did not exist in 1861 during the American Civil War."
+        uq_hist = self.engine.research_engine.query_understanding.understand("how did the internet change the civil war")
+        claims_hist = AnswerGroundingGate.extract_and_verify_claims(uq_hist, anachronism_text)
+        self.assertEqual(claims_hist[0].claim_class, EpistemicClaimClass.VERIFIED_NEGATIVE)
+
+        # 2. Honest Unknown -> UNKNOWN
+        unknown_text = "I do not have enough verified information to answer that question confidently."
+        uq_unk = self.engine.research_engine.query_understanding.understand("what is the secret recipe of XYZ")
+        claims_unk = AnswerGroundingGate.extract_and_verify_claims(uq_unk, unknown_text)
+        self.assertEqual(claims_unk[0].claim_class, EpistemicClaimClass.UNKNOWN)
+
+    # =========================================================================
+    # 31. ACTIVE MODEL TELEMETRY IN MODEL COMPARISON
+    # =========================================================================
+    def test_31_active_model_telemetry_in_comparison(self):
+        """Validates that model comparison inspects runtime telemetry and reports active provider."""
+        # Case A: Live Gemini API active
+        telemetry_live = {
+            "configured_model": "gemini-2.5-pro",
+            "actual_model_used": "gemini-2.5-pro",
+            "provider": "Google Gemini",
+            "cloud_request_success": "YES",
+            "live_api_success": "YES",
+            "http_status": "200",
+        }
+        rep_live = self.engine.query(
+            "what is the different between gpt 6 astra and you",
+            session_context={"runtime_telemetry": telemetry_live},
+        )
+        self.assertIn("gemini-2.5-pro", rep_live.primary_answer.lower())
+
+        # Case B: Quota exhausted / Fallback
+        telemetry_fallback = {
+            "configured_model": "gpt-4o",
+            "actual_model_used": "NONE (API Quota Exhausted - HTTP 429)",
+            "cloud_request_success": "NO",
+            "live_api_success": "NO",
+            "fallback_used": "YES",
+        }
+        rep_fb = self.engine.query(
+            "what is the different between gpt 6 astra and you",
+            session_context={"runtime_telemetry": telemetry_fallback},
+        )
+        self.assertIn("local fallback execution", rep_fb.primary_answer.lower())
+
+    # =========================================================================
+    # 32. GENERIC MULTIWORD ENTITY NEWS EXTRACTION
+    # =========================================================================
+    def test_32_generic_multiword_entity_news_extraction(self):
+        """Validates generic extraction of multi-word entities without hardcoded names."""
+        uq = self.engine.research_engine.query_understanding.understand("current news of Jensen Huang")
+        self.assertEqual(uq.primary_subject, "Jensen Huang")
+        self.assertEqual(uq.research_mode, ResearchMode.PERSON_ENTITY_NEWS)
+
+    # =========================================================================
+    # 33. GENERIC MODEL COMPARISON FOR ARBITRARY MODEL
+    # =========================================================================
+    def test_33_generic_model_comparison_arbitrary_model(self):
+        """Validates generic comparison between NR-AI and arbitrary candidate model (e.g. Claude 4.5 Opus)."""
+        raw_q = "what is the difference between claude 4.5 opus and you"
+        uq = self.engine.research_engine.query_understanding.understand(raw_q)
+        self.assertEqual(uq.intent, QueryIntent.COMPARISON)
+        self.assertEqual(uq.research_mode, ResearchMode.MODEL_COMPARISON)
+
+        rep = self.engine.query(raw_q, allow_web=True)
+        self.assertIn(rep.epistemic_type, (EpistemicType.INFERENCE, EpistemicType.CURRENT_INFORMATION))
+        self.assertIn("NR-AI", rep.primary_answer)
+        self.assertIn("Claude 4.5 Opus", rep.primary_answer)
+        self.assertEqual(rep.retrieval_tier, "model_comparison")
 
     # =========================================================================
     # COMPANION ROUTING INTEGRATION TESTS

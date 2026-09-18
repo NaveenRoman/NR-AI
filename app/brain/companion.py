@@ -3025,6 +3025,7 @@ class NRCompanion:
         session_ctx = {
             "last_subject": self.last_knowledge_subject,
             "recent_entities": self.recent_knowledge_entities,
+            "runtime_telemetry": self.last_model_execution,
         }
         card = self.knowledge_engine.query_companion_card(command, session_context=session_ctx)
         e_type = card.get("epistemic_type", "VERIFIED_FACT")

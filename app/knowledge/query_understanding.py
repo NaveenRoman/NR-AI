@@ -466,19 +466,44 @@ class QueryUnderstandingEngine:
             subdomain = "semiconductors_ai"
             entities.append(EntityCandidate(name="NVIDIA", entity_type="organization", disambiguation_hint="semiconductor_gpu", confidence=0.98))
 
-        # 11b. Sushant Singh Rajput (Entity news)
-        elif "sushant" in q_low or "rajput" in q_low:
-            active_subject = "Sushant Singh Rajput"
+        # 11b. Generic Targeted Entity News Extraction (e.g. "current news of <Entity>")
+        elif re.search(r"(?:current\s+news\s+(?:of|about)|latest\s+news\s+(?:of|about)|news\s+(?:of|about)|status\s+(?:of|about)|update\s+(?:on|about))\s+([a-zA-Z0-9\s]+)", q_low):
+            m_ent = re.search(r"(?:current\s+news\s+(?:of|about)|latest\s+news\s+(?:of|about)|news\s+(?:of|about)|status\s+(?:of|about)|update\s+(?:on|about))\s+([a-zA-Z0-9\s]+)", q_low)
+            ent_name = m_ent.group(1).strip()
+            ent_name = re.sub(r"[?!.]+$", "", ent_name).strip()
+            active_subject = ent_name.title()
             domain = "current_events"
-            subdomain = "indian_cinema"
-            entities.append(EntityCandidate(name="Sushant Singh Rajput", entity_type="person", disambiguation_hint="actor", confidence=1.0))
+            subdomain = "entity_news"
+            entities.append(EntityCandidate(name=active_subject, entity_type="person", disambiguation_hint="targeted_entity", confidence=0.98))
 
-        # 11c. GPT-6 Astra (Frontier model verification)
-        elif "astra" in q_low or "gpt 6 astra" in q_low or "gpt-6 astra" in q_low:
-            active_subject = "GPT-6 Astra"
+        # 11b. Specific Model Comparison Extraction ("between <Model> and you/me")
+        elif re.search(r"\bbetween\s+([a-zA-Z0-9\.\-_]+(?:\s+[a-zA-Z0-9\.\-_]+)*)\s+and\s+(?:you|me|nr-ai)\b", q_low):
+            m_comp = re.search(r"\bbetween\s+([a-zA-Z0-9\.\-_]+(?:\s+[a-zA-Z0-9\.\-_]+)*)\s+and\s+(?:you|me|nr-ai)\b", q_low)
+            mod_candidate = m_comp.group(1).strip()
+            if "astra" in mod_candidate and "gpt" in q_low:
+                mod_name = "GPT-6 Astra"
+            else:
+                mod_name = mod_candidate.title()
+            active_subject = mod_name
             domain = "ai_ml"
             subdomain = "frontier_models"
-            entities.append(EntityCandidate(name="GPT-6 Astra", entity_type="model", disambiguation_hint="frontier_model_identifier", confidence=1.0))
+            entities.append(EntityCandidate(name=mod_name, entity_type="model", disambiguation_hint="frontier_model_identifier", confidence=0.99))
+
+        # 11c. Generic AI / Frontier Model Identification (e.g. GPT-6 Astra, Claude 5, etc.)
+        elif re.search(r"\b(gpt[-\s]?[a-z0-9\.\s]+|claude[-\s]?[a-z0-9\.\s]+|gemini[-\s]?[a-z0-9\.\s]+|llama[-\s]?[a-z0-9\.\s]+|deepseek[-\s]?[a-z0-9\.\s]+|mistral[-\s]?[a-z0-9\.\s]+|qwen[-\s]?[a-z0-9\.\s]+|astra)\b", q_low):
+            m_mod = re.search(r"\b(gpt[-\s]?[a-z0-9\.\s]+|claude[-\s]?[a-z0-9\.\s]+|gemini[-\s]?[a-z0-9\.\s]+|llama[-\s]?[a-z0-9\.\s]+|deepseek[-\s]?[a-z0-9\.\s]+|mistral[-\s]?[a-z0-9\.\s]+|qwen[-\s]?[a-z0-9\.\s]+|astra)\b", q_low)
+            raw_mod = m_mod.group(1).strip()
+            raw_mod = re.sub(r"\b(and you|to you|with you|vs you|difference|different|what is|tell me about|do you know about|know about)\b", "", raw_mod).strip()
+            if not raw_mod or len(raw_mod) < 3:
+                raw_mod = "Frontier AI Model"
+            if "astra" in q_low and "gpt" in q_low:
+                mod_name = "GPT-6 Astra"
+            else:
+                mod_name = raw_mod.title()
+            active_subject = mod_name
+            domain = "ai_ml"
+            subdomain = "frontier_models"
+            entities.append(EntityCandidate(name=mod_name, entity_type="model", disambiguation_hint="frontier_model_identifier", confidence=0.98))
 
         # 11d. Android OS
         elif "android" in q_low and "studio" not in q_low and any(w in q_low for w in ("version", "os", "mobile", "latest")):
@@ -543,9 +568,11 @@ class QueryUnderstandingEngine:
         # Intent Classification
         # ---------------------------------------------------------------------
         intent = QueryIntent.DEFINITION
-        if any(w in q_low for w in ("will", "speculate", "prediction", "forecast", "future of", "can humans", "could we achieve")):
+        if any(w in q_low for w in ("will", "speculate", "prediction", "forecast", "future of", "can humans", "could we achieve", "faster-than-light", "faster than light", "hyperdrive", "warp drive", "perpetual motion", "time machine")):
             intent = QueryIntent.SPECULATION
             time_scope = TimeScope.FUTURE_SPECULATIVE
+        elif any(w in q_low for w in ("compare", "difference between", "different between", "versus", "vs", "between")) or any(w in q_low for w in ("and you", "with you", "to you", "vs you")):
+            intent = QueryIntent.COMPARISON
         elif q_low.startswith("what is ") or q_low.startswith("what are ") or q_low.startswith("define "):
             if not target_attribute:
                 target_attribute = "definition"
@@ -559,8 +586,6 @@ class QueryUnderstandingEngine:
             intent = QueryIntent.HISTORICAL_EVENT
         elif any(w in q_low for w in ("latest", "current", "today", "now", "recent", "newest", "status")):
             intent = QueryIntent.CURRENT_STATUS
-        elif any(w in q_low for w in ("compare", "difference between", "versus", "vs")):
-            intent = QueryIntent.COMPARISON
         elif any(w in q_low for w in ("how does", "how do", "mechanism", "work", "operate")):
             intent = QueryIntent.MECHANISM
         elif any(w in q_low for w in ("explain", "overview", "describe")):
@@ -631,18 +656,38 @@ class QueryUnderstandingEngine:
 
         # Determine Explicit Research Mode
         research_mode = ResearchMode.GENERAL_RESEARCH
-        if any(p in q_low for p in (
+        is_model_entity = (
+            (entities and any(e.entity_type == "model" for e in entities))
+            or bool(re.search(r"\b(gpt|claude|gemini|llama|deepseek|mistral|qwen|phi|astra|frontier model)\b", q_low))
+        )
+        is_diff_or_you = (
+            any(w in q_low for w in ("difference", "different", "compare", "versus", "vs", "between"))
+            or any(w in q_low for w in ("and you", "to you", "with you", "vs you", "from you"))
+        )
+
+        if is_model_entity and is_diff_or_you:
+            research_mode = ResearchMode.MODEL_COMPARISON
+            intent = QueryIntent.COMPARISON
+        elif any(p in q_low for p in (
             "released today", "release today", "technology released",
             "technologie releaase", "what technology was released", "technology release today"
         )):
             research_mode = ResearchMode.CURRENT_TECHNOLOGY
-        elif active_subject == "Sushant Singh Rajput" or (
-            entities and any(e.entity_type == "person" for e in entities)
+        elif (
+            (entities and any(e.entity_type in ("person", "entity", "organization") for e in entities))
             and any(w in q_low for w in ("news", "happening", "current", "latest", "update", "status"))
-        ):
+        ) or bool(re.search(r"(?:current\s+news\s+(?:of|about)|latest\s+news\s+(?:of|about)|news\s+(?:of|about))", q_low)):
             research_mode = ResearchMode.PERSON_ENTITY_NEWS
-        elif any(w in q_low for w in ("astra", "gpt-6", "gpt 6", "gpt-7", "gpt 7", "claude 5", "gemini 4")):
+        elif is_model_entity and any(w in q_low for w in ("known about", "know about", "what is", "tell me about", "verify", "exist", "status")):
             research_mode = ResearchMode.MODEL_VERIFICATION
+        elif any(w in q_low for w in ("latest python", "latest android", "latest version", "newest version")):
+            research_mode = ResearchMode.CURRENT_SOFTWARE_RELEASE
+        elif any(w in q_low for w in ("in 19", "in 18", "1969", "from 1950", "history of", "civil war", "waterloo", "napoleon")):
+            research_mode = ResearchMode.HISTORICAL_RESEARCH
+        elif any(w in q_low for w in ("paper", "arxiv", "attention", "transformer in ai", "deep learning")):
+            research_mode = ResearchMode.ACADEMIC_RESEARCH
+        elif any(w in q_low for w in ("news", "today", "breaking", "happening")):
+            research_mode = ResearchMode.CURRENT_NEWS if "ai" not in q_low else ResearchMode.CURRENT_TECHNOLOGY
         elif any(w in q_low for w in ("latest python", "latest android", "latest version", "newest version")):
             research_mode = ResearchMode.CURRENT_SOFTWARE_RELEASE
         elif any(w in q_low for w in ("in 19", "in 18", "1969", "from 1950", "history of", "civil war", "waterloo", "napoleon")):

@@ -37,6 +37,23 @@ class EpistemicType(str, Enum):
     SPECULATION_PREDICTION = "SPECULATION_PREDICTION"
 
 
+class EpistemicClaimClass(str, Enum):
+    """
+    Fine-grained claim-level epistemic classification.
+    Distinguishes local registry facts, live runtime API observations, official public sources,
+    third-party reporting, inference, negative verification (absence of public verification),
+    unknowns, and verified negatives (falsification / anachronisms).
+    """
+    LOCAL_REGISTRY_FACT = "LOCAL_REGISTRY_FACT"
+    LIVE_API_OBSERVATION = "LIVE_API_OBSERVATION"
+    OFFICIAL_PUBLIC_SOURCE = "OFFICIAL_PUBLIC_SOURCE"
+    THIRD_PARTY_REPORTING = "THIRD_PARTY_REPORTING"
+    INFERENCE = "INFERENCE"
+    NOT_PUBLICLY_VERIFIED = "NOT_PUBLICLY_VERIFIED"
+    UNKNOWN = "UNKNOWN"
+    VERIFIED_NEGATIVE = "VERIFIED_NEGATIVE"
+
+
 class ResearchMode(str, Enum):
     """
     Explicit Research Modes for targeted, source-aware investigation.
@@ -53,6 +70,7 @@ class ResearchMode(str, Enum):
     HISTORICAL_RESEARCH = "HISTORICAL_RESEARCH"
     TECHNICAL_DOCUMENTATION = "TECHNICAL_DOCUMENTATION"
     MODEL_VERIFICATION = "MODEL_VERIFICATION"
+    MODEL_COMPARISON = "MODEL_COMPARISON"
 
 
 @dataclass
@@ -71,6 +89,7 @@ class KnowledgeClaim:
     confidence: float = 1.0
     authority_level: str = "primary"  # primary, authoritative, secondary, unverified, speculative
     verified_against_source: bool = True
+    claim_class: EpistemicClaimClass = EpistemicClaimClass.OFFICIAL_PUBLIC_SOURCE
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -84,6 +103,7 @@ class KnowledgeClaim:
             "confidence": round(self.confidence, 3),
             "authority_level": self.authority_level,
             "verified_against_source": self.verified_against_source,
+            "claim_class": self.claim_class.value if isinstance(self.claim_class, EpistemicClaimClass) else str(self.claim_class),
         }
 
     @classmethod
@@ -93,6 +113,26 @@ class KnowledgeClaim:
             e_type = EpistemicType(raw_type)
         except ValueError:
             e_type = EpistemicType.VERIFIED_FACT
+
+        raw_class = data.get("claim_class")
+        if raw_class:
+            try:
+                c_class = EpistemicClaimClass(raw_class)
+            except ValueError:
+                c_class = EpistemicClaimClass.OFFICIAL_PUBLIC_SOURCE
+        else:
+            # Infer default claim class from epistemic_type if missing
+            if e_type == EpistemicType.VERIFIED_FACT:
+                c_class = EpistemicClaimClass.OFFICIAL_PUBLIC_SOURCE
+            elif e_type == EpistemicType.CURRENT_INFORMATION:
+                c_class = EpistemicClaimClass.THIRD_PARTY_REPORTING
+            elif e_type == EpistemicType.INFERENCE:
+                c_class = EpistemicClaimClass.INFERENCE
+            elif e_type == EpistemicType.UNCERTAINTY:
+                c_class = EpistemicClaimClass.UNKNOWN
+            else:
+                c_class = EpistemicClaimClass.NOT_PUBLICLY_VERIFIED
+
         return cls(
             claim=str(data.get("claim", "")),
             source=str(data.get("source", "NR-AI Evidence Base")),
@@ -104,6 +144,7 @@ class KnowledgeClaim:
             confidence=float(data.get("confidence", 1.0)),
             authority_level=str(data.get("authority_level", "primary")),
             verified_against_source=bool(data.get("verified_against_source", True)),
+            claim_class=c_class,
         )
 
 
