@@ -31,6 +31,13 @@ class DeterministicSecurityGate:
         """Validates raw command strings directly against zero-trust invariants."""
         return self.evaluate_model_proposal({"command": command})
 
+    def validate_action(self, action: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Validates action and parameters directly against zero-trust invariants."""
+        prop = {"action": action}
+        if details:
+            prop.update(details)
+        return self.evaluate_model_proposal(prop)
+
     @classmethod
     def evaluate_model_proposal(cls, proposal: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -38,11 +45,15 @@ class DeterministicSecurityGate:
         Rejects proposals containing shell code, eval, exec, credential extraction,
         covert activation, or message interception.
         """
-        action = str(proposal.get("action", "")).lower()
-        command = str(proposal.get("command", "")).lower()
-        script = str(proposal.get("script", "")).lower()
-
-        combined = f"{action} {command} {script}"
+        action = str(proposal.get("action", ""))
+        command = str(proposal.get("command", "") or proposal.get("cmd", ""))
+        parts = []
+        for k, v in proposal.items():
+            if isinstance(v, (str, int, float, bool)):
+                parts.append(str(v).lower())
+            elif isinstance(v, (dict, list)):
+                parts.append(json.dumps(v).lower())
+        combined = " ".join(parts)
 
         # 1. Enforce SecurityPolicy
         if not SecurityPolicy.is_action_permitted(combined):
@@ -54,15 +65,34 @@ class DeterministicSecurityGate:
         prohibited_tokens = [
             "powershell", "cmd.exe", "bash", "sh -c", "exec(", "eval(",
             "subprocess", "shell=true", "os.system", "rmdir", "del /",
+            "execute_shell", "shell", "whoami",
             "select * from messages", "whatsapp.db", "snapchat.db",
             "messages from", "sms database", "direct chats", "messages from phone",
             "chat history database", "secret camera", "covertly", "secretly",
             "hidden eavesdropping", "eavesdropping", "secret", "covert",
+            "screen_capture", "camera_capture", "microphone_recording", "keylogging",
+            "private_message_content", "credential_access",
         ]
         for token in prohibited_tokens:
             if token in combined:
                 raise PermissionError(
                     f"DeterministicSecurityGate REJECTED proposal: prohibited execution token '{token}' detected."
+                )
+
+        # 3. Model Isolation & Authorization Invariants (Section 20)
+        # AI models are strictly advisory; they CANNOT approve pairing, authorize devices,
+        # or grant capability scopes. Authorization requires explicit deterministic owner actions.
+        unauthorized_model_decisions = [
+            "approve pairing", "authorize device", "grant camera", "grant microphone",
+            "grant screen capture", "grant private message", "bypass pairing", "auto approve",
+            "elevate capability", "grant root", "skip owner approval", "authorize phone number",
+            "authenticate by phone only", "force enroll", "override authorization",
+            "skyshield.pair_approve", "pair_approve", "authorize",
+        ]
+        for token in unauthorized_model_decisions:
+            if token in combined:
+                raise PermissionError(
+                    f"DeterministicSecurityGate REJECTED proposal: AI models cannot make authorization decisions or approve pairing ('{token}')."
                 )
 
         return {
@@ -181,6 +211,55 @@ class SecurityAgent:
 
         elif action_id in ("skyshield.status", "security.status"):
             return self.coordinator.get_dashboard_state()
+
+        elif action_id == "skyshield.pair_request":
+            dev_name = params.get("device_name", "Unknown Android Device")
+            platform = params.get("platform", "android")
+            phone = params.get("phone_number")
+            caps = params.get("requested_capabilities")
+            ttl = int(params.get("ttl_seconds", 600))
+            ok, msg, req = self.coordinator.create_pairing_request(
+                device_name=dev_name, platform=platform, phone_number=phone,
+                requested_capabilities=caps, ttl_seconds=ttl,
+            )
+            return {"success": ok, "message": msg, "pairing_request": req.to_dict() if req else None}
+
+        elif action_id == "skyshield.pair_approve":
+            p_id = params.get("pairing_id", "")
+            code = params.get("pairing_code", "")
+            fp = params.get("device_fingerprint", "fp_default")
+            pub_key = params.get("public_key_hex")
+            ok, msg, dev = self.coordinator.approve_pairing(
+                pairing_id=p_id, pairing_code=code, device_fingerprint=fp, public_key_hex=pub_key,
+            )
+            return {"success": ok, "message": msg, "device": dev.to_dict() if dev else None}
+
+        elif action_id == "skyshield.pair_reject":
+            p_id = params.get("pairing_id", "")
+            reason = params.get("reason", "Rejected by operator")
+            ok, msg = self.coordinator.reject_pairing(pairing_id=p_id, reason=reason)
+            return {"success": ok, "message": msg}
+
+        elif action_id == "skyshield.list_devices":
+            return {"success": True, "devices": self.coordinator.list_devices()}
+
+        elif action_id == "skyshield.suspend_device":
+            dev_id = params.get("device_id", "")
+            reason = params.get("reason", "Suspended by operator")
+            ok, msg = self.coordinator.suspend_device(dev_id, reason=reason)
+            return {"success": ok, "message": msg}
+
+        elif action_id == "skyshield.revoke_device":
+            dev_id = params.get("device_id", "")
+            reason = params.get("reason", "Revoked by operator")
+            ok, msg = self.coordinator.revoke_device(dev_id, reason=reason)
+            return {"success": ok, "message": msg}
+
+        elif action_id == "skyshield.reauthorize_device":
+            dev_id = params.get("device_id", "")
+            reason = params.get("reason", "Reauthorized by operator")
+            ok, msg = self.coordinator.reauthorize_device(dev_id, reason=reason)
+            return {"success": ok, "message": msg}
 
         else:
             raise ValueError(f"Unknown SkyShield action: {action_id}")

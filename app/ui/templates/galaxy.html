@@ -388,6 +388,9 @@
             <button class="skyshield-btn primary" id="btnSkyShieldScan" onclick="triggerSkyShieldScan()">
               <span>▶</span> <span>Run Full Security Scan</span>
             </button>
+            <button class="skyshield-btn primary" id="btnSkyShieldPairDevice" onclick="openSkyShieldPairingModal()" style="background: linear-gradient(135deg, #0284c7, #4f46e5);">
+              <span>🔗</span> <span>+ Pair Device</span>
+            </button>
             <button class="skyshield-btn danger" id="btnSkyShieldEmergencyStop" onclick="triggerSkyShieldEmergencyStop()">
               <span>🛑</span> <span>EMERGENCY STOP</span>
             </button>
@@ -526,6 +529,17 @@
                 <div class="skyshield-empty-state">Audit trail records will appear here.</div>
               </div>
             </div>
+
+            <!-- 11. Enrolled & Authorized Devices Card -->
+            <div class="skyshield-card" id="cardEnrolledDevices">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">📱 Authorized Enrolled Devices</span>
+                <span class="skyshield-card-tag count" id="cardDevicesCount">0 DEVICES</span>
+              </div>
+              <div class="skyshield-card-body" id="cardDevicesBody">
+                <div class="skyshield-empty-state">No authorized devices paired yet. Click '+ Pair Device' to initiate.</div>
+              </div>
+            </div>
           </div>
 
           <!-- SkyShield Direct Command Input -->
@@ -547,6 +561,81 @@
               <button id="skyshieldSendBtn" class="ptt-send-btn" onclick="sendSkyShieldInput()" title="Execute Directive">
                 ➔
               </button>
+            </div>
+          </div>
+
+          <!-- SkyShield Pairing Modal -->
+          <div id="skyshieldPairingModal" class="skyshield-modal-overlay" style="display: none;">
+            <div class="skyshield-modal-content">
+              <div class="skyshield-modal-header">
+                <span class="skyshield-modal-title">🔐 Authorize Device Pairing & Secure Enrollment</span>
+                <button class="skyshield-modal-close" onclick="closeSkyShieldPairingModal()">&times;</button>
+              </div>
+              <div class="skyshield-modal-body">
+                <!-- Step 1: Request Pairing -->
+                <div id="skyshieldPairStep1">
+                  <p class="skyshield-modal-hint">
+                    A phone number alone NEVER grants access. Pairing requires explicit owner confirmation and cryptographic key exchange.
+                  </p>
+                  <div class="skyshield-input-group">
+                    <label for="pairDeviceName">Target Device Name</label>
+                    <input type="text" id="pairDeviceName" class="skyshield-input" placeholder="e.g. Vivo V2334 Android" value="Vivo V2334" />
+                  </div>
+                  <div class="skyshield-input-group">
+                    <label for="pairPlatform">Platform</label>
+                    <select id="pairPlatform" class="skyshield-select">
+                      <option value="android" selected>Android</option>
+                      <option value="ios">iOS</option>
+                      <option value="windows">Windows</option>
+                      <option value="linux">Linux</option>
+                    </select>
+                  </div>
+                  <div class="skyshield-input-group">
+                    <label for="pairPhoneNumber">Phone Number <span class="opt-label">(Optional invitation ID only)</span></label>
+                    <input type="text" id="pairPhoneNumber" class="skyshield-input" placeholder="+91 98765 43210" />
+                  </div>
+                  <div class="skyshield-input-group">
+                    <label>Requested Authorization Scopes <span class="opt-label">(Surveillance scopes strictly blocked)</span></label>
+                    <div class="skyshield-checkbox-grid">
+                      <label class="skyshield-check-label"><input type="checkbox" id="capTelemetry" checked disabled /> <span>telemetry:read</span></label>
+                      <label class="skyshield-check-label"><input type="checkbox" id="capConfig" checked /> <span>config:audit</span></label>
+                      <label class="skyshield-check-label"><input type="checkbox" id="capHardware" checked /> <span>hardware:status</span></label>
+                      <label class="skyshield-check-label"><input type="checkbox" id="capNetwork" checked /> <span>network:diagnostics</span></label>
+                      <label class="skyshield-check-label"><input type="checkbox" id="capPerms" checked /> <span>permission:monitor</span></label>
+                    </div>
+                  </div>
+                  <div class="skyshield-modal-actions">
+                    <button class="skyshield-btn primary" id="btnCreatePairRequest" onclick="submitSkyShieldPairRequest()">
+                      <span>🚀</span> <span>Initiate Pairing Request</span>
+                    </button>
+                    <button class="skyshield-btn secondary" onclick="closeSkyShieldPairingModal()">Cancel</button>
+                  </div>
+                </div>
+
+                <!-- Step 2: Verification & Approval -->
+                <div id="skyshieldPairStep2" style="display: none;">
+                  <div class="skyshield-pair-code-box">
+                    <div class="code-label">SINGLE-USE PAIRING CODE</div>
+                    <div class="code-digits" id="skyshieldDisplayCode">------</div>
+                    <div class="code-timer" id="skyshieldCodeTimer">Expires in 600s</div>
+                  </div>
+                  <div class="skyshield-prop-row"><span>Pairing ID:</span> <strong id="skyshieldDisplayPairId" style="font-family: monospace; font-size: 0.72rem;">-</strong></div>
+                  <div class="skyshield-prop-row"><span>Target Device:</span> <strong id="skyshieldDisplayTargetDevice">-</strong></div>
+                  <div class="skyshield-prop-row"><span>Masked Phone:</span> <strong id="skyshieldDisplayTargetPhone">-</strong></div>
+                  <p class="skyshield-modal-hint" style="margin-top: 10px;">
+                    Verify the pairing code on the target device. Owner must explicitly approve to enroll.
+                  </p>
+                  <div class="skyshield-modal-actions" style="margin-top: 15px;">
+                    <button class="skyshield-btn primary" id="btnApprovePair" onclick="submitSkyShieldPairApproval()" style="background: #10b981;">
+                      <span>✅</span> <span>Owner Approve Enrollment</span>
+                    </button>
+                    <button class="skyshield-btn danger" id="btnRejectPair" onclick="submitSkyShieldPairRejection()">
+                      <span>❌</span> <span>Reject Pairing</span>
+                    </button>
+                    <button class="skyshield-btn secondary" onclick="closeSkyShieldPairingModal()">Close</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

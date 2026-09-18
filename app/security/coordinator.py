@@ -37,6 +37,14 @@ from app.security.models import (
     SecurityState,
     redact_sensitive_data,
 )
+from app.security.enrollment_models import (
+    DeviceIdentityModel,
+    DeviceSession,
+    EnrollmentState,
+    PairingRequest,
+    SkyShieldCapability,
+)
+from app.security.pairing_manager import DevicePairingManager
 from app.security.scanner import SecurityScanner
 
 logger = logging.getLogger("NRAI.SkyShield.Coordinator")
@@ -65,11 +73,16 @@ class SecurityCoordinator:
         scanner: Optional[SecurityScanner] = None,
         auditor: Optional[PermissionAuditor] = None,
         emergency_stop: Optional[EmergencyStopController] = None,
+        pairing_manager: Optional[DevicePairingManager] = None,
     ):
         self.scanner = scanner or SecurityScanner()
         self.auditor = auditor or PermissionAuditor()
         self.emergency_stop = emergency_stop or EmergencyStopController()
         self.policy = SecurityPolicy()
+        self.pairing_manager = pairing_manager or DevicePairingManager(
+            emergency_stop=self.emergency_stop,
+            audit_logger_fn=self._record_audit,
+        )
         
         self._state: SecurityState = SecurityState.IDLE
         self._lock = threading.RLock()
@@ -146,6 +159,8 @@ class SecurityCoordinator:
         with self._lock:
             self._state = SecurityState.STOPPED
             self._active_operation = None
+            if hasattr(self, "pairing_manager") and self.pairing_manager:
+                self.pairing_manager.trigger_emergency_stop("Immediate operator or subsystem halt fired.")
             logger.warning("🛑 SkyShield Emergency Stop triggered: all active scans halted.")
             self._record_audit(
                 initiator="EmergencyStopController",
@@ -162,6 +177,8 @@ class SecurityCoordinator:
             res = self.emergency_stop.trigger(triggered_by="SkyShield Operator", reason=reason)
             self._state = SecurityState.STOPPED
             self._active_operation = None
+            if hasattr(self, "pairing_manager") and self.pairing_manager:
+                self.pairing_manager.trigger_emergency_stop(reason)
             return {
                 "success": True,
                 "state": SecurityState.STOPPED.value,
@@ -177,6 +194,8 @@ class SecurityCoordinator:
             else:
                 self.emergency_stop._is_active = False
             self._state = SecurityState.IDLE
+            if hasattr(self, "pairing_manager") and self.pairing_manager:
+                self.pairing_manager.reset_emergency_stop()
             self._record_audit(
                 initiator="Operator",
                 operation="EMERGENCY_STOP_RESET",
@@ -353,5 +372,46 @@ class SecurityCoordinator:
                 "findings": [f.to_dict() for f in self._findings],
                 "events": [e.to_dict() for e in self._events[-20:]],
                 "audit_log": [a.to_dict() for a in self._audit_log[-20:]],
+                "enrolled_devices": self.pairing_manager.list_devices(),
+                "pairing_requests": self.pairing_manager.list_pairing_requests(),
+                "active_sessions": self.pairing_manager.list_active_sessions(),
                 "timestamp": time.time(),
             }
+
+    # --------------------------------------------------------------------------
+    # Device Pairing & Session Management Proxies
+    # --------------------------------------------------------------------------
+
+    def create_pairing_request(self, *args, **kwargs):
+        return self.pairing_manager.create_pairing_request(*args, **kwargs)
+
+    def approve_pairing(self, *args, **kwargs):
+        return self.pairing_manager.approve_pairing(*args, **kwargs)
+
+    def reject_pairing(self, *args, **kwargs):
+        return self.pairing_manager.reject_pairing(*args, **kwargs)
+
+    def get_pairing_request(self, pairing_id: str):
+        return self.pairing_manager.get_pairing_request(pairing_id)
+
+    def get_device(self, device_id: str):
+        return self.pairing_manager.get_device(device_id)
+
+    def list_devices(self):
+        return self.pairing_manager.list_devices()
+
+    def suspend_device(self, device_id: str, reason: str = "Suspended by operator"):
+        return self.pairing_manager.suspend_device(device_id, reason=reason)
+
+    def revoke_device(self, device_id: str, reason: str = "Revoked by operator"):
+        return self.pairing_manager.revoke_device(device_id, reason=reason)
+
+    def reauthorize_device(self, device_id: str, reason: str = "Reauthorized by operator"):
+        return self.pairing_manager.reauthorize_device(device_id, reason=reason)
+
+    def create_device_session(self, *args, **kwargs):
+        return self.pairing_manager.create_device_session(*args, **kwargs)
+
+    def validate_session_request(self, *args, **kwargs):
+        return self.pairing_manager.validate_session_request(*args, **kwargs)
+

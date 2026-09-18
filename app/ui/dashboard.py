@@ -14,10 +14,12 @@ Supports both console/terminal dashboard rendering and a lightweight local HTTP 
 """
 
 from dataclasses import asdict, dataclass
+import hashlib
 import http.server
 import json
 import logging
 import os
+import secrets
 import socketserver
 import threading
 import time
@@ -274,6 +276,46 @@ class CompanionDashboard:
                     payload = json.dumps(data, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
+                # SkyShield Enrolled Devices List
+                elif parsed.path in ("/api/skyshield/devices", "/api/skyshield/devices/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    devices = coord.list_devices() if coord else []
+                    payload = json.dumps({"success": True, "devices": devices}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # SkyShield Enrolled Device Detail
+                elif parsed.path.startswith("/api/skyshield/devices/"):
+                    parts = parsed.path.strip("/").split("/")
+                    device_id = parts[3] if len(parts) >= 4 else ""
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    dev = coord.get_device(device_id) if coord and device_id else None
+                    if dev:
+                        payload = json.dumps({"success": True, "device": dev.to_dict()}, indent=2).encode("utf-8")
+                        self._send_json(200, payload)
+                    else:
+                        payload = json.dumps({"success": False, "error": f"Device '{device_id}' not found"}, indent=2).encode("utf-8")
+                        self._send_json(404, payload)
+
+                # SkyShield Pairing Requests List
+                elif parsed.path in ("/api/skyshield/pair/requests", "/api/skyshield/pair/requests/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    reqs = coord.pairing_manager.list_pairing_requests() if (coord and hasattr(coord, "pairing_manager")) else []
+                    payload = json.dumps({"success": True, "pairing_requests": reqs}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # SkyShield Specific Pairing Request Detail
+                elif parsed.path.startswith("/api/skyshield/pair/"):
+                    parts = parsed.path.strip("/").split("/")
+                    pairing_id = parts[3] if len(parts) >= 4 else ""
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    req = coord.get_pairing_request(pairing_id) if coord and pairing_id else None
+                    if req:
+                        payload = json.dumps({"success": True, "pairing_request": req.to_dict()}, indent=2).encode("utf-8")
+                        self._send_json(200, payload)
+                    else:
+                        payload = json.dumps({"success": False, "error": f"Pairing request '{pairing_id}' not found"}, indent=2).encode("utf-8")
+                        self._send_json(404, payload)
+
                 # 1d. Diagnostics & Introduction APIs
                 elif parsed.path == "/api/diagnostics/credentials":
                     from app.agent.credential_diagnostics import CredentialDiagnosticEngine
@@ -465,6 +507,181 @@ class CompanionDashboard:
                     ok = coord.reset_emergency_stop()
                     payload = json.dumps({"success": ok, "state": coord.current_state.value, "dashboard": coord.get_dashboard_state()}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
+
+                # SkyShield Phase 2 Pairing & Device Management Endpoints
+                elif parsed.path in ("/api/skyshield/pair/request", "/api/skyshield/pair/request/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        self._send_json(400, json.dumps({"success": False, "error": "Invalid JSON payload"}).encode("utf-8"))
+                        return
+                    ok, msg, req = coord.create_pairing_request(
+                        device_name=b_data.get("device_name", "Unknown Device"),
+                        platform=b_data.get("platform", "android"),
+                        phone_number=b_data.get("phone_number"),
+                        requested_capabilities=b_data.get("requested_capabilities"),
+                        ttl_seconds=int(b_data.get("ttl_seconds", 600)),
+                        requester_id=b_data.get("requester_id", "SkyShield Operator"),
+                        device_id=b_data.get("device_id"),
+                    )
+                    payload = json.dumps({
+                        "success": ok,
+                        "message": msg,
+                        "pairing_request": req.to_dict() if req else None,
+                    }, indent=2).encode("utf-8")
+                    self._send_json(200 if ok else 400, payload)
+
+                elif parsed.path in ("/api/skyshield/pair/approve", "/api/skyshield/pair/approve/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        self._send_json(400, json.dumps({"success": False, "error": "Invalid JSON payload"}).encode("utf-8"))
+                        return
+                    pairing_id = b_data.get("pairing_id", "")
+                    pairing_code = b_data.get("pairing_code", "")
+                    fingerprint = b_data.get("device_fingerprint", "")
+                    if not fingerprint:
+                        fingerprint = hashlib.sha256(f"APPROVED_FP:{pairing_id}:{time.time()}".encode("utf-8")).hexdigest()
+                    ok, msg, dev = coord.approve_pairing(
+                        pairing_id=pairing_id,
+                        pairing_code=pairing_code,
+                        device_fingerprint=fingerprint,
+                        public_key_hex=b_data.get("public_key_hex"),
+                        approver_actor=b_data.get("approver_actor", "Device Owner"),
+                    )
+                    payload = json.dumps({
+                        "success": ok,
+                        "message": msg,
+                        "device": dev.to_dict() if dev else None,
+                    }, indent=2).encode("utf-8")
+                    self._send_json(200 if ok else 400, payload)
+
+                elif parsed.path in ("/api/skyshield/pair/reject", "/api/skyshield/pair/reject/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        self._send_json(400, json.dumps({"success": False, "error": "Invalid JSON payload"}).encode("utf-8"))
+                        return
+                    pairing_id = b_data.get("pairing_id", "")
+                    reason = b_data.get("reason", "Device owner rejected pairing")
+                    rejector = b_data.get("rejector_actor", "Device Owner")
+                    ok, msg = coord.reject_pairing(pairing_id=pairing_id, reason=reason, rejector_actor=rejector)
+                    payload = json.dumps({"success": ok, "message": msg}, indent=2).encode("utf-8")
+                    self._send_json(200 if ok else 400, payload)
+
+                elif (parsed.path.startswith("/api/skyshield/devices/") and parsed.path.endswith("/suspend")) or parsed.path in ("/api/skyshield/devices/suspend", "/api/skyshield/devices/suspend/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+                    device_id = b_data.get("device_id")
+                    if not device_id and "/api/skyshield/devices/" in parsed.path:
+                        parts = parsed.path.strip("/").split("/")
+                        if len(parts) >= 4:
+                            device_id = parts[3]
+                    reason = b_data.get("reason", "Suspended by operator")
+                    ok, msg = coord.suspend_device(device_id=device_id, reason=reason)
+                    payload = json.dumps({"success": ok, "message": msg, "device_id": device_id}, indent=2).encode("utf-8")
+                    self._send_json(200 if ok else 400, payload)
+
+                elif (parsed.path.startswith("/api/skyshield/devices/") and parsed.path.endswith("/revoke")) or parsed.path in ("/api/skyshield/devices/revoke", "/api/skyshield/devices/revoke/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+                    device_id = b_data.get("device_id")
+                    if not device_id and "/api/skyshield/devices/" in parsed.path:
+                        parts = parsed.path.strip("/").split("/")
+                        if len(parts) >= 4:
+                            device_id = parts[3]
+                    reason = b_data.get("reason", "Revoked by operator")
+                    ok, msg = coord.revoke_device(device_id=device_id, reason=reason)
+                    payload = json.dumps({"success": ok, "message": msg, "device_id": device_id}, indent=2).encode("utf-8")
+                    self._send_json(200 if ok else 400, payload)
+
+                elif (parsed.path.startswith("/api/skyshield/devices/") and parsed.path.endswith("/reauthorize")) or parsed.path in ("/api/skyshield/devices/reauthorize", "/api/skyshield/devices/reauthorize/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+                    device_id = b_data.get("device_id")
+                    if not device_id and "/api/skyshield/devices/" in parsed.path:
+                        parts = parsed.path.strip("/").split("/")
+                        if len(parts) >= 4:
+                            device_id = parts[3]
+                    reason = b_data.get("reason", "Reauthorized by operator")
+                    ok, msg = coord.reauthorize_device(device_id=device_id, reason=reason)
+                    payload = json.dumps({"success": ok, "message": msg, "device_id": device_id}, indent=2).encode("utf-8")
+                    self._send_json(200 if ok else 400, payload)
+
+                elif parsed.path in ("/api/skyshield/session/authenticate", "/api/skyshield/session/authenticate/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        self._send_json(400, json.dumps({"success": False, "error": "Invalid JSON payload"}).encode("utf-8"))
+                        return
+                    device_id = b_data.get("device_id", "")
+                    ttl = int(b_data.get("ttl_seconds", 3600))
+                    scopes = b_data.get("requested_scopes")
+                    ok, msg, sess = coord.create_device_session(device_id=device_id, ttl_seconds=ttl, requested_scopes=scopes)
+                    payload = json.dumps({
+                        "success": ok,
+                        "message": msg,
+                        "session": sess.to_dict() if sess else None,
+                    }, indent=2).encode("utf-8")
+                    self._send_json(200 if ok else 400, payload)
+
+                elif parsed.path in ("/api/skyshield/session/validate", "/api/skyshield/session/validate/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        self._send_json(400, json.dumps({"success": False, "error": "Invalid JSON payload"}).encode("utf-8"))
+                        return
+                    ok, msg = coord.validate_session_request(
+                        request_id=b_data.get("request_id", ""),
+                        device_id=b_data.get("device_id", ""),
+                        session_id=b_data.get("session_id", ""),
+                        timestamp=float(b_data.get("timestamp", 0.0)),
+                        nonce=b_data.get("nonce", ""),
+                        action=b_data.get("action", ""),
+                        scope=b_data.get("scope", ""),
+                        signature=b_data.get("signature", ""),
+                        payload=b_data.get("payload"),
+                    )
+                    payload = json.dumps({"success": ok, "message": msg}, indent=2).encode("utf-8")
+                    self._send_json(200 if ok else 400, payload)
 
                 # 3. Agent Specific Action
                 elif parsed.path == "/api/conversation/active":

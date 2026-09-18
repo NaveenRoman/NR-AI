@@ -2190,6 +2190,58 @@ async function renderSkyShieldDashboard(cachedData) {
       auditBody.innerHTML = aHtml;
     }
   }
+
+  // 10. Enrolled Authorized Devices Card
+  const devicesBody = document.getElementById("cardDevicesBody");
+  const devicesCount = document.getElementById("cardDevicesCount");
+  if (devicesBody && data.enrolled_devices) {
+    if (devicesCount) {
+      devicesCount.textContent = `${data.enrolled_devices.length} DEVICES`;
+    }
+    if (data.enrolled_devices.length === 0) {
+      devicesBody.innerHTML = '<div class="skyshield-empty-state">No authorized devices paired yet. Click \'+ Pair Device\' to initiate.</div>';
+    } else {
+      let dHtml = "";
+      data.enrolled_devices.forEach(dev => {
+        const stateLower = String(dev.enrollment_state || "unregistered").toLowerCase();
+        const masked = dev.phone_number_masked ? `<span style="font-size: 0.65rem; color: #64748b;">(📞 ${escapeHtml(dev.phone_number_masked)})</span>` : "";
+        let actionButtons = "";
+        if (dev.enrollment_state === "ENROLLED" || dev.enrollment_state === "AUTHENTICATED") {
+          actionButtons = `
+            <button class="device-action-btn suspend" onclick="suspendSkyShieldDevice('${dev.device_id}')">Suspend</button>
+            <button class="device-action-btn revoke" onclick="revokeSkyShieldDevice('${dev.device_id}')">Revoke</button>
+          `;
+        } else if (dev.enrollment_state === "SUSPENDED") {
+          actionButtons = `
+            <button class="device-action-btn reauthorize" onclick="reauthorizeSkyShieldDevice('${dev.device_id}')">Reauthorize</button>
+            <button class="device-action-btn revoke" onclick="revokeSkyShieldDevice('${dev.device_id}')">Revoke</button>
+          `;
+        } else if (dev.enrollment_state === "REVOKED") {
+          actionButtons = `<span style="font-size: 0.62rem; color: #ef4444; font-weight: 700;">PERMANENTLY REVOKED</span>`;
+        }
+
+        dHtml += `<div class="device-entry-row">
+          <div class="device-entry-top">
+            <div class="device-title">
+              <span>${escapeHtml(dev.device_name || dev.device_id)}</span>
+              <span class="device-platform-badge">${escapeHtml(dev.platform || "android")}</span>
+              ${masked}
+            </div>
+            <span class="device-state-pill ${stateLower}">${escapeHtml(dev.enrollment_state)}</span>
+          </div>
+          <div class="device-entry-meta">
+            <div><strong>ID:</strong> <code style="font-size: 0.65rem; color: #38bdf8;">${escapeHtml(dev.device_id)}</code></div>
+            <div><strong>Auth:</strong> ${escapeHtml(dev.authorization_state || "UNAUTHORIZED")} | <strong>Verification:</strong> ${escapeHtml(dev.verification_state || "LIVE")}</div>
+            <div><strong>Scopes:</strong> <span style="color: #cbd5e1;">${escapeHtml((dev.granted_capabilities || []).join(", "))}</span></div>
+          </div>
+          <div class="device-entry-actions">
+            ${actionButtons}
+          </div>
+        </div>`;
+      });
+      devicesBody.innerHTML = dHtml;
+    }
+  }
 }
 
 async function triggerSkyShieldScan() {
@@ -2272,4 +2324,214 @@ async function sendSkyShieldCommand(cmd) {
     console.warn("SkyShield command execution failed:", err);
   }
 }
+
+// ==============================================================================
+// SkyShield Phase 2: Device Pairing & Enrollment UI Actions
+// ==============================================================================
+let currentPairingState = null;
+let pairingTimerInterval = null;
+
+function openSkyShieldPairingModal() {
+  const modal = document.getElementById("skyshieldPairingModal");
+  if (modal) {
+    modal.style.display = "flex";
+    const s1 = document.getElementById("skyshieldPairStep1");
+    const s2 = document.getElementById("skyshieldPairStep2");
+    if (s1) s1.style.display = "block";
+    if (s2) s2.style.display = "none";
+  }
+}
+
+function closeSkyShieldPairingModal() {
+  const modal = document.getElementById("skyshieldPairingModal");
+  if (modal) modal.style.display = "none";
+  if (pairingTimerInterval) {
+    clearInterval(pairingTimerInterval);
+    pairingTimerInterval = null;
+  }
+  currentPairingState = null;
+}
+
+async function submitSkyShieldPairRequest() {
+  const devName = document.getElementById("pairDeviceName") ? document.getElementById("pairDeviceName").value.trim() : "Unknown Device";
+  const platform = document.getElementById("pairPlatform") ? document.getElementById("pairPlatform").value : "android";
+  const phone = document.getElementById("pairPhoneNumber") ? document.getElementById("pairPhoneNumber").value.trim() : "";
+
+  const caps = ["telemetry:read"];
+  if (document.getElementById("capConfig")?.checked) caps.push("config:audit");
+  if (document.getElementById("capHardware")?.checked) caps.push("hardware:status");
+  if (document.getElementById("capNetwork")?.checked) caps.push("network:diagnostics");
+  if (document.getElementById("capPerms")?.checked) caps.push("permission:monitor");
+
+  const btn = document.getElementById("btnCreatePairRequest");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "<span>⏳</span> <span>Generating...</span>";
+  }
+
+  try {
+    const res = await fetch("/api/skyshield/pair/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        device_name: devName,
+        platform: platform,
+        phone_number: phone || null,
+        requested_capabilities: caps,
+        ttl_seconds: 600,
+        requester_id: "SkyShield Operator UI",
+      }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success && data.pairing_request) {
+      currentPairingState = data.pairing_request;
+      const s1 = document.getElementById("skyshieldPairStep1");
+      const s2 = document.getElementById("skyshieldPairStep2");
+      if (s1) s1.style.display = "none";
+      if (s2) s2.style.display = "block";
+      const codeEl = document.getElementById("skyshieldDisplayCode");
+      const pairIdEl = document.getElementById("skyshieldDisplayPairId");
+      const targetDevEl = document.getElementById("skyshieldDisplayTargetDevice");
+      const targetPhoneEl = document.getElementById("skyshieldDisplayTargetPhone");
+      if (codeEl) codeEl.textContent = data.pairing_request.pairing_code;
+      if (pairIdEl) pairIdEl.textContent = data.pairing_request.pairing_id;
+      if (targetDevEl) targetDevEl.textContent = data.pairing_request.device_name;
+      if (targetPhoneEl) targetPhoneEl.textContent = data.pairing_request.phone_number_masked || "None (Direct Pairing)";
+
+      let timeLeft = 600;
+      const timerEl = document.getElementById("skyshieldCodeTimer");
+      if (pairingTimerInterval) clearInterval(pairingTimerInterval);
+      pairingTimerInterval = setInterval(() => {
+        timeLeft--;
+        if (timeLeft <= 0) {
+          clearInterval(pairingTimerInterval);
+          if (timerEl) timerEl.textContent = "EXPIRED";
+        } else if (timerEl) {
+          timerEl.textContent = `Expires in ${timeLeft}s`;
+        }
+      }, 1000);
+
+      renderSkyShieldDashboard();
+    } else {
+      alert(`Pairing request failed: ${data.message || data.error || "Unknown error"}`);
+    }
+  } catch (err) {
+    console.warn("Pairing request failed:", err);
+    alert(`Pairing request error: ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = "<span>🚀</span> <span>Initiate Pairing Request</span>";
+    }
+  }
+}
+
+async function submitSkyShieldPairApproval() {
+  if (!currentPairingState) return;
+  const btn = document.getElementById("btnApprovePair");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "<span>⏳</span> <span>Enrolling...</span>";
+  }
+
+  try {
+    const res = await fetch("/api/skyshield/pair/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pairing_id: currentPairingState.pairing_id,
+        pairing_code: currentPairingState.pairing_code,
+        approver_actor: "Device Owner (Verified UI)",
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      closeSkyShieldPairingModal();
+      renderSkyShieldDashboard();
+    } else {
+      alert(`Approval failed: ${data.message || data.error}`);
+    }
+  } catch (err) {
+    console.warn("Approval error:", err);
+    alert(`Approval error: ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = "<span>✅</span> <span>Owner Approve Enrollment</span>";
+    }
+  }
+}
+
+async function submitSkyShieldPairRejection() {
+  if (!currentPairingState) return;
+  const btn = document.getElementById("btnRejectPair");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = "<span>⏳</span> <span>Rejecting...</span>";
+  }
+
+  try {
+    const res = await fetch("/api/skyshield/pair/reject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pairing_id: currentPairingState.pairing_id,
+        reason: "Owner explicit rejection via UI",
+        rejector_actor: "Device Owner",
+      }),
+    });
+    closeSkyShieldPairingModal();
+    renderSkyShieldDashboard();
+  } catch (err) {
+    console.warn("Rejection error:", err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = "<span>❌</span> <span>Reject Pairing</span>";
+    }
+  }
+}
+
+async function suspendSkyShieldDevice(deviceId) {
+  if (!confirm(`Suspend device '${deviceId}'? Active sessions will be temporarily disabled.`)) return;
+  try {
+    const res = await fetch(`/api/skyshield/devices/${deviceId}/suspend`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "Suspended by operator via Command Center" }),
+    });
+    if (res.ok) renderSkyShieldDashboard();
+  } catch (err) {
+    console.warn("Device suspend failed:", err);
+  }
+}
+
+async function revokeSkyShieldDevice(deviceId) {
+  if (!confirm(`Permanently revoke device '${deviceId}'? This action terminates all sessions and cryptographic keys.`)) return;
+  try {
+    const res = await fetch(`/api/skyshield/devices/${deviceId}/revoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "Permanently revoked by operator via Command Center" }),
+    });
+    if (res.ok) renderSkyShieldDashboard();
+  } catch (err) {
+    console.warn("Device revoke failed:", err);
+  }
+}
+
+async function reauthorizeSkyShieldDevice(deviceId) {
+  try {
+    const res = await fetch(`/api/skyshield/devices/${deviceId}/reauthorize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "Reauthorized by operator via Command Center" }),
+    });
+    if (res.ok) renderSkyShieldDashboard();
+  } catch (err) {
+    console.warn("Device reauthorize failed:", err);
+  }
+}
+
 
