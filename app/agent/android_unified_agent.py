@@ -74,6 +74,13 @@ from app.agent.model_router import CapabilityUnavailableError, ModelRouter
 from app.config.model_config import ModelCapability
 from app.memory.audit_logger import AuditLogger
 from app.memory.context_memory import ProjectContextMemory
+from app.agent.android_project_registry import AndroidProjectRegistry, AndroidProjectRecord
+from app.agent.android_gradle_intelligence import GradleVersionCatalogEngine, VersionCatalogReport
+from app.agent.android_ast import AndroidASTEngine, SourceASTReport
+from app.agent.android_resource_graph import AndroidResourceGraphEngine, ResourceGraphReport
+from app.agent.android_compose import JetpackComposeIntelligenceEngine, ComposeIntelligenceReport
+from app.agent.android_test_results import AndroidTestResultParser, JUnitReport, LintReport
+from app.agent.droid_task_state import DroidTaskStateStore
 
 logger = logging.getLogger("NRAI.UnifiedAndroidAgent")
 
@@ -561,8 +568,19 @@ class UnifiedAndroidAgent:
         ui_controller: Optional[AndroidUIController] = None,
         diagnostics_controller: Optional[AndroidDiagnosticsController] = None,
         memory: Optional[ProjectContextMemory] = None,
+        project_registry: Optional[AndroidProjectRegistry] = None,
+        gradle_intelligence: Optional[GradleVersionCatalogEngine] = None,
+        ast_engine: Optional[AndroidASTEngine] = None,
+        resource_graph: Optional[AndroidResourceGraphEngine] = None,
+        compose_intelligence: Optional[JetpackComposeIntelligenceEngine] = None,
+        test_parser: Optional[AndroidTestResultParser] = None,
+        task_state_store: Optional[DroidTaskStateStore] = None,
     ):
-        self.safety = safety_gate or AndroidSafetyGate()
+        self.project_registry = project_registry or AndroidProjectRegistry()
+        self.safety = safety_gate or AndroidSafetyGate(project_registry=self.project_registry)
+        if hasattr(self.safety, "project_registry") and self.safety.project_registry is None:
+            self.safety.project_registry = self.project_registry
+
         self.tools = tool_registry or AndroidToolRegistry(safety_gate=self.safety)
         self.verifier = verifier or AndroidVerifier(safety_gate=self.safety, tool_registry=self.tools)
         self.router = model_router or ModelRouter()
@@ -590,7 +608,40 @@ class UnifiedAndroidAgent:
             audit_logger=self.audit,
         )
 
+        self.gradle_intelligence = gradle_intelligence or GradleVersionCatalogEngine(safety_gate=self.safety)
+        self.ast_engine = ast_engine or AndroidASTEngine(safety_gate=self.safety)
+        self.resource_graph = resource_graph or AndroidResourceGraphEngine()
+        self.compose_intelligence = compose_intelligence or JetpackComposeIntelligenceEngine(ast_engine=self.ast_engine)
+        self.test_parser = test_parser or AndroidTestResultParser()
+        self.task_state_store = task_state_store or DroidTaskStateStore()
+
         self.planner = UnifiedAndroidPlanner(model_router=self.router)
+
+    def inspect_version_catalog(self, toml_path: Optional[Union[str, Path]] = None) -> VersionCatalogReport:
+        """Inspect and parse a Gradle libs.versions.toml catalog."""
+        target = toml_path or (self.safety.authorized_project / "gradle" / "libs.versions.toml")
+        return self.gradle_intelligence.parse_catalog_file(target)
+
+    def inspect_source_ast(self, file_path: Union[str, Path]) -> SourceASTReport:
+        """Inspect and extract structured AST from a Kotlin or Java source file."""
+        return self.ast_engine.parse_file(file_path)
+
+    def inspect_resource_graph(self, project_root: Optional[Union[str, Path]] = None) -> ResourceGraphReport:
+        """Build bidirectional XML resource and reference graph."""
+        root = project_root or self.safety.authorized_project
+        return self.resource_graph.build_graph(root)
+
+    def inspect_compose(self, file_path: Union[str, Path]) -> ComposeIntelligenceReport:
+        """Analyze Jetpack Compose architecture, components, and state."""
+        return self.compose_intelligence.analyze_file(file_path)
+
+    def parse_test_results(self, xml_input: Union[str, Path]) -> JUnitReport:
+        """Parse JUnit XML test results with location extraction and redaction."""
+        return self.test_parser.parse_junit_xml(xml_input)
+
+    def parse_lint_results(self, xml_input: Union[str, Path]) -> LintReport:
+        """Parse Android Lint XML quality reports."""
+        return self.test_parser.parse_lint_xml(xml_input)
 
     # -------------------------------------------------------------------------
     # Core Autonomous Execution Loop

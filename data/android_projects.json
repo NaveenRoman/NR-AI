@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "updated_at": 1789758144.2346497,
+  "projects": {
+    "nr_android_test": {
+      "project_id": "nr_android_test",
+      "project_name": "NR-AI Android Test Fixture",
+      "canonical_path": "C:\\NR-AI\\nr_android_test",
+      "registration_time": 1789757865.1815975,
+      "project_type": "APPLICATION",
+      "package_id": "com.nrai.test",
+      "gradle_root": "C:\\NR-AI\\nr_android_test",
+      "modules": [
+        "app"
+      ],
+      "status": "ACTIVE",
+      "authorized_by_user": true,
+      "metadata": {}
+    }
+  }
+}

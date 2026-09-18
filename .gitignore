@@ -39,6 +39,7 @@ data/audit_test/
 data/audit_live/
 data/audit_live_vision/
 data/screenshots/
+data/droid_task_state.db
 scratch/
 companion_output.py
 cloud_execution_audit_report.json

@@ -306,10 +306,12 @@ class AndroidSafetyGate:
         authorized_project: Path = AUTHORIZED_PROJECT_PATH,
         authorized_package: str = AUTHORIZED_PACKAGE_NAME,
         rate_limiter: Optional[AndroidRateLimiter] = None,
+        project_registry: Optional[Any] = None,
     ):
         self.authorized_project = authorized_project.resolve()
         self.authorized_package = authorized_package
         self.rate_limiter = rate_limiter or AndroidRateLimiter(max_actions_per_minute=20)
+        self.project_registry = project_registry
 
     # -------------------------------------------------------------------------
     # Emergency Stop
@@ -381,10 +383,15 @@ class AndroidSafetyGate:
             except ValueError:
                 pass
 
+        if not is_authorized and hasattr(self, "project_registry") and self.project_registry:
+            ok, _, rec = self.project_registry.is_path_authorized(resolved)
+            if ok and rec and Path(rec.canonical_path).resolve() == resolved:
+                is_authorized = True
+
         if not is_authorized:
             raise AndroidSafetyError(
                 AndroidErrorCode.PROJECT_NOT_AUTHORIZED,
-                f"Project path '{resolved}' is not authorized. Only '{self.authorized_project}' or subdirectories inside '{DEV_PROJECTS_ROOT}' are authorized.",
+                f"Project path '{resolved}' is not authorized. Only '{self.authorized_project}', active registered projects, or subdirectories inside '{DEV_PROJECTS_ROOT}' are authorized.",
             )
 
         if not resolved.exists() or not resolved.is_dir():
@@ -582,9 +589,19 @@ class AndroidSafetyGate:
             )
 
         # 2. Strict Project Boundary Check
+        in_project = False
         try:
             resolved.relative_to(self.authorized_project)
+            in_project = True
         except ValueError:
+            pass
+
+        if not in_project and hasattr(self, "project_registry") and self.project_registry:
+            ok, _, rec = self.project_registry.is_path_authorized(resolved)
+            if ok and rec:
+                in_project = True
+
+        if not in_project:
             raise AndroidSafetyError(
                 AndroidErrorCode.FILE_NOT_AUTHORIZED,
                 f"Path '{resolved}' is outside authorized project '{self.authorized_project}'.",
