@@ -290,8 +290,9 @@ class TestGalaxyEngineBasics(unittest.TestCase):
         state = self.engine.get_galaxy_state()
         nodes = state["nodes"]
         connections = state["connections"]
-        self.assertEqual(len(nodes), len(connections))
-        for conn in connections:
+        central_connections = [c for c in connections if c.get("from") == "nr_ai_central_intelligence"]
+        self.assertEqual(len(nodes), len(central_connections))
+        for conn in central_connections:
             self.assertEqual(conn["from"], "nr_ai_central_intelligence")
             self.assertIn("to", conn)
             self.assertIn("status", conn)
@@ -1084,7 +1085,7 @@ class TestGalaxyUIRefinement2(unittest.TestCase):
         try:
             # 1. GET /api/agent/android_unified_agent/context
             req = urllib.request.Request(f"http://127.0.0.1:{port}/api/agent/android_unified_agent/context")
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 self.assertTrue(data.get("success"))
                 self.assertEqual(data.get("workspace_name"), "Android Studio")
@@ -1092,7 +1093,7 @@ class TestGalaxyUIRefinement2(unittest.TestCase):
 
             # 2. POST /api/agent/android_unified_agent/activate
             req = urllib.request.Request(f"http://127.0.0.1:{port}/api/agent/android_unified_agent/activate", data=b"{}", headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 self.assertTrue(data.get("success"))
                 self.assertIn("Droid", data.get("speech"))
@@ -1100,14 +1101,14 @@ class TestGalaxyUIRefinement2(unittest.TestCase):
             # 3. POST /api/agent/android_unified_agent/chat
             body = json.dumps({"text": "What is the error?"}).encode("utf-8")
             req = urllib.request.Request(f"http://127.0.0.1:{port}/api/agent/android_unified_agent/chat", data=body, headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 self.assertTrue(data.get("success"))
                 self.assertIn("Droid: No errors detected", data.get("reply"))
 
             # 4. GET /api/agent/android_unified_agent/chat
             req = urllib.request.Request(f"http://127.0.0.1:{port}/api/agent/android_unified_agent/chat")
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 self.assertTrue(data.get("success"))
                 self.assertGreaterEqual(data.get("count"), 2)

@@ -129,9 +129,30 @@ class CompanionDashboard:
         model_exec.setdefault("safe_execution_evidence", "No requests executed yet")
         model_exec.setdefault("execution_evidence", "No requests executed yet")
 
+        trinity_tel = {}
+        k_engine = getattr(self.companion, "knowledge_engine", None)
+        if k_engine and hasattr(k_engine, "get_telemetry_snapshot"):
+            try:
+                res = k_engine.get_telemetry_snapshot()
+                if isinstance(res, dict):
+                    trinity_tel = res
+            except Exception:
+                pass
+
+        skyshield_st = {}
+        s_coord = getattr(self.companion, "security_coordinator", None)
+        if s_coord and hasattr(s_coord, "get_dashboard_state"):
+            try:
+                res = s_coord.get_dashboard_state()
+                if isinstance(res, dict):
+                    skyshield_st = res
+            except Exception:
+                pass
+
         return {
-            "raw_state": mode.value,
+            "assistant_name": self.companion.name if isinstance(getattr(self.companion, "name", None), str) else "NR-AI Companion",
             "assistant_status": current_status,
+            "raw_state": mode.value,
             "avatar_mode": mode.value,
             "avatar_emotion": avatar_frame.emotion.value,
             "recognized_wake_phrase": wake_phrase,
@@ -149,6 +170,11 @@ class CompanionDashboard:
                 "wake_word_enabled": self.companion.voice_config.wake_word_enabled,
                 "wake_words": self.companion.voice_config.wake_words,
             },
+            "conversation_count": len(self.companion.conversation_history),
+            "voice": {
+                "wake_word_enabled": self.companion.voice_config.wake_word_enabled,
+                "wake_words": self.companion.voice_config.wake_words,
+            },
             "current_command": last_exchange.get("user", "None"),
             "last_response": last_exchange.get("assistant", "Ready"),
             "active_agent": active_agent_name,
@@ -162,7 +188,8 @@ class CompanionDashboard:
                 "completed_tasks": orch_metrics.get("completed_tasks", 0),
             },
             "latest_news": latest_news,
-            "trinity_telemetry": getattr(self.companion, "knowledge_engine", None) and hasattr(self.companion.knowledge_engine, "get_telemetry_snapshot") and self.companion.knowledge_engine.get_telemetry_snapshot() or {},
+            "trinity_telemetry": trinity_tel,
+            "skyshield_status": skyshield_st,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
@@ -237,7 +264,17 @@ class CompanionDashboard:
                     payload = json.dumps({"success": True, "telemetry": telemetry}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
-                # 1b. Galaxy Introduction API
+                # 1c. SkyShield Security Dashboard API
+                elif parsed.path in ("/api/skyshield/dashboard", "/api/skyshield/dashboard/", "/api/security/dashboard", "/api/security/dashboard/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if coord:
+                        data = coord.get_dashboard_state()
+                    else:
+                        data = {"success": False, "error": "Security coordinator unavailable", "state": "STOPPED"}
+                    payload = json.dumps(data, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 1d. Diagnostics & Introduction APIs
                 elif parsed.path == "/api/diagnostics/credentials":
                     from app.agent.credential_diagnostics import CredentialDiagnosticEngine
                     diag = CredentialDiagnosticEngine().diagnose_all()
@@ -390,6 +427,43 @@ class CompanionDashboard:
                         "emergency_stop": status.is_active,
                         "triggered_at": status.triggered_at,
                     }, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # SkyShield Security POST Endpoints
+                elif parsed.path in ("/api/skyshield/scan", "/api/skyshield/scan/", "/api/security/scan", "/api/security/scan/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    res = coord.run_full_scan()
+                    payload = json.dumps({"success": res.get("success", False), "result": res, "dashboard": coord.get_dashboard_state()}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                elif parsed.path in ("/api/skyshield/emergency_stop", "/api/skyshield/emergency_stop/", "/api/security/emergency_stop", "/api/security/emergency_stop/"):
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+                    reason = b_data.get("reason", "Operator Emergency Stop via SkyShield Command Center")
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if coord:
+                        res = coord.trigger_emergency_stop(reason=reason)
+                        dash = coord.get_dashboard_state()
+                    else:
+                        estop = EmergencyStopController()
+                        estop.trigger(triggered_by="SkyShield Operator", reason=reason)
+                        res = {"success": True, "state": "STOPPED"}
+                        dash = {"state": "STOPPED", "emergency_stop_active": True}
+                    payload = json.dumps({"success": True, "emergency_stop": True, "result": res, "dashboard": dash}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                elif parsed.path in ("/api/skyshield/reset", "/api/skyshield/reset/", "/api/security/reset", "/api/security/reset/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if not coord:
+                        self._send_json(503, json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    ok = coord.reset_emergency_stop()
+                    payload = json.dumps({"success": ok, "state": coord.current_state.value, "dashboard": coord.get_dashboard_state()}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
                 # 3. Agent Specific Action

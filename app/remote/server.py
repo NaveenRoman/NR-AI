@@ -919,6 +919,16 @@ class SecureDashboardServer:
                     payload = json.dumps({"success": True, "telemetry": telemetry}, indent=2).encode("utf-8")
                     self._send_response(200, "application/json", payload)
 
+                # SkyShield Security Dashboard API
+                elif parsed.path in ("/api/skyshield/dashboard", "/api/skyshield/dashboard/", "/api/security/dashboard", "/api/security/dashboard/"):
+                    coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
+                    if coord:
+                        data = coord.get_dashboard_state()
+                    else:
+                        data = {"success": False, "error": "Security coordinator unavailable", "state": "STOPPED"}
+                    payload = json.dumps(data, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
                 elif parsed.path == "/api/diagnostics/credentials":
                     from app.agent.credential_diagnostics import CredentialDiagnosticEngine
                     diag = CredentialDiagnosticEngine().diagnose_all()
@@ -1438,6 +1448,43 @@ class SecureDashboardServer:
                         "emergency_stop": status.is_active,
                         "triggered_at": status.triggered_at,
                     }, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
+                # SkyShield Security POST Endpoints
+                elif parsed.path in ("/api/skyshield/scan", "/api/skyshield/scan/", "/api/security/scan", "/api/security/scan/"):
+                    coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
+                    if not coord:
+                        self._send_response(503, "application/json", json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    res = coord.run_full_scan()
+                    payload = json.dumps({"success": res.get("success", False), "result": res, "dashboard": coord.get_dashboard_state()}, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
+                elif parsed.path in ("/api/skyshield/emergency_stop", "/api/skyshield/emergency_stop/", "/api/security/emergency_stop", "/api/security/emergency_stop/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    reason = b_data.get("reason", "Operator Emergency Stop via SkyShield Command Center")
+                    coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
+                    if coord:
+                        res = coord.trigger_emergency_stop(reason=reason)
+                        dash = coord.get_dashboard_state()
+                    else:
+                        estop = gateway_ref.emergency_stop
+                        estop.trigger(triggered_by="SkyShield Operator", reason=reason)
+                        res = {"success": True, "state": "STOPPED"}
+                        dash = {"state": "STOPPED", "emergency_stop_active": True}
+                    payload = json.dumps({"success": True, "emergency_stop": True, "result": res, "dashboard": dash}, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
+                elif parsed.path in ("/api/skyshield/reset", "/api/skyshield/reset/", "/api/security/reset", "/api/security/reset/"):
+                    coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
+                    if not coord:
+                        self._send_response(503, "application/json", json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    ok = coord.reset_emergency_stop()
+                    payload = json.dumps({"success": ok, "state": coord.current_state.value, "dashboard": coord.get_dashboard_state()}, indent=2).encode("utf-8")
                     self._send_response(200, "application/json", payload)
 
                 # Agent Specific Action

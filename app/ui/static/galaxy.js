@@ -713,6 +713,58 @@ function handleCanvasClick(screenX, screenY) {
 async function selectAgent(node) {
   state.selectedNode = node;
 
+  // SkyShield Security Agent: Dedicated Security Command Center
+  const isSkyShield = (node.agent_id === "security_agent" || node.agent_id === "skyshield");
+  if (isSkyShield) {
+    state.activeConversationAgent = "security_agent";
+    state.activeConversationAgentName = "SkyShield";
+
+    const banner = document.getElementById("activeChatBanner");
+    const bannerName = document.getElementById("activeChatAgentName");
+    if (banner) banner.style.display = "flex";
+    if (bannerName) bannerName.textContent = "SkyShield (Security Command Center)";
+
+    const panel = document.getElementById("agentPanel");
+    if (panel) {
+      panel.classList.add("open");
+      panel.classList.add("skyshield-mode");
+    }
+
+    const stdView = document.getElementById("standardAgentView");
+    const skyView = document.getElementById("skyshieldCommandCenterView");
+    if (stdView) stdView.style.display = "none";
+    if (skyView) skyView.style.display = "flex";
+
+    const nameElem = document.getElementById("panelAgentName");
+    if (nameElem) nameElem.textContent = "SkyShield";
+    const roleElem = document.getElementById("panelAgentRole");
+    if (roleElem) roleElem.textContent = "Security Agent";
+    const avatar = document.getElementById("panelAgentAvatar");
+    if (avatar) {
+      avatar.textContent = "🛡️";
+      avatar.style.borderColor = "#ef4444";
+      avatar.style.boxShadow = "0 0 16px rgba(239, 68, 68, 0.4)";
+    }
+    const statusBadge = document.getElementById("panelStatusPill");
+    if (statusBadge) {
+      statusBadge.textContent = "● ACTIVE";
+      statusBadge.style.color = "#ef4444";
+      statusBadge.style.borderColor = "#ef4444";
+      statusBadge.style.background = "rgba(239, 68, 68, 0.15)";
+    }
+
+    renderSkyShieldDashboard();
+    return;
+  }
+
+  // Restore standard specialist view if previously SkyShield
+  const panel = document.getElementById("agentPanel");
+  if (panel) panel.classList.remove("skyshield-mode");
+  const stdView = document.getElementById("standardAgentView");
+  const skyView = document.getElementById("skyshieldCommandCenterView");
+  if (stdView) stdView.style.display = "block";
+  if (skyView) skyView.style.display = "none";
+
   // Knowledge Trinity: Nova and Aegis belong to the ONE Knowledge Department
   const isTrinityChild = (node.agent_id === "nova_discovery_agent" || node.agent_id === "aegis_verification_agent" || node.agent_id === "universal_knowledge_engine" || node.parent_department === "universal_knowledge_engine");
   const targetAgentId = isTrinityChild ? "universal_knowledge_engine" : node.agent_id;
@@ -1170,7 +1222,10 @@ function clearActiveAgentChat() {
 
 function closeAgentPanel() {
   const panel = document.getElementById("agentPanel");
-  if (panel) panel.classList.remove("open");
+  if (panel) {
+    panel.classList.remove("open");
+    panel.classList.remove("skyshield-mode");
+  }
   state.selectedNode = null;
   // Zero camera movement — stable composition
 }
@@ -1896,3 +1951,325 @@ function toggleVoiceInput() {
     if (micBtn) micBtn.classList.remove("listening");
   }
 }
+
+// -----------------------------------------------------------------------------
+// SkyShield Security Command Center Engine
+// -----------------------------------------------------------------------------
+async function renderSkyShieldDashboard(cachedData) {
+  let data = cachedData;
+  if (!data) {
+    try {
+      const res = await fetch("/api/skyshield/dashboard");
+      if (res.ok) {
+        data = await res.json();
+      }
+    } catch (e) {
+      console.warn("Failed to load SkyShield dashboard:", e);
+    }
+  }
+
+  if (!data) return;
+
+  // 1. Hero Card & Security Status
+  const status = data.overall_security_status || "SECURE";
+  const stateVal = data.state || "IDLE";
+  const isEstop = Boolean(data.emergency_stop_active || stateVal === "STOPPED");
+
+  const badgeElem = document.getElementById("skyshieldSourceBadge");
+  if (badgeElem) {
+    const src = (data.device && data.device.verification_state) || "LIVE";
+    badgeElem.textContent = `${src} TELEMETRY`;
+    badgeElem.className = `skyshield-badge ${src.toLowerCase()}`;
+  }
+
+  const statePill = document.getElementById("skyshieldStatePill");
+  if (statePill) {
+    statePill.textContent = stateVal;
+    if (isEstop) {
+      statePill.style.color = "#ef4444";
+      statePill.style.borderColor = "#ef4444";
+    } else {
+      statePill.style.color = "#38bdf8";
+      statePill.style.borderColor = "rgba(56, 189, 248, 0.4)";
+    }
+  }
+
+  const statusBox = document.getElementById("skyshieldSecurityStatus");
+  const statusIcon = document.getElementById("skyshieldStatusIcon");
+  const statusText = document.getElementById("skyshieldStatusText");
+  const heroDesc = document.getElementById("skyshieldHeroDesc");
+
+  if (statusBox && statusText) {
+    statusBox.className = `skyshield-security-status ${status.toLowerCase()}`;
+    statusText.textContent = status;
+    if (statusIcon) {
+      if (isEstop || status === "STOPPED") statusIcon.textContent = "🛑";
+      else if (status === "CRITICAL") statusIcon.textContent = "🚨";
+      else if (status === "ELEVATED" || status === "ATTENTION") statusIcon.textContent = "⚠️";
+      else statusIcon.textContent = "🛡️";
+    }
+  }
+
+  if (heroDesc) {
+    if (isEstop) {
+      heroDesc.textContent = "🛑 EMERGENCY STOP is currently ACTIVE. All active scanning and operations halted.";
+    } else if (status === "CRITICAL") {
+      heroDesc.textContent = "Critical security anomaly detected. Review threats and isolate affected components immediately.";
+    } else if (status === "ATTENTION" || status === "ELEVATED") {
+      heroDesc.textContent = "Attention required. Elevated risk factors or potential permission anomalies identified.";
+    } else {
+      heroDesc.textContent = "System operating within verified security policy parameters. Zero covert actions detected.";
+    }
+  }
+
+  // 2. Device Card
+  if (data.device) {
+    const dev = data.device;
+    const devOs = document.getElementById("devOs");
+    const devModel = document.getElementById("devModel");
+    const devRooted = document.getElementById("devRooted");
+    const devVerif = document.getElementById("devVerif");
+    const devTag = document.getElementById("cardDeviceTag");
+
+    if (devOs) devOs.textContent = `${dev.platform || "Host"} ${dev.os_version || ""}`.trim();
+    if (devModel) devModel.textContent = dev.device_model || dev.device_id || "Local Machine";
+    if (devRooted) {
+      devRooted.textContent = dev.is_rooted ? "POSITIVE (HIGH RISK)" : "Negative (Verified)";
+      devRooted.style.color = dev.is_rooted ? "#ef4444" : "#10b981";
+    }
+    if (devVerif) devVerif.textContent = dev.verification_state || "LIVE";
+    if (devTag) devTag.textContent = dev.security_status || "VERIFIED";
+  }
+
+  // 3. Applications Cards (WhatsApp, Instagram, Snapchat)
+  if (data.applications && Array.isArray(data.applications)) {
+    const wa = data.applications.find(a => a.package_name === "com.whatsapp");
+    if (wa) {
+      const el = document.getElementById("waVerif");
+      const tag = document.getElementById("cardWhatsAppTag");
+      if (el) el.textContent = wa.verification_state || "VERIFIED";
+      if (tag) tag.textContent = wa.is_installed ? "INSTALLED / SANDBOXED" : "SANDBOXED";
+    }
+
+    const ig = data.applications.find(a => a.package_name === "com.instagram.android");
+    if (ig) {
+      const el = document.getElementById("igVerif");
+      const tag = document.getElementById("cardInstagramTag");
+      if (el) el.textContent = ig.verification_state || "VERIFIED";
+      if (tag) tag.textContent = ig.is_installed ? "INSTALLED / SANDBOXED" : "SANDBOXED";
+    }
+
+    const sc = data.applications.find(a => a.package_name === "com.snapchat.android");
+    if (sc) {
+      const el = document.getElementById("scVerif");
+      const tag = document.getElementById("cardSnapchatTag");
+      if (el) el.textContent = sc.verification_state || "VERIFIED";
+      if (tag) tag.textContent = sc.is_installed ? "INSTALLED / SANDBOXED" : "SANDBOXED";
+    }
+  }
+
+  // 4. Camera Card
+  if (data.camera) {
+    const cam = data.camera;
+    const camActive = document.getElementById("camActive");
+    const camStreams = document.getElementById("camStreams");
+    const camVerif = document.getElementById("camVerif");
+    const camTag = document.getElementById("cardCameraTag");
+
+    if (camActive) {
+      camActive.textContent = cam.is_sensor_active ? "ACTIVE STREAM" : "No (Idle)";
+      camActive.style.color = cam.is_sensor_active ? "#ef4444" : "#10b981";
+    }
+    if (camStreams) camStreams.textContent = String(cam.active_streams || 0);
+    if (camVerif) camVerif.textContent = cam.verification_state || "LIVE_AUDIT";
+    if (camTag) camTag.textContent = cam.is_sensor_active ? "STREAMING" : "INACTIVE";
+  }
+
+  // 5. Microphone Card
+  if (data.microphone) {
+    const mic = data.microphone;
+    const micActive = document.getElementById("micActive");
+    const micSession = document.getElementById("micSession");
+    const micVerif = document.getElementById("micVerif");
+    const micTag = document.getElementById("cardMicrophoneTag");
+
+    if (micActive) {
+      micActive.textContent = mic.is_recording_active ? "RECORDING" : "No (Idle)";
+      micActive.style.color = mic.is_recording_active ? "#ef4444" : "#10b981";
+    }
+    if (micSession) micSession.textContent = mic.authorized_session_id || "None";
+    if (micVerif) micVerif.textContent = mic.verification_state || "LIVE_AUDIT";
+    if (micTag) micTag.textContent = mic.is_recording_active ? "RECORDING" : "INACTIVE";
+  }
+
+  // 6. Permissions Matrix Card
+  const permBody = document.getElementById("cardPermissionsBody");
+  if (permBody && data.permissions) {
+    let rowsHtml = '<table class="perm-matrix-table">';
+    for (const [pName, pStatus] of Object.entries(data.permissions)) {
+      const statLower = String(pStatus).toLowerCase();
+      let badgeCls = "granted";
+      if (statLower.includes("denied")) badgeCls = "denied";
+      else if (statLower.includes("restricted") || statLower.includes("elevated")) badgeCls = "restricted";
+      rowsHtml += `<tr>
+        <td style="color: #cbd5e1; font-weight: 500;">${escapeHtml(pName)}</td>
+        <td style="text-align: right;"><span class="perm-status-badge ${badgeCls}">${escapeHtml(pStatus)}</span></td>
+      </tr>`;
+    }
+    rowsHtml += "</table>";
+    permBody.innerHTML = rowsHtml;
+  }
+
+  // 7. Threats Card
+  const threatsBody = document.getElementById("cardThreatsBody");
+  const threatsCount = document.getElementById("cardThreatsCount");
+  if (threatsBody && data.threats) {
+    if (threatsCount) {
+      threatsCount.textContent = `${data.threats.length} FINDINGS`;
+      if (data.threats.length > 0) threatsCount.classList.add("has-threats");
+      else threatsCount.classList.remove("has-threats");
+    }
+
+    if (data.threats.length === 0) {
+      threatsBody.innerHTML = '<div class="skyshield-empty-state">No anomalous security threats detected.</div>';
+    } else {
+      let tHtml = "";
+      data.threats.forEach(t => {
+        const sevLower = String(t.severity || "info").toLowerCase();
+        tHtml += `<div class="threat-finding-row">
+          <div class="threat-header">
+            <span class="threat-sev-pill ${sevLower}">${escapeHtml(t.severity)}</span>
+            <span style="font-size: 0.65rem; color: #94a3b8;">${escapeHtml(t.category || "GENERAL")}</span>
+          </div>
+          <div class="threat-desc">${escapeHtml(t.description)}</div>
+          <div class="threat-remedy">↳ ${escapeHtml(t.recommendation || "Maintain baseline")}</div>
+        </div>`;
+      });
+      threatsBody.innerHTML = tHtml;
+    }
+  }
+
+  // 8. Events Card
+  const eventsBody = document.getElementById("cardEventsBody");
+  if (eventsBody && data.events) {
+    if (data.events.length === 0) {
+      eventsBody.innerHTML = '<div class="skyshield-empty-state">No real-time security events logged.</div>';
+    } else {
+      let eHtml = "";
+      data.events.slice(-8).reverse().forEach(ev => {
+        eHtml += `<div class="audit-entry-row">
+          <div class="audit-entry-top">
+            <span>${escapeHtml(ev.timestamp || "")}</span>
+            <span class="threat-sev-pill ${(ev.severity || "info").toLowerCase()}">${escapeHtml(ev.severity || "INFO")}</span>
+          </div>
+          <div class="audit-entry-action">${escapeHtml(ev.event_type || "")}</div>
+          <div class="audit-entry-target">${escapeHtml(ev.details ? JSON.stringify(ev.details) : "")}</div>
+        </div>`;
+      });
+      eventsBody.innerHTML = eHtml;
+    }
+  }
+
+  // 9. Audit Log Card
+  const auditBody = document.getElementById("cardAuditBody");
+  if (auditBody && data.audit_log) {
+    if (data.audit_log.length === 0) {
+      auditBody.innerHTML = '<div class="skyshield-empty-state">Audit trail records will appear here.</div>';
+    } else {
+      let aHtml = "";
+      data.audit_log.slice(-10).reverse().forEach(rec => {
+        aHtml += `<div class="audit-entry-row">
+          <div class="audit-entry-top">
+            <span>${escapeHtml(rec.timestamp || "")}</span>
+            <span style="color: ${rec.result === 'SUCCESS' ? '#10b981' : (rec.result === 'STOPPED' ? '#ef4444' : '#f59e0b')}">${escapeHtml(rec.result || "")}</span>
+          </div>
+          <div class="audit-entry-action">${escapeHtml(rec.operation || "")} <span style="font-weight: normal; color: #64748b;">(${escapeHtml(rec.initiator || "")})</span></div>
+          <div class="audit-entry-target">Target: ${escapeHtml(rec.target || "")}</div>
+        </div>`;
+      });
+      auditBody.innerHTML = aHtml;
+    }
+  }
+}
+
+async function triggerSkyShieldScan() {
+  const btn = document.getElementById("btnSkyShieldScan");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span> <span>Scanning...</span>';
+  }
+  try {
+    const res = await fetch("/api/skyshield/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scan_type: "full" })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      renderSkyShieldDashboard(data.dashboard);
+    }
+  } catch (err) {
+    console.warn("Scan failed:", err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span>▶</span> <span>Run Full Security Scan</span>';
+    }
+  }
+}
+
+async function triggerSkyShieldEmergencyStop() {
+  try {
+    const res = await fetch("/api/skyshield/emergency_stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "Operator Emergency Stop via Command Center" })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      renderSkyShieldDashboard(data.dashboard);
+    }
+  } catch (err) {
+    console.warn("Emergency stop trigger failed:", err);
+  }
+}
+
+async function triggerSkyShieldReset() {
+  try {
+    const res = await fetch("/api/skyshield/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      renderSkyShieldDashboard(data.dashboard);
+    }
+  } catch (err) {
+    console.warn("Reset failed:", err);
+  }
+}
+
+async function sendSkyShieldInput() {
+  const input = document.getElementById("skyshieldTextInput");
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  await sendSkyShieldCommand(text);
+}
+
+async function sendSkyShieldCommand(cmd) {
+  try {
+    const res = await fetch("/api/agent/security_agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: cmd })
+    });
+    if (res.ok) {
+      renderSkyShieldDashboard();
+    }
+  } catch (err) {
+    console.warn("SkyShield command execution failed:", err);
+  }
+}
+

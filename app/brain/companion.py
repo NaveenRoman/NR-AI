@@ -180,6 +180,20 @@ class NRCompanion:
             workspace_root=self.workspace or Path.cwd(),
         )
 
+        # SkyShield Security Agent Subsystem
+        try:
+            from app.security.coordinator import SecurityCoordinator
+            from app.security.agent import SecurityAgent
+            estop = getattr(self, "emergency_stop", None)
+            if estop is None and hasattr(self, "agent_factory"):
+                estop = getattr(self.agent_factory, "emergency_stop", None)
+            self.security_coordinator = SecurityCoordinator(emergency_stop=estop)
+            self.security_agent = SecurityAgent(coordinator=self.security_coordinator)
+        except Exception as e:
+            logger.warning(f"Could not initialize SkyShield in Companion: {e}")
+            self.security_coordinator = None
+            self.security_agent = None
+
         # Real-time state tracking
         self.last_wake_phrase: str = "None"
         self.current_route: str = "CompanionPersona"
@@ -793,6 +807,14 @@ class NRCompanion:
                 "shared": True,
                 "role_agent": agent_id,
             }
+        if agent_id in ("security_agent", "skyshield"):
+            return {
+                "workspace_id": "security_agent",
+                "workspace_name": "SkyShield Command Center",
+                "shared": False,
+                "role_agent": "security_agent",
+                "is_security_command_center": True,
+            }
         return {
             "workspace_id": agent_id,
             "workspace_name": f"{agent_id} Workspace",
@@ -935,9 +957,10 @@ class NRCompanion:
             "nexus": ("nexus_coordinator", "Nexus"),
             "coordinator": ("nexus_coordinator", "Nexus"),
             "nexus_coordinator": ("nexus_coordinator", "Nexus"),
-            "shield": ("security_agent", "Shield"),
-            "security": ("security_agent", "Shield"),
-            "security_agent": ("security_agent", "Shield"),
+            "skyshield": ("security_agent", "SkyShield"),
+            "shield": ("security_agent", "SkyShield"),
+            "security": ("security_agent", "SkyShield"),
+            "security_agent": ("security_agent", "SkyShield"),
             "quest": ("research_agent", "Quest"),
             "research": ("research_agent", "Quest"),
             "research_agent": ("research_agent", "Quest"),
@@ -1133,20 +1156,30 @@ class NRCompanion:
             self.add_agent_chat_message(agent_id, role="agent", text=k_resp.text, data=k_resp.data)
             return k_resp
 
-        elif agent_id == "security_agent":
-            estop = getattr(self, "emergency_stop", None) or getattr(self.agent_factory, "emergency_stop", None)
-            is_active = estop.is_active() if estop else False
-            resp_text = (
-                f"Shield: Security audit complete. Emergency Stop is {'ACTIVE (LOCKED)' if is_active else 'STANDBY (NOMINAL)'}. "
-                "All subprocess invariants (shell=False) and credential guards are strictly enforced."
-            )
+        elif agent_id in ("security_agent", "skyshield"):
+            if not getattr(self, "security_agent", None):
+                from app.security.coordinator import SecurityCoordinator
+                from app.security.agent import SecurityAgent
+                estop = getattr(self, "emergency_stop", None)
+                if estop is None and hasattr(self, "agent_factory"):
+                    estop = getattr(self.agent_factory, "emergency_stop", None)
+                self.security_coordinator = SecurityCoordinator(emergency_stop=estop)
+                self.security_agent = SecurityAgent(coordinator=self.security_coordinator)
+
+            sec_res = self.security_agent.handle_text_command(command)
+            resp_text = sec_res.get("reply") or f"SkyShield: Standing by in Command Center. State is {self.security_coordinator.current_state.value}."
+            dash_data = self.security_coordinator.get_dashboard_state()
             return CompanionResponse(
                 text=resp_text,
                 category=CommandCategory.AGENTS,
-                routed_to="Shield",
+                routed_to="SkyShield",
                 avatar_mode=AvatarMode.SPEAKING,
-                avatar_emotion=AvatarEmotion.HAPPY,
-                data={"active_conversation_agent": "security_agent", "agent_name": "Shield"},
+                avatar_emotion=AvatarEmotion.ATTENTIVE,
+                data={
+                    "active_conversation_agent": "security_agent",
+                    "agent_name": "SkyShield",
+                    "skyshield_dashboard": dash_data,
+                },
             )
 
         else:

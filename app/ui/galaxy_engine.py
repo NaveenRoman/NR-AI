@@ -208,21 +208,22 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         ],
     },
     "security_agent": {
-        "friendly_name": "Shield",
-        "workspace_name": "Security Sentinel",
-        "project_name": "Zero-Trust Guard",
+        "friendly_name": "SkyShield",
+        "workspace_name": "SkyShield Command Center",
+        "project_name": "Security Posture",
         "role": "Security Agent",
         "category": "Security & Defense",
         "color": "#06b6d4",  # Cyan
         "glow": "rgba(6, 182, 212, 0.6)",
         "orbit_ring": 2,
         "base_angle": 174,
+        "base_radius": 26.0,
         "icon_type": "shield",
-        "greeting": "Hi Boss! I'm Shield, your Defensive Security Agent. I audit execution safety, enforce zero-shell invariants, and guard credentials.",
+        "greeting": "I am SkyShield, your dedicated Security Agent. I audit device security posture, inspect application permissions, and monitor threat vectors.",
         "suggested_actions": [
-            {"id": "security.audit_status", "label": "Security Audit", "icon": "shield-check"},
-            {"id": "security.verify_invariants", "label": "Verify Invariants", "icon": "lock"},
-            {"id": "security.emergency_stop", "label": "Emergency Halt", "icon": "alert-triangle"},
+            {"id": "skyshield.scan", "label": "Full Security Scan", "icon": "shield-check"},
+            {"id": "skyshield.audit_permissions", "label": "Audit Permissions", "icon": "lock"},
+            {"id": "skyshield.emergency_stop", "label": "Emergency Stop", "icon": "alert-triangle"},
         ],
     },
     "research_agent": {
@@ -623,7 +624,8 @@ class GalaxyEngine:
             })
 
         # Trinity Department Inter-Agent Connections (Knowledge <-> Nova <-> Aegis)
-        trinity_tel = (companion_snapshot.get("trinity_telemetry") if companion_snapshot else None) or {}
+        raw_trinity_tel = (companion_snapshot.get("trinity_telemetry") if companion_snapshot else None) or {}
+        trinity_tel = raw_trinity_tel if isinstance(raw_trinity_tel, dict) else {}
         trinity_active_agent = trinity_tel.get("active_agent")
         nova_active = trinity_tel.get("nova_state") not in ("IDLE", "STOPPED", None) or trinity_active_agent == "nova"
         aegis_active = trinity_tel.get("aegis_state") not in ("IDLE", "STOPPED", None) or trinity_active_agent == "aegis"
@@ -635,7 +637,7 @@ class GalaxyEngine:
             "status": trinity_tel.get("nova_state", "IDLE"),
             "color": "#06b6d4",
             "glow": "rgba(6, 182, 212, 0.7)",
-            "animated": nova_active or knowledge_active,
+            "animated": bool(nova_active or knowledge_active),
             "is_trinity": True,
         })
         connections.append({
@@ -644,16 +646,18 @@ class GalaxyEngine:
             "status": trinity_tel.get("aegis_state", "IDLE"),
             "color": "#eab308",
             "glow": "rgba(234, 179, 8, 0.7)",
-            "animated": aegis_active or knowledge_active,
+            "animated": bool(aegis_active or knowledge_active),
             "is_trinity": True,
         })
+        src_cnt = trinity_tel.get("source_count", 0)
+        has_sources = isinstance(src_cnt, (int, float)) and src_cnt > 0
         connections.append({
             "from": "nova_discovery_agent",
             "to": "aegis_verification_agent",
             "status": trinity_tel.get("verification_status", "IDLE"),
             "color": "#10b981" if trinity_tel.get("verification_status") == "APPROVED" else "#eab308",
             "glow": "rgba(234, 179, 8, 0.6)",
-            "animated": aegis_active and trinity_tel.get("source_count", 0) > 0,
+            "animated": bool(aegis_active and has_sources),
             "is_trinity": True,
         })
 
@@ -773,8 +777,8 @@ class GalaxyEngine:
             return "Hi Boss, I'm Sentinel, your unified computer and system agent. I inspect desktop windows and verify application health."
         elif node.agent_id == "nexus_coordinator":
             return "Hi Boss, I'm Nexus, your Multi-Agent Orchestrator. I decompose multi-disciplinary goals and coordinate specialized agents."
-        elif node.agent_id == "security_agent":
-            return "Hi Boss, I'm Shield, your Security Agent. I audit execution safety, enforce zero-shell invariants, and guard credentials."
+        elif node.agent_id in ("security_agent", "skyshield"):
+            return "I am SkyShield, your dedicated Security Agent. I audit device security posture, inspect application permissions, and monitor threat vectors."
         elif node.agent_id == "research_agent":
             return "Hi Boss, I'm Quest, your Deep Research Agent. I formulate queries, analyze academic literature, and synthesize scientific papers."
         elif node.agent_id == "forge_dev_agent":

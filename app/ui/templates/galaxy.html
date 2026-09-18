@@ -271,95 +271,283 @@
           </div>
         </div>
 
-        <!-- 1. Workspace Focus Card -->
-        <div id="panelFocusCard" class="workspace-focus-card">
-          <div class="focus-card-row">
-            <span class="focus-card-label">WORKSPACE FOCUS:</span>
-            <span id="panelWorkspaceFocus" class="focus-card-value">● Android Studio</span>
+        <!-- Standard Agent Workspace View (for normal specialist agents) -->
+        <div id="standardAgentView" class="panel-view-container">
+          <!-- 1. Workspace Focus Card -->
+          <div id="panelFocusCard" class="workspace-focus-card">
+            <div class="focus-card-row">
+              <span class="focus-card-label">WORKSPACE FOCUS:</span>
+              <span id="panelWorkspaceFocus" class="focus-card-value">● Android Studio</span>
+            </div>
+            <div class="focus-card-row">
+              <span class="focus-card-label">ACTIVE PROJECT:</span>
+              <span id="panelActiveProject" class="focus-card-value">NR AI Test</span>
+            </div>
+            <div class="focus-card-row">
+              <span class="focus-card-label">CURRENT TASK:</span>
+              <span id="panelCurrentTask" class="focus-card-value muted">Standing by in Android Studio workspace</span>
+            </div>
           </div>
-          <div class="focus-card-row">
-            <span class="focus-card-label">ACTIVE PROJECT:</span>
-            <span id="panelActiveProject" class="focus-card-value">NR AI Test</span>
-          </div>
-          <div class="focus-card-row">
-            <span class="focus-card-label">CURRENT TASK:</span>
-            <span id="panelCurrentTask" class="focus-card-value muted">Standing by in Android Studio workspace</span>
-          </div>
-        </div>
 
-        <!-- 2. Step-by-Step Task Checklist -->
-        <div id="panelStepChecklistContainer" class="checklist-card">
-          <div class="checklist-header">
-            <span>TASK PROGRESSION WORKFLOW</span>
-            <span id="panelStepProgressBadge" class="step-badge">READY</span>
+          <!-- 2. Step-by-Step Task Checklist -->
+          <div id="panelStepChecklistContainer" class="checklist-card">
+            <div class="checklist-header">
+              <span>TASK PROGRESSION WORKFLOW</span>
+              <span id="panelStepProgressBadge" class="step-badge">READY</span>
+            </div>
+            <div id="panelStepList" class="checklist-steps">
+              <!-- Dynamically populated 8-step pipeline -->
+            </div>
           </div>
-          <div id="panelStepList" class="checklist-steps">
-            <!-- Dynamically populated 8-step pipeline -->
-          </div>
-        </div>
 
-        <!-- 3. Capabilities & Actions -->
-        <div>
-          <div style="font-size: 0.72rem; font-weight: bold; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.08em;">
-            INSTANT CAPABILITY ACTIONS
+          <!-- 3. Capabilities & Actions -->
+          <div>
+            <div style="font-size: 0.72rem; font-weight: bold; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.08em;">
+              INSTANT CAPABILITY ACTIONS
+            </div>
+            <div id="panelActionsGrid" class="actions-grid">
+              <!-- Dynamically populated -->
+            </div>
           </div>
-          <div id="panelActionsGrid" class="actions-grid">
-            <!-- Dynamically populated -->
-          </div>
-        </div>
 
-        <!-- 4. Agent Metadata & Safety Grid -->
-        <div class="agent-metrics-grid">
-          <div class="agent-metric-item">
-            <span>Isolation:</span>
-            <strong>ModelIsolationGate</strong>
+          <!-- 4. Agent Metadata & Safety Grid -->
+          <div class="agent-metrics-grid">
+            <div class="agent-metric-item">
+              <span>Isolation:</span>
+              <strong>ModelIsolationGate</strong>
+            </div>
+            <div class="agent-metric-item">
+              <span>Model:</span>
+              <strong id="panelModelPill">Auto-Routed</strong>
+            </div>
+            <div class="agent-metric-item">
+              <span>Safety Gate:</span>
+              <strong style="color: #10b981;">Deterministic</strong>
+            </div>
+            <div class="agent-metric-item">
+              <span>Audit State:</span>
+              <strong style="color: #38bdf8;">Verified</strong>
+            </div>
           </div>
-          <div class="agent-metric-item">
-            <span>Model:</span>
-            <strong id="panelModelPill">Auto-Routed</strong>
-          </div>
-          <div class="agent-metric-item">
-            <span>Safety Gate:</span>
-            <strong style="color: #10b981;">Deterministic</strong>
-          </div>
-          <div class="agent-metric-item">
-            <span>Audit State:</span>
-            <strong style="color: #38bdf8;">Verified</strong>
-          </div>
-        </div>
 
-        <!-- 5. Direct Agent Dialogue (Chat History) -->
-        <div class="agent-chat-box">
-          <div class="chat-header-bar">
-            <span>DIRECT AGENT DIALOGUE</span>
-            <button class="chat-clear-btn" onclick="clearActiveAgentChat()" title="Clear chat view">Clear</button>
+          <!-- 5. Direct Agent Dialogue (Chat History) -->
+          <div class="agent-chat-box">
+            <div class="chat-header-bar">
+              <span>DIRECT AGENT DIALOGUE</span>
+              <button class="chat-clear-btn" onclick="clearActiveAgentChat()" title="Clear chat view">Clear</button>
+            </div>
+            <div id="panelChatHistory" class="chat-history">
+              <!-- Messages added here -->
+            </div>
           </div>
-          <div id="panelChatHistory" class="chat-history">
-            <!-- Messages added here -->
-          </div>
-        </div>
 
-        <!-- 6. Push-to-Talk Voice & Text Console -->
-        <div class="ptt-console">
-          <!-- Big Push-to-Talk Mic Button -->
-          <button id="panelMicBtn" class="ptt-mic-btn state-ready" onclick="toggleAgentPushToTalk()" title="Push-to-Talk Voice">
-            <span class="ptt-mic-icon">🎤</span>
-            <span id="panelMicStatusText" class="ptt-mic-label">TAP TO SPEAK</span>
-            <span class="ptt-wave-indicator"></span>
-          </button>
-
-          <!-- Text Input Fallback Bar (Voice/Text Parity) -->
-          <div class="ptt-text-row">
-            <input 
-              id="panelTextInput" 
-              type="text" 
-              class="ptt-text-input" 
-              placeholder="Ask this agent..." 
-              onkeydown="if(event.key==='Enter') sendAgentTextMessage()"
-            />
-            <button id="panelSendBtn" class="ptt-send-btn" onclick="sendAgentTextMessage()" title="Send">
-              ➔
+          <!-- 6. Push-to-Talk Voice & Text Console -->
+          <div class="ptt-console">
+            <button id="panelMicBtn" class="ptt-mic-btn state-ready" onclick="toggleAgentPushToTalk()" title="Push-to-Talk Voice">
+              <span class="ptt-mic-icon">🎤</span>
+              <span id="panelMicStatusText" class="ptt-mic-label">TAP TO SPEAK</span>
+              <span class="ptt-wave-indicator"></span>
             </button>
+
+            <div class="ptt-text-row">
+              <input 
+                id="panelTextInput" 
+                type="text" 
+                class="ptt-text-input" 
+                placeholder="Ask this agent..." 
+                onkeydown="if(event.key==='Enter') sendAgentTextMessage()"
+              />
+              <button id="panelSendBtn" class="ptt-send-btn" onclick="sendAgentTextMessage()" title="Send">
+                ➔
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dedicated SkyShield Security Command Center View -->
+        <div id="skyshieldCommandCenterView" class="panel-view-container skyshield-view" style="display: none;">
+          <!-- Hero Card with Status and Telemetry Badge -->
+          <div class="skyshield-hero-card" id="skyshieldHeroCard">
+            <div class="skyshield-hero-top">
+              <div class="skyshield-badge-group">
+                <span class="skyshield-badge live" id="skyshieldSourceBadge">LIVE TELEMETRY</span>
+                <span class="skyshield-state-pill" id="skyshieldStatePill">IDLE</span>
+              </div>
+              <div class="skyshield-security-status" id="skyshieldSecurityStatus">
+                <span class="status-icon" id="skyshieldStatusIcon">🛡️</span>
+                <span class="status-text" id="skyshieldStatusText">SECURE</span>
+              </div>
+            </div>
+            <div class="skyshield-hero-desc" id="skyshieldHeroDesc">
+              System operating within verified security policy parameters.
+            </div>
+          </div>
+
+          <!-- SkyShield Action Controls -->
+          <div class="skyshield-action-bar">
+            <button class="skyshield-btn primary" id="btnSkyShieldScan" onclick="triggerSkyShieldScan()">
+              <span>▶</span> <span>Run Full Security Scan</span>
+            </button>
+            <button class="skyshield-btn danger" id="btnSkyShieldEmergencyStop" onclick="triggerSkyShieldEmergencyStop()">
+              <span>🛑</span> <span>EMERGENCY STOP</span>
+            </button>
+            <button class="skyshield-btn secondary" id="btnSkyShieldReset" onclick="triggerSkyShieldReset()">
+              <span>↺</span> <span>Reset System</span>
+            </button>
+          </div>
+
+          <!-- 10 Structured Security Cards Container -->
+          <div class="skyshield-cards-scroll">
+            <!-- 1. Device Security Card -->
+            <div class="skyshield-card" id="cardDeviceSecurity">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">📱 Device Security</span>
+                <span class="skyshield-card-tag" id="cardDeviceTag">VERIFIED</span>
+              </div>
+              <div class="skyshield-card-body" id="cardDeviceBody">
+                <div class="skyshield-prop-row"><span>OS Platform:</span> <strong id="devOs">Windows 11</strong></div>
+                <div class="skyshield-prop-row"><span>Hardware / Host:</span> <strong id="devModel">Local Host</strong></div>
+                <div class="skyshield-prop-row"><span>Root / Jailbreak:</span> <strong id="devRooted" style="color: #10b981;">Negative</strong></div>
+                <div class="skyshield-prop-row"><span>Security Verification:</span> <strong id="devVerif" style="color: #38bdf8;">LIVE</strong></div>
+              </div>
+            </div>
+
+            <!-- 2. WhatsApp Security Card -->
+            <div class="skyshield-card" id="cardWhatsAppSecurity">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">💬 WhatsApp Inspection</span>
+                <span class="skyshield-card-tag" id="cardWhatsAppTag">SANDBOXED</span>
+              </div>
+              <div class="skyshield-card-body" id="cardWhatsAppBody">
+                <div class="skyshield-prop-row"><span>Package:</span> <strong>com.whatsapp</strong></div>
+                <div class="skyshield-prop-row"><span>Inspection Scope:</span> <strong>Configuration & Permissions</strong></div>
+                <div class="skyshield-prop-row"><span>Private Messages:</span> <strong style="color: #10b981;">Blocked (Zero-Access)</strong></div>
+                <div class="skyshield-prop-row"><span>Database Extraction:</span> <strong style="color: #10b981;">Strictly Forbidden</strong></div>
+                <div class="skyshield-prop-row"><span>Data Verification:</span> <strong id="waVerif">VERIFIED_BASELINE</strong></div>
+              </div>
+            </div>
+
+            <!-- 3. Instagram Security Card -->
+            <div class="skyshield-card" id="cardInstagramSecurity">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">📸 Instagram Inspection</span>
+                <span class="skyshield-card-tag" id="cardInstagramTag">SANDBOXED</span>
+              </div>
+              <div class="skyshield-card-body" id="cardInstagramBody">
+                <div class="skyshield-prop-row"><span>Package:</span> <strong>com.instagram.android</strong></div>
+                <div class="skyshield-prop-row"><span>Inspection Scope:</span> <strong>Configuration & Permissions</strong></div>
+                <div class="skyshield-prop-row"><span>Direct Messages:</span> <strong style="color: #10b981;">Blocked (Zero-Access)</strong></div>
+                <div class="skyshield-prop-row"><span>Data Verification:</span> <strong id="igVerif">VERIFIED_BASELINE</strong></div>
+              </div>
+            </div>
+
+            <!-- 4. Snapchat Security Card -->
+            <div class="skyshield-card" id="cardSnapchatSecurity">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">👻 Snapchat Inspection</span>
+                <span class="skyshield-card-tag" id="cardSnapchatTag">SANDBOXED</span>
+              </div>
+              <div class="skyshield-card-body" id="cardSnapchatBody">
+                <div class="skyshield-prop-row"><span>Package:</span> <strong>com.snapchat.android</strong></div>
+                <div class="skyshield-prop-row"><span>Inspection Scope:</span> <strong>Configuration & Permissions</strong></div>
+                <div class="skyshield-prop-row"><span>Ephemeral Snaps:</span> <strong style="color: #10b981;">Blocked (Zero-Access)</strong></div>
+                <div class="skyshield-prop-row"><span>Data Verification:</span> <strong id="scVerif">VERIFIED_BASELINE</strong></div>
+              </div>
+            </div>
+
+            <!-- 5. Camera Security Card -->
+            <div class="skyshield-card" id="cardCameraSecurity">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">📷 Camera Hardware & Streams</span>
+                <span class="skyshield-card-tag" id="cardCameraTag">INACTIVE</span>
+              </div>
+              <div class="skyshield-card-body" id="cardCameraBody">
+                <div class="skyshield-prop-row"><span>Sensor Active:</span> <strong id="camActive" style="color: #10b981;">No (Idle)</strong></div>
+                <div class="skyshield-prop-row"><span>Active Streams:</span> <strong id="camStreams">0</strong></div>
+                <div class="skyshield-prop-row"><span>Covert Activation:</span> <strong style="color: #10b981;">Zero-Tolerance Prevented</strong></div>
+                <div class="skyshield-prop-row"><span>Status:</span> <strong id="camVerif" style="color: #38bdf8;">LIVE_AUDIT</strong></div>
+              </div>
+            </div>
+
+            <!-- 6. Microphone Security Card -->
+            <div class="skyshield-card" id="cardMicrophoneSecurity">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">🎙️ Microphone Hardware & Sensors</span>
+                <span class="skyshield-card-tag" id="cardMicrophoneTag">INACTIVE</span>
+              </div>
+              <div class="skyshield-card-body" id="cardMicrophoneBody">
+                <div class="skyshield-prop-row"><span>Recording Active:</span> <strong id="micActive" style="color: #10b981;">No (Idle)</strong></div>
+                <div class="skyshield-prop-row"><span>Authorized Session:</span> <strong id="micSession">None</strong></div>
+                <div class="skyshield-prop-row"><span>Covert Eavesdropping:</span> <strong style="color: #10b981;">Zero-Tolerance Prevented</strong></div>
+                <div class="skyshield-prop-row"><span>Status:</span> <strong id="micVerif" style="color: #38bdf8;">LIVE_AUDIT</strong></div>
+              </div>
+            </div>
+
+            <!-- 7. Permissions Matrix Card -->
+            <div class="skyshield-card" id="cardPermissionsMatrix">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">🔐 Permissions Matrix</span>
+                <span class="skyshield-card-tag" id="cardPermissionsTag">AUDITED</span>
+              </div>
+              <div class="skyshield-card-body" id="cardPermissionsBody">
+                <!-- Dynamically populated permissions table -->
+              </div>
+            </div>
+
+            <!-- 8. Threats & Findings Card -->
+            <div class="skyshield-card" id="cardThreatsFindings">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">⚠️ Threats & Findings</span>
+                <span class="skyshield-card-tag count" id="cardThreatsCount">0 FINDINGS</span>
+              </div>
+              <div class="skyshield-card-body" id="cardThreatsBody">
+                <div class="skyshield-empty-state">No anomalous security threats detected.</div>
+              </div>
+            </div>
+
+            <!-- 9. Security Events Card -->
+            <div class="skyshield-card" id="cardSecurityEvents">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">⚡ Telemetry Events</span>
+                <span class="skyshield-card-tag" id="cardEventsTag">REAL-TIME</span>
+              </div>
+              <div class="skyshield-card-body" id="cardEventsBody">
+                <div class="skyshield-empty-state">No real-time security events logged.</div>
+              </div>
+            </div>
+
+            <!-- 10. Audit Log Card -->
+            <div class="skyshield-card" id="cardAuditLog">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">📋 Tamper-Evident Audit Log</span>
+                <span class="skyshield-card-tag" id="cardAuditTag">BOUNDED</span>
+              </div>
+              <div class="skyshield-card-body" id="cardAuditBody">
+                <div class="skyshield-empty-state">Audit trail records will appear here.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SkyShield Direct Command Input -->
+          <div class="skyshield-command-bar">
+            <div class="skyshield-quick-prompts">
+              <button class="quick-chip" onclick="sendSkyShieldCommand('Run security scan')">▶ Run Scan</button>
+              <button class="quick-chip" onclick="sendSkyShieldCommand('Audit permissions')">🔐 Permissions</button>
+              <button class="quick-chip" onclick="sendSkyShieldCommand('Check camera and mic')">📷 Hardware</button>
+              <button class="quick-chip" onclick="sendSkyShieldCommand('Show audit log')">📋 Audit Trail</button>
+            </div>
+            <div class="ptt-text-row">
+              <input 
+                id="skyshieldTextInput" 
+                type="text" 
+                class="ptt-text-input" 
+                placeholder="Enter SkyShield security directive..." 
+                onkeydown="if(event.key==='Enter') sendSkyShieldInput()"
+              />
+              <button id="skyshieldSendBtn" class="ptt-send-btn" onclick="sendSkyShieldInput()" title="Execute Directive">
+                ➔
+              </button>
+            </div>
           </div>
         </div>
       </aside>
