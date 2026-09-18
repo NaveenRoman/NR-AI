@@ -197,20 +197,26 @@ class CompanionDashboard:
 
         class DashboardHTTPHandler(http.server.BaseHTTPRequestHandler):
             def _send_json(self, code: int, payload: bytes):
-                self.send_response(code)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(payload)))
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(payload)
+                try:
+                    self.send_response(code)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(payload)
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass
 
             def _send_bytes(self, code: int, content_type: str, data: bytes):
-                self.send_response(code)
-                self.send_header("Content-Type", content_type)
-                self.send_header("Content-Length", str(len(data)))
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(data)
+                try:
+                    self.send_response(code)
+                    self.send_header("Content-Type", content_type)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(data)
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                    pass
 
             def do_GET(self):
                 parsed = urllib.parse.urlparse(self.path)
@@ -475,8 +481,9 @@ class CompanionDashboard:
                 pass  # suppress HTTP request logs in console
 
         try:
-            class ReusableTCPServer(socketserver.TCPServer):
+            class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
                 allow_reuse_address = True
+                daemon_threads = True
 
             self._httpd = ReusableTCPServer(("127.0.0.1", self.port), DashboardHTTPHandler)
             self._server_thread = threading.Thread(

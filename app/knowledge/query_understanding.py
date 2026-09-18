@@ -33,6 +33,7 @@ class QueryIntent(str, Enum):
     CHRONOLOGY = "CHRONOLOGY"
     FACT_VERIFICATION = "FACT_VERIFICATION"
     SPECULATION = "SPECULATION"
+    PEDAGOGICAL_ADAPTATION = "PEDAGOGICAL_ADAPTATION"
     GENERAL = "GENERAL"
 
 
@@ -253,13 +254,19 @@ class QueryUnderstandingEngine:
         target_attribute: Optional[str] = None
 
         coref_patterns = [
-            r"^(?:who|what)\s+(?:created|made|invented|developed|built|discovered)\s+(?:it|this|that)[?!.]*$",
-            r"^(?:when\s+was\s+(?:it|this|that)\s+(?:created|invented|founded|released|discovered|made))[?!.]*$",
-            r"^(?:what\s+is\s+its\s+(?:architecture|version|capital|population|speed|purpose|meaning))[?!.]*$",
-            r"^(?:tell me more|explain more|continue|elaborate)(?:\s+(?:about\s+)?(?:it|that|this))?[?!.]*$",
+            r"^(?:who|what)\s+(?:created|made|invented|developed|built|discovered|wrote|authored)\s+(?:it|this|that|him|her)[?!.]*$",
+            r"^(?:when\s+was\s+(?:it|this|that|he|she)\s+(?:created|invented|founded|released|discovered|made|born))[?!.]*$",
+            r"^(?:where\s+was\s+(?:it|this|that|he|she)\s+(?:created|invented|founded|released|discovered|made|born|located))[?!.]*$",
+            r"^(?:what\s+is\s+(?:its|his|her)\s+(?:architecture|version|capital|population|speed|purpose|meaning|birthplace|nationality))[?!.]*$",
+            r"^(?:who\s+(?:is|was)\s+(?:he|she|it|this|that))[?!.]*$",
+            r"^(?:when\s+did\s+(?:he|she|it|this)\s+(?:die|win|discover|invent|create|found|publish|release|write))[?!.]*$",
+            r"^(?:what\s+did\s+(?:he|she|it|this)\s+(?:do|discover|invent|create|win|write))[?!.]*$",
+            r"^(?:tell me more|explain more|continue|elaborate)(?:\s+(?:about\s+)?(?:it|that|this|him|her))?[?!.]*$",
             r"^compare\s+(?:that|it|this)\s+with\s+(.+)[?!.]*$",
             r"^what\s+about\s+(?:the\s+)?(.+)[?!.]*$",
-            r"^why(?:\s+is\s+(?:that|it))?[?!.]*$",
+            r"^why(?:\s+is\s+(?:that|it|he|she))?[?!.]*$",
+            r"^(?:explain\s+it\s+like\s+i\s+am\s+a\s+beginner|explain\s+like\s+i'?m\s+5|eli5|simplify\s+this|for\s+beginners|in\s+simple\s+terms)[?!.]*$",
+            r"^(?:give\s+me\s+a\s+real[\s-]world\s+example|give\s+an\s+example|give\s+me\s+an\s+example|real[\s-]world\s+example)[?!.]*$",
         ]
 
         for pat in coref_patterns:
@@ -270,23 +277,30 @@ class QueryUnderstandingEngine:
                     active_subject = session_context["last_subject"]
                 break
 
-        # Fallback check for pronoun follow-up
+        # Fallback check for pronoun follow-up or contextual continuation
         if not is_coreference and session_context and session_context.get("last_subject"):
-            if re.search(r"\b(it|this|that|its)\b", q_low):
+            if re.search(r"\b(it|this|that|its|he|him|his|she|her|hers)\b", q_low):
+                active_subject = session_context["last_subject"]
+                is_coreference = True
+            elif any(p in q_low for p in ("beginner", "simple terms", "real-world example", "real world example", "example", "eli5", "simplify")):
                 active_subject = session_context["last_subject"]
                 is_coreference = True
 
+        resolved_coref_subject = ""
         if is_coreference and active_subject:
-            repaired_query = re.sub(r"\b(it|this|that|him|her|its)\b", active_subject, repaired_query, flags=re.IGNORECASE)
+            resolved_coref_subject = active_subject
+            repaired_query = re.sub(r"\b(it|this|that|him|her|its|he|she|his|hers)\b", active_subject, repaired_query, flags=re.IGNORECASE)
+            q_low = repaired_query.lower()
 
         # Extract target attribute if present
         attr_patterns = [
             (r"\b(?:capital of|capital city of)\s+([a-zA-Z\s]+)", "capital"),
             (r"\b(?:who invented|who was the inventor of|inventor of)\s+([a-zA-Z\s]+)", "inventor"),
-            (r"\b(?:who created|creator of|who made|who developed|author of)\s+([a-zA-Z\s]+)", "creator"),
+            (r"\b(?:who created|creator of|who made|who developed|author of|who wrote)\s+([a-zA-Z\s]+)", "creator"),
             (r"\b(?:latest version of|current version of|latest release of|what version is)\s+([a-zA-Z0-9\s\+\#]+)", "version"),
             (r"\b(?:latest|current|newest)\s+([a-zA-Z0-9\s\+\#]+)\s+(?:version|release)\b", "version"),
-            (r"\b(?:when was|what year was|when did)\s+([a-zA-Z0-9\s]+)\s+(?:invented|founded|created|released|born|happen|occur)", "date"),
+            (r"\b(?:where was|where did)\s+([a-zA-Z0-9\s]+)\s+(?:born|founded|created|located|occur|happen)", "birthplace"),
+            (r"\b(?:when was|what year was|when did)\s+([a-zA-Z0-9\s]+)\s+(?:invented|founded|created|released|born|happen|occur|die)", "date"),
             (r"\b(?:architecture of|how does)\s+([a-zA-Z0-9\s]+)\s+(?:work|operate)", "architecture"),
             (r"\b(?:population of)\s+([a-zA-Z\s]+)", "population"),
         ]
@@ -359,7 +373,7 @@ class QueryUnderstandingEngine:
 
         # 3. Python Disambiguation
         elif re.search(r"\bpython\b", q_low):
-            if any(w in q_low for w in ("snake", "reptile", "animal", "species", "constrictor", "zoo", "wildlife", "ball python", "reticulated", "eat", "eats")):
+            if re.search(r"\b(snake|reptile|animal|species|constrictor|zoo|wildlife|ball python|reticulated|eat|eats)\b", q_low):
                 active_subject = "Python (snake)"
                 domain = "biology"
                 subdomain = "zoology"
@@ -379,7 +393,7 @@ class QueryUnderstandingEngine:
 
         # 4. Apple Disambiguation
         elif re.search(r"\bapple\b", q_low):
-            if any(w in q_low for w in ("fruit", "eat", "orchard", "cider", "pie", "tree", "nutrition", "calories", "nutrients")):
+            if re.search(r"\b(fruit|eat|orchard|cider|pie|tree|nutrition|calories|nutrients)\b", q_low):
                 active_subject = "Apple (fruit)"
                 domain = "biology"
                 subdomain = "nutrition"
@@ -564,11 +578,19 @@ class QueryUnderstandingEngine:
             else:
                 active_subject = cleaned_sub.title() if cleaned_sub else "General Inquiry"
 
+        # If active_subject was established via coreference, preserve the full resolved entity name
+        if is_coreference and resolved_coref_subject:
+            active_subject = resolved_coref_subject
+
         # ---------------------------------------------------------------------
         # Intent Classification
         # ---------------------------------------------------------------------
         intent = QueryIntent.DEFINITION
-        if any(w in q_low for w in ("will", "speculate", "prediction", "forecast", "future of", "can humans", "could we achieve", "faster-than-light", "faster than light", "hyperdrive", "warp drive", "perpetual motion", "time machine")):
+        if any(w in q_low for w in ("beginner", "eli5", "explain like i'm 5", "explain like im 5", "simplified", "simple terms", "simplify", "real-world example", "real world example")):
+            intent = QueryIntent.PEDAGOGICAL_ADAPTATION
+        elif any(w in q_low for w in ("how does", "how do", "mechanism", "how it works", "how they work")):
+            intent = QueryIntent.MECHANISM
+        elif any(w in q_low for w in ("will", "speculate", "prediction", "forecast", "future of", "can humans", "could we achieve", "faster-than-light", "faster than light", "hyperdrive", "warp drive", "perpetual motion", "time machine")):
             intent = QueryIntent.SPECULATION
             time_scope = TimeScope.FUTURE_SPECULATIVE
         elif any(w in q_low for w in ("compare", "difference between", "different between", "versus", "vs", "between")) or any(w in q_low for w in ("and you", "with you", "to you", "vs you")):
