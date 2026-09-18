@@ -70,6 +70,22 @@ from app.security.health_analyzer import (
     STORAGE_WARNING_THRESHOLD,
     DeviceHealthAnalyzer,
 )
+from app.security.incident_models import (
+    ActionConfirmationStatus,
+    AlertSeverity,
+    EvidenceVerificationState,
+    HIGH_IMPACT_ACTIONS,
+    IncidentState,
+    SafeActionProposal,
+    SecurityAlert,
+    SecurityEvidence,
+    SecurityIncident,
+    SourceAuthority,
+    ThreatAdvisory,
+)
+from app.security.threat_intelligence import ThreatIntelligenceService
+from app.security.safe_response_engine import SafeResponseEngine
+from app.security.incident_manager import SecurityIncidentEngine
 from app.security.scanner import SecurityScanner
 
 __all__ = [
@@ -118,7 +134,20 @@ __all__ = [
     "SkyShieldCapability",
     "TelemetryProcessingState",
     "ThreatCategory",
-    "ThreatConclusion",
+    "ActionConfirmationStatus",
+    "AlertSeverity",
+    "EvidenceVerificationState",
+    "HIGH_IMPACT_ACTIONS",
+    "IncidentState",
+    "SafeActionProposal",
+    "SafeResponseEngine",
+    "SecurityAlert",
+    "SecurityEvidence",
+    "SecurityIncident",
+    "SecurityIncidentEngine",
+    "SourceAuthority",
+    "ThreatAdvisory",
+    "ThreatIntelligenceService",
     "generate_challenge",
     "generate_pairing_code",
     "mask_phone_number",

@@ -331,6 +331,61 @@ class CompanionDashboard:
                         payload = json.dumps({"success": False, "error": f"Pairing request '{pairing_id}' not found"}, indent=2).encode("utf-8")
                         self._send_json(404, payload)
 
+                # SkyShield Phase 4 Security Overview
+                elif parsed.path in ("/api/skyshield/overview", "/api/skyshield/overview/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    data = coord.get_security_overview() if coord else {"error": "Coordinator unavailable"}
+                    self._send_json(200 if coord else 500, json.dumps({"success": bool(coord), "overview": data}, indent=2).encode("utf-8"))
+
+                # SkyShield Phase 4 Incidents List & Detail
+                elif parsed.path in ("/api/skyshield/incidents", "/api/skyshield/incidents/"):
+                    params = urllib.parse.parse_qs(parsed.query)
+                    dev_id = params.get("device_id", [None])[0]
+                    st = params.get("status", [None])[0]
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    incs = coord.list_incidents(device_id=dev_id, status=st) if coord else []
+                    self._send_json(200, json.dumps({"success": True, "incidents": incs}, indent=2).encode("utf-8"))
+
+                elif parsed.path.startswith("/api/skyshield/incidents/"):
+                    parts = parsed.path.strip("/").split("/")
+                    inc_id = parts[3] if len(parts) >= 4 else ""
+                    sub_act = parts[4] if len(parts) >= 5 else ""
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    if sub_act == "report":
+                        rep = coord.generate_incident_report(inc_id) if coord else {"success": False, "error": "Coordinator unavailable"}
+                        self._send_json(200 if rep.get("success") else 404, json.dumps(rep, indent=2).encode("utf-8"))
+                    else:
+                        inc = coord.get_incident(inc_id) if coord else None
+                        if inc:
+                            self._send_json(200, json.dumps({"success": True, "incident": inc}, indent=2).encode("utf-8"))
+                        else:
+                            self._send_json(404, json.dumps({"success": False, "error": f"Incident '{inc_id}' not found"}, indent=2).encode("utf-8"))
+
+                # SkyShield Phase 4 Threat Intelligence & CVEs
+                elif parsed.path in ("/api/skyshield/threats", "/api/skyshield/threats/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    threats = coord.list_threat_advisories() if coord else []
+                    self._send_json(200, json.dumps({"success": True, "threats": threats}, indent=2).encode("utf-8"))
+
+                elif parsed.path.startswith("/api/skyshield/threats/check/"):
+                    parts = parsed.path.strip("/").split("/")
+                    dev_id = parts[4] if len(parts) >= 5 else ""
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    res = coord.check_device_vulnerability(dev_id) if coord else {"success": False, "error": "Coordinator unavailable"}
+                    self._send_json(200 if res.get("success") else 404, json.dumps(res, indent=2).encode("utf-8"))
+
+                # SkyShield Phase 4 Security Alerts
+                elif parsed.path in ("/api/skyshield/alerts", "/api/skyshield/alerts/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    alerts = coord.list_alerts() if coord else []
+                    self._send_json(200, json.dumps({"success": True, "alerts": alerts}, indent=2).encode("utf-8"))
+
+                # SkyShield Phase 4 Gated Proposals
+                elif parsed.path in ("/api/skyshield/proposals", "/api/skyshield/proposals/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    props = [p.to_dict() for p in coord.response_engine.list_proposals()] if coord else []
+                    self._send_json(200, json.dumps({"success": True, "proposals": props}, indent=2).encode("utf-8"))
+
                 # 1d. Diagnostics & Introduction APIs
                 elif parsed.path == "/api/diagnostics/credentials":
                     from app.agent.credential_diagnostics import CredentialDiagnosticEngine
@@ -726,6 +781,92 @@ class CompanionDashboard:
                     )
                     payload = json.dumps({"success": ok, "message": msg}, indent=2).encode("utf-8")
                     self._send_json(200 if ok else 400, payload)
+
+                # SkyShield Phase 4 Gated Safe Response Action Proposal
+                elif parsed.path in ("/api/skyshield/response/propose", "/api/skyshield/response/propose/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+                    if not coord:
+                        self._send_json(500, json.dumps({"success": False, "error": "Coordinator unavailable"}).encode("utf-8"))
+                    else:
+                        try:
+                            prop = coord.propose_response_action(
+                                action=b_data.get("action", ""),
+                                device_id=b_data.get("device_id", ""),
+                                incident_id=b_data.get("incident_id"),
+                                reason=b_data.get("reason", "Operator proposal"),
+                                initiated_by=b_data.get("initiated_by", "Operator"),
+                            )
+                            self._send_json(200, json.dumps({"success": True, "proposal": prop}, indent=2).encode("utf-8"))
+                        except Exception as ex:
+                            self._send_json(400, json.dumps({"success": False, "error": str(ex)}).encode("utf-8"))
+
+                # SkyShield Phase 4 Gated Safe Response Action Confirmation
+                elif parsed.path in ("/api/skyshield/response/confirm", "/api/skyshield/response/confirm/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+                    if not coord:
+                        self._send_json(500, json.dumps({"success": False, "error": "Coordinator unavailable"}).encode("utf-8"))
+                    else:
+                        p_id = b_data.get("proposal_id", "")
+                        conf = bool(b_data.get("operator_confirmed", True))
+                        ok, msg, p = coord.confirm_response_action(p_id, operator_confirmed=conf)
+                        status_code = 200 if ok else 403
+                        self._send_json(status_code, json.dumps({"success": ok, "message": msg, "proposal": p}, indent=2).encode("utf-8"))
+
+                # SkyShield Phase 4 Incident Status & False Positive Updates
+                elif parsed.path.startswith("/api/skyshield/incidents/"):
+                    parts = parsed.path.strip("/").split("/")
+                    inc_id = parts[3] if len(parts) >= 4 else ""
+                    sub_act = parts[4] if len(parts) >= 5 else ""
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+
+                    if not coord:
+                        self._send_json(500, json.dumps({"success": False, "error": "Coordinator unavailable"}).encode("utf-8"))
+                    elif sub_act == "false_positive":
+                        reason = b_data.get("reason", "Operator determination")
+                        ok, msg = coord.mark_false_positive(inc_id, reason=reason)
+                        self._send_json(200 if ok else 400, json.dumps({"success": ok, "message": msg}, indent=2).encode("utf-8"))
+                    elif sub_act == "resolve":
+                        res_text = b_data.get("resolution", "Resolved by operator")
+                        ok, msg = coord.resolve_incident(inc_id, resolution=res_text)
+                        self._send_json(200 if ok else 400, json.dumps({"success": ok, "message": msg}, indent=2).encode("utf-8"))
+                    elif sub_act == "status":
+                        st = b_data.get("status", "")
+                        reason = b_data.get("reason")
+                        ok, msg = coord.update_incident_status(inc_id, new_status=st, reason=reason)
+                        self._send_json(200 if ok else 400, json.dumps({"success": ok, "message": msg}, indent=2).encode("utf-8"))
+                    elif sub_act == "analyze":
+                        sec_agent = getattr(dashboard_ref.companion, "security_agent", None)
+                        if sec_agent and hasattr(sec_agent, "analyze_incident"):
+                            res = sec_agent.analyze_incident(inc_id)
+                        else:
+                            inc = coord.get_incident(inc_id)
+                            res = {"success": bool(inc), "analysis": inc.get("ai_analysis") if inc else None}
+                        self._send_json(200 if res.get("success") else 404, json.dumps(res, indent=2).encode("utf-8"))
+                    else:
+                        self._send_json(404, json.dumps({"success": False, "error": f"Unknown action '{sub_act}'"}).encode("utf-8"))
+
+                # SkyShield Phase 4 Threat Vulnerability Check
+                elif parsed.path in ("/api/skyshield/threats/check", "/api/skyshield/threats/check/"):
+                    coord = getattr(dashboard_ref.companion, "security_coordinator", None)
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+                    dev_id = b_data.get("device_id", "dev_mock_vivo_v2334")
+                    res = coord.check_device_vulnerability(dev_id) if coord else {"success": False, "error": "Coordinator unavailable"}
+                    self._send_json(200 if res.get("success") else 404, json.dumps(res, indent=2).encode("utf-8"))
 
                 # 3. Agent Specific Action
                 elif parsed.path == "/api/conversation/active":

@@ -599,6 +599,67 @@
                 <div class="skyshield-empty-state">Chronological security events for paired devices will appear here.</div>
               </div>
             </div>
+
+            <!-- 16. Security Overview & Alert Center (Phase 4) -->
+            <div class="skyshield-card full-width" id="cardSecurityOverview">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">🌐 Global Security Overview & Risk Posture</span>
+                <span class="skyshield-card-tag" id="cardOverviewTag">REAL-TIME TELEMETRY</span>
+              </div>
+              <div class="skyshield-card-body" id="cardOverviewBody">
+                <div class="skyshield-kpi-grid">
+                  <div class="skyshield-kpi-item">
+                    <span class="kpi-label">Active Incidents</span>
+                    <strong class="kpi-value" id="secOverviewActiveIncidents">0</strong>
+                  </div>
+                  <div class="skyshield-kpi-item">
+                    <span class="kpi-label">Critical Alerts</span>
+                    <strong class="kpi-value crit" id="secOverviewCritAlerts">0</strong>
+                  </div>
+                  <div class="skyshield-kpi-item">
+                    <span class="kpi-label">High Alerts</span>
+                    <strong class="kpi-value high" id="secOverviewHighAlerts">0</strong>
+                  </div>
+                  <div class="skyshield-kpi-item">
+                    <span class="kpi-label">Devices at Risk</span>
+                    <strong class="kpi-value warn" id="secOverviewRiskDevices">0</strong>
+                  </div>
+                  <div class="skyshield-kpi-item">
+                    <span class="kpi-label">Global Posture</span>
+                    <strong class="kpi-value green" id="secOverviewAvgPosture">100</strong>
+                  </div>
+                </div>
+                <div style="margin-top: 10px;">
+                  <div style="font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px;">Recent Alerts (Deduplicated):</div>
+                  <div id="secOverviewAlertsList" class="alerts-feed-container">
+                    <div class="skyshield-empty-state" style="padding: 6px;">No critical alerts active.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 17. Security Incident Center (Phase 4) -->
+            <div class="skyshield-card" id="cardIncidentCenter">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">🚨 Security Incident Center</span>
+                <span class="skyshield-card-tag count" id="cardIncidentCount">0 INCIDENTS</span>
+              </div>
+              <div class="skyshield-card-body" id="cardIncidentBody">
+                <div class="skyshield-empty-state">No security incidents detected. System operating normally.</div>
+              </div>
+            </div>
+
+            <!-- 18. Threat Intelligence & CVE Advisories (Phase 4) -->
+            <div class="skyshield-card" id="cardThreatIntelligence">
+              <div class="skyshield-card-header">
+                <span class="skyshield-card-title">📡 Threat Intelligence & CVE Advisories</span>
+                <button class="device-action-btn reauthorize" style="font-size: 10px; padding: 2px 6px;" onclick="checkDeviceVulnerabilities('dev_mock_vivo_v2334')">Check Device CVEs</button>
+              </div>
+              <div class="skyshield-card-body" id="cardThreatsBody">
+                <div class="skyshield-empty-state">Public threat catalog loading...</div>
+              </div>
+            </div>
+
           </div>
 
           <!-- SkyShield Safe Response Actions Bar -->
@@ -612,6 +673,31 @@
               <button class="skyshield-btn secondary" style="padding: 4px 10px; font-size: 11px;" onclick="simulateMockAnomaly('CPU_SPIKE')">🧪 CPU Spike</button>
               <button class="skyshield-btn secondary" style="padding: 4px 10px; font-size: 11px;" onclick="simulateMockAnomaly('NETWORK_FLAPPING')">🧪 Net Flapping</button>
               <button class="skyshield-btn secondary" style="padding: 4px 10px; font-size: 11px;" onclick="resetDeviceBaseline('dev_mock_vivo_v2334')">↺ Reset Baseline</button>
+            </div>
+          </div>
+
+
+          <!-- SkyShield Phase 4 Incident Detail Modal -->
+          <div id="skyshieldIncidentModal" class="skyshield-modal-overlay" style="display: none;">
+            <div class="skyshield-modal-content large">
+              <div class="skyshield-modal-header">
+                <span class="skyshield-modal-title" id="incModalHeaderTitle">🚨 Incident Detail View</span>
+                <button class="skyshield-modal-close" onclick="closeSkyShieldIncidentModal()">&times;</button>
+              </div>
+              <div class="skyshield-modal-body" id="incModalBody">
+                <!-- Dynamically populated by JS -->
+                <div class="skyshield-empty-state">Loading incident details...</div>
+              </div>
+              <div class="skyshield-modal-actions" style="border-top: 1px solid rgba(51, 65, 85, 0.6); padding-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div id="incModalLeftActions">
+                  <button class="skyshield-btn secondary" onclick="exportCurrentIncidentReport()">📄 Export Report</button>
+                  <button class="skyshield-btn secondary" onclick="promptIncidentFalsePositive()">False Positive</button>
+                </div>
+                <div id="incModalRightActions" style="display: flex; gap: 8px;">
+                  <button class="skyshield-btn primary" onclick="resolveCurrentIncident()">Resolve Incident</button>
+                  <button class="skyshield-btn cancel" onclick="closeSkyShieldIncidentModal()">Close</button>
+                </div>
+              </div>
             </div>
           </div>
 

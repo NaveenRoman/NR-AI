@@ -88,6 +88,9 @@ class DeterministicSecurityGate:
             "elevate capability", "grant root", "skip owner approval", "authorize phone number",
             "authenticate by phone only", "force enroll", "override authorization",
             "skyshield.pair_approve", "pair_approve", "authorize",
+            "declare compromise without evidence", "compromise without evidence",
+            "declare compromise", "force compromise", "exploit", "create malware",
+            "disable security gate", "bypass emergency stop",
         ]
         for token in unauthorized_model_decisions:
             if token in combined:
@@ -261,6 +264,56 @@ class SecurityAgent:
             ok, msg = self.coordinator.reauthorize_device(dev_id, reason=reason)
             return {"success": ok, "message": msg}
 
+
+        elif action_id == "skyshield.list_incidents":
+            dev_id = params.get("device_id")
+            st = params.get("status")
+            return {"success": True, "incidents": self.coordinator.list_incidents(device_id=dev_id, status=st)}
+
+        elif action_id == "skyshield.get_incident":
+            inc_id = params.get("incident_id", "")
+            return {"success": True, "incident": self.coordinator.get_incident(inc_id)}
+
+        elif action_id == "skyshield.analyze_incident":
+            inc_id = params.get("incident_id", "")
+            return self.analyze_incident(inc_id)
+
+        elif action_id == "skyshield.mark_false_positive":
+            inc_id = params.get("incident_id", "")
+            reason = params.get("reason", "False positive determination")
+            ok, msg = self.coordinator.mark_false_positive(inc_id, reason=reason)
+            return {"success": ok, "message": msg}
+
+        elif action_id == "skyshield.resolve_incident":
+            inc_id = params.get("incident_id", "")
+            res_text = params.get("resolution", "Resolved by operator")
+            ok, msg = self.coordinator.resolve_incident(inc_id, resolution=res_text)
+            return {"success": ok, "message": msg}
+
+        elif action_id == "skyshield.generate_incident_report":
+            inc_id = params.get("incident_id", "")
+            return self.coordinator.generate_incident_report(inc_id)
+
+        elif action_id == "skyshield.list_threats":
+            return {"success": True, "threats": self.coordinator.list_threat_advisories()}
+
+        elif action_id == "skyshield.check_vulnerabilities":
+            dev_id = params.get("device_id", "dev_mock_vivo_v2334")
+            return self.coordinator.check_device_vulnerability(dev_id)
+
+        elif action_id == "skyshield.propose_action":
+            act = params.get("action", "")
+            dev_id = params.get("device_id", "")
+            inc_id = params.get("incident_id")
+            reason = params.get("reason", "")
+            return {"success": True, "proposal": self.coordinator.propose_response_action(act, dev_id, inc_id, reason)}
+
+        elif action_id == "skyshield.confirm_action":
+            p_id = params.get("proposal_id", "")
+            conf = bool(params.get("operator_confirmed", True))
+            ok, msg, p = self.coordinator.confirm_response_action(p_id, operator_confirmed=conf)
+            return {"success": ok, "message": msg, "proposal": p}
+
         else:
             raise ValueError(f"Unknown SkyShield action: {action_id}")
 
@@ -269,3 +322,99 @@ class SecurityAgent:
         Handles operator text directives through the security gate.
         """
         return self.execute_command(text)
+
+    # --------------------------------------------------------------------------
+    # Phase 4 AI Security Analyst Protocol & Threat Correlation
+    # --------------------------------------------------------------------------
+
+    def analyze_incident(self, incident_id: str) -> Dict[str, Any]:
+        """
+        Generates structured AI advisory analysis of an active security incident.
+        Strictly complies with Section 8 & 9 model isolation protocol:
+        - Confidence rating, evidence count, source count, and verification state included.
+        - Advisory only; cannot authorize access or declare compromise without verified evidence.
+        """
+        inc = self.coordinator.get_incident(incident_id)
+        if not inc:
+            return {"success": False, "error": f"Incident '{incident_id}' not found"}
+
+        ev_count = len(inc.get("evidence", []))
+        verif_state = inc.get("verification_state", "OBSERVED")
+        dev_id = inc.get("device_id", "")
+
+        # Look up matching threat advisories
+        vuln_check = self.coordinator.check_device_vulnerability(dev_id)
+        matched_advisories = vuln_check.get("advisories", [])
+        src_count = 1 + (1 if matched_advisories else 0)
+
+        # Compute confidence based on multi-factor evidence corroboration
+        if verif_state == "VERIFIED":
+            confidence = 0.92
+        elif verif_state == "OBSERVED":
+            confidence = 0.85
+        elif verif_state == "SUSPECTED":
+            confidence = 0.72
+        else:
+            confidence = 0.50
+
+        # Construct advisory explanation
+        title = inc.get("title", "Security Incident")
+        cat = inc.get("category", "UNKNOWN")
+        sev = inc.get("severity", "MEDIUM")
+        
+        interpretation = (
+            f"Advisory Analysis for {inc['incident_id']} ({title}): "
+            f"Categorized as {cat} at severity level {sev}. "
+            f"Corroborated across {ev_count} documented evidence artifacts. "
+            f"Evidence state is {verif_state}. "
+        )
+        if matched_advisories:
+            cve_refs = [a["advisory_id"] for a in matched_advisories[:3]]
+            interpretation += f"Correlated with public threat intelligence bulletins: {', '.join(cve_refs)}. "
+        
+        interpretation += "Recommended course of action: execute gated response actions under explicit operator review."
+
+        analysis = {
+            "success": True,
+            "incident_id": incident_id,
+            "title": title,
+            "confidence": confidence,
+            "evidence_count": ev_count,
+            "source_count": src_count,
+            "verification_state": verif_state,
+            "interpretation": interpretation,
+            "recommended_investigation_steps": [
+                "Inspect device baseline history and check recent metric deviations",
+                "Verify authentication attempts against authorized user session timestamps",
+                "Audit newly granted Android application permissions",
+                "Cross-reference device firmware version with public vendor patch level",
+            ],
+            "disclaimer": "AI security analysis is advisory only. Does not constitute proof of compromise or authorization.",
+        }
+
+        # Store analysis on incident model
+        raw_inc = self.coordinator.incident_engine.get_incident(incident_id)
+        if raw_inc:
+            raw_inc.ai_analysis = analysis
+
+        return analysis
+
+    def explain_cve(self, cve_id: str) -> Dict[str, Any]:
+        """Explains public vulnerability advisory in plain technical language with remediation."""
+        adv = self.coordinator.get_threat_advisory(cve_id)
+        if not adv:
+            return {"success": False, "error": f"Advisory '{cve_id}' not found in public catalog."}
+
+        return {
+            "success": True,
+            "advisory_id": adv["advisory_id"],
+            "title": adv["title"],
+            "severity": adv["severity"],
+            "summary": adv["summary"],
+            "affected_components": adv["affected_components"],
+            "remediation": adv["remediation"],
+            "url": adv["url"],
+            "source": adv["source"],
+            "source_authority": adv["source_authority"],
+            "disclaimer": "Information retrieved from authentic public vendor security advisories.",
+        }

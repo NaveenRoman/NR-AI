@@ -2368,6 +2368,8 @@ async function renderSkyShieldDashboard(cachedData) {
     }
   }
 
+  renderSkyShieldPhase4(data);
+
   // 14. Device Security Timeline Card (Phase 3)
   const timelineBody = document.getElementById("cardTimelineBody");
   if (timelineBody && data.events) {
@@ -2765,3 +2767,315 @@ async function triggerDeviceResponse(action) {
 
 
 
+
+
+// ==============================================================================
+// Phase 4 SkyShield Intelligence & Incident Center Renderers
+// ==============================================================================
+
+let currentSelectedIncidentId = null;
+
+function renderSkyShieldPhase4(data) {
+  // 15. Security Overview KPIs
+  const ov = data.security_overview;
+  if (ov) {
+    const actIncEl = document.getElementById("secOverviewActiveIncidents");
+    if (actIncEl) actIncEl.textContent = ov.active_incidents_count || 0;
+
+    const critAltEl = document.getElementById("secOverviewCritAlerts");
+    if (critAltEl) critAltEl.textContent = ov.critical_alerts_count || 0;
+
+    const highAltEl = document.getElementById("secOverviewHighAlerts");
+    if (highAltEl) highAltEl.textContent = ov.high_alerts_count || 0;
+
+    const riskDevEl = document.getElementById("secOverviewRiskDevices");
+    if (riskDevEl) riskDevEl.textContent = ov.devices_at_risk_count || 0;
+
+    const avgPostEl = document.getElementById("secOverviewAvgPosture");
+    if (avgPostEl) {
+      avgPostEl.textContent = ov.overall_security_posture ? `${ov.overall_security_posture}` : "100";
+      avgPostEl.className = `kpi-value ${ov.overall_security_posture >= 80 ? 'green' : (ov.overall_security_posture >= 50 ? 'warn' : 'crit')}`;
+    }
+  }
+
+  // Alerts feed
+  const alertsList = document.getElementById("secOverviewAlertsList");
+  if (alertsList && data.alerts) {
+    if (data.alerts.length === 0) {
+      alertsList.innerHTML = '<div class="skyshield-empty-state" style="padding: 6px;">No critical alerts active.</div>';
+    } else {
+      let aHtml = "";
+      data.alerts.slice(0, 5).forEach(alt => {
+        const sevClass = (alt.severity || "MEDIUM").toLowerCase();
+        aHtml += `
+          <div class="alert-chip-item ${sevClass}">
+            <div>
+              <strong>[${escapeHtml(alt.severity)}]</strong> ${escapeHtml(alt.title)}
+              <span style="color: #64748b; font-size: 10px;">(${alt.count > 1 ? alt.count + 'x occurrences' : '1x'})</span>
+            </div>
+            <span style="font-size: 9.5px; color: #94a3b8;">${escapeHtml(alt.timestamp_iso ? alt.timestamp_iso.split(" ")[1] : "")}</span>
+          </div>
+        `;
+      });
+      alertsList.innerHTML = aHtml;
+    }
+  }
+
+  // 16. Incident Center
+  const incBody = document.getElementById("cardIncidentBody");
+  const incCount = document.getElementById("cardIncidentCount");
+  if (incBody && data.incidents) {
+    if (incCount) incCount.textContent = `${data.incidents.length} INCIDENTS`;
+    if (data.incidents.length === 0) {
+      incBody.innerHTML = '<div class="skyshield-empty-state">No security incidents detected. System operating normally.</div>';
+    } else {
+      let iHtml = "";
+      data.incidents.forEach(inc => {
+        const sevClass = (inc.severity || "MEDIUM").toLowerCase();
+        iHtml += `
+          <div class="incident-entry-card">
+            <div class="incident-entry-top">
+              <span class="incident-title-text">${escapeHtml(inc.title)}</span>
+              <span class="anomaly-severity-badge ${sevClass}">${escapeHtml(inc.severity)}</span>
+            </div>
+            <div class="incident-meta-row">
+              <span><strong>ID:</strong> <code>${escapeHtml(inc.incident_id)}</code></span>
+              <span><strong>Device:</strong> ${escapeHtml(inc.device_id)}</span>
+              <span><strong>Status:</strong> <span style="color: #38bdf8; font-weight: 600;">${escapeHtml(inc.status)}</span></span>
+              <span><strong>Verification:</strong> ${escapeHtml(inc.verification_state)}</span>
+            </div>
+            <div style="font-size: 11px; color: #cbd5e1; margin-bottom: 6px;">
+              ${escapeHtml(inc.description)}
+            </div>
+            <div class="incident-actions-row">
+              <button class="device-action-btn reauthorize" style="padding: 3px 8px; font-size: 10.5px;" onclick="viewIncidentDetail('${inc.incident_id}')">🔍 Details</button>
+              <button class="device-action-btn suspend" style="padding: 3px 8px; font-size: 10.5px;" onclick="promptIncidentFalsePositive('${inc.incident_id}')">False Positive</button>
+              <button class="device-action-btn" style="padding: 3px 8px; font-size: 10.5px; background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4);" onclick="resolveIncidentDirect('${inc.incident_id}')">✓ Resolve</button>
+            </div>
+          </div>
+        `;
+      });
+      incBody.innerHTML = iHtml;
+    }
+  }
+
+  // 17. Threat Intelligence & CVEs
+  const threatBody = document.getElementById("cardThreatsBody");
+  if (threatBody && data.threat_advisories) {
+    if (data.threat_advisories.length === 0) {
+      threatBody.innerHTML = '<div class="skyshield-empty-state">No public threat advisories cached.</div>';
+    } else {
+      let tHtml = "";
+      data.threat_advisories.slice(0, 4).forEach(adv => {
+        tHtml += `
+          <div class="threat-advisory-item ${adv.severity}">
+            <div class="threat-advisory-top">
+              <span class="threat-cve-id">${escapeHtml(adv.advisory_id)}</span>
+              <span class="anomaly-severity-badge ${adv.severity.toLowerCase()}">${escapeHtml(adv.severity)}</span>
+            </div>
+            <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 2px;">${escapeHtml(adv.title)}</div>
+            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 4px;">
+              <strong>Affected:</strong> ${escapeHtml((adv.affected_components || []).join(", "))} | <strong>Source:</strong> ${escapeHtml(adv.source)}
+            </div>
+            <div style="font-size: 10.5px; color: #cbd5e1;">${escapeHtml(adv.summary)}</div>
+          </div>
+        `;
+      });
+      threatBody.innerHTML = tHtml;
+    }
+  }
+}
+
+async function viewIncidentDetail(incidentId) {
+  currentSelectedIncidentId = incidentId;
+  const modal = document.getElementById("skyshieldIncidentModal");
+  const modalBody = document.getElementById("incModalBody");
+  if (modal) modal.style.display = "flex";
+  if (modalBody) modalBody.innerHTML = '<div class="skyshield-empty-state">Loading incident details...</div>';
+
+  try {
+    const res = await fetch(`/api/skyshield/incidents/${incidentId}`);
+    if (!res.ok) {
+      modalBody.innerHTML = `<div class="skyshield-empty-state">Failed to load incident: ${res.statusText}</div>`;
+      return;
+    }
+    const data = await res.json();
+    const inc = data.incident;
+    if (!inc) return;
+
+    let evHtml = "";
+    (inc.evidence || []).forEach(ev => {
+      evHtml += `<li><strong>[${escapeHtml(ev.verification_state)}] ${escapeHtml(ev.evidence_type)}:</strong> ${escapeHtml(ev.description)} <span style="color: #64748b;">(${escapeHtml(ev.source)})</span></li>`;
+    });
+
+    let actHtml = "";
+    (inc.recommended_actions || []).forEach(act => {
+      actHtml += `<button class="skyshield-btn secondary" style="font-size: 11px; padding: 4px 10px;" onclick="proposeAndConfirmAction('${act}', '${inc.device_id}', '${inc.incident_id}')">⚡ Execute ${escapeHtml(act)}</button>`;
+    });
+
+    modalBody.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="background: rgba(15, 23, 42, 0.5); padding: 10px; border-radius: 6px; border: 1px solid rgba(51, 65, 85, 0.4);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <h3 style="margin: 0; font-size: 14px; color: #38bdf8;">${escapeHtml(inc.title)}</h3>
+            <span class="anomaly-severity-badge ${inc.severity.toLowerCase()}">${escapeHtml(inc.severity)}</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; font-size: 11px; color: #94a3b8;">
+            <div><strong>Incident ID:</strong> <code>${escapeHtml(inc.incident_id)}</code></div>
+            <div><strong>Device ID:</strong> <code>${escapeHtml(inc.device_id)}</code></div>
+            <div><strong>Status:</strong> ${escapeHtml(inc.status)}</div>
+            <div><strong>Confidence:</strong> ${(inc.confidence * 100).toFixed(1)}%</div>
+            <div><strong>Verification:</strong> ${escapeHtml(inc.verification_state)}</div>
+            <div><strong>Created:</strong> ${escapeHtml(inc.created_at_iso)}</div>
+          </div>
+          <p style="margin-top: 8px; font-size: 11.5px; color: #cbd5e1;">${escapeHtml(inc.description)}</p>
+        </div>
+
+        <div>
+          <h4 style="margin: 0 0 6px 0; font-size: 12px; color: #94a3b8; text-transform: uppercase;">Documented Evidence (${inc.evidence_count || 0}):</h4>
+          <ul style="margin: 0; padding-left: 20px; font-size: 11px; color: #cbd5e1;">
+            ${evHtml || '<li>No individual evidence records linked.</li>'}
+          </ul>
+        </div>
+
+        <div>
+          <h4 style="margin: 0 0 6px 0; font-size: 12px; color: #94a3b8; text-transform: uppercase;">AI Security Analyst Interpretation:</h4>
+          <div style="background: rgba(30, 41, 59, 0.5); padding: 8px 12px; border-radius: 6px; font-size: 11.5px; color: #f1f5f9; border-left: 3px solid #38bdf8;">
+            ${inc.ai_analysis ? escapeHtml(inc.ai_analysis.interpretation) : 'Advisory analysis available under operator review.'}
+            <div style="font-size: 10px; color: #64748b; margin-top: 4px; font-style: italic;">
+              ⚠️ AI analysis is advisory only. Does not authorize actions or prove compromise without verified evidence.
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h4 style="margin: 0 0 6px 0; font-size: 12px; color: #94a3b8; text-transform: uppercase;">Recommended Defensive Actions:</h4>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            ${actHtml || '<span style="font-size: 11px; color: #64748b;">No immediate actions recommended.</span>'}
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    modalBody.innerHTML = `<div class="skyshield-empty-state">Error loading incident details: ${err.message}</div>`;
+  }
+}
+
+function closeSkyShieldIncidentModal() {
+  const modal = document.getElementById("skyshieldIncidentModal");
+  if (modal) modal.style.display = "none";
+  currentSelectedIncidentId = null;
+}
+
+async function promptIncidentFalsePositive(incidentId) {
+  const targetId = incidentId || currentSelectedIncidentId;
+  if (!targetId) return;
+  const reason = prompt("Enter rationale for marking this incident as a False Positive:", "Benign developer or baseline test activity");
+  if (!reason) return;
+
+  try {
+    const res = await fetch(`/api/skyshield/incidents/${targetId}/false_positive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason })
+    });
+    const d = await res.json();
+    alert(d.message || (d.success ? "Marked false positive" : "Error"));
+    closeSkyShieldIncidentModal();
+    renderSkyShieldDashboard();
+  } catch (err) {
+    alert("Error: " + err.message);
+  }
+}
+
+async function resolveIncidentDirect(incidentId) {
+  const targetId = incidentId || currentSelectedIncidentId;
+  if (!targetId) return;
+  const resText = prompt("Enter resolution notes:", "Threat mitigated and baseline verified nominal");
+  if (!resText) return;
+
+  try {
+    const res = await fetch(`/api/skyshield/incidents/${targetId}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resolution: resText })
+    });
+    const d = await res.json();
+    alert(d.message || (d.success ? "Incident resolved" : "Error"));
+    closeSkyShieldIncidentModal();
+    renderSkyShieldDashboard();
+  } catch (err) {
+    alert("Error: " + err.message);
+  }
+}
+
+function resolveCurrentIncident() {
+  if (currentSelectedIncidentId) resolveIncidentDirect(currentSelectedIncidentId);
+}
+
+async function exportCurrentIncidentReport() {
+  if (!currentSelectedIncidentId) return;
+  try {
+    const res = await fetch(`/api/skyshield/incidents/${currentSelectedIncidentId}/report`);
+    const d = await res.json();
+    if (d.success && d.markdown_report) {
+      const blob = new Blob([d.markdown_report], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Incident_Report_${currentSelectedIncidentId}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      alert("Failed to export report: " + (d.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Export error: " + err.message);
+  }
+}
+
+async function proposeAndConfirmAction(action, deviceId, incidentId) {
+  const confirmMsg = `Are you sure you want to execute high-impact action: '${action}' on device '${deviceId}'?`;
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    // 1. Propose
+    const pRes = await fetch("/api/skyshield/response/propose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: action, device_id: deviceId, incident_id: incidentId, reason: "Operator confirmed via UI" })
+    });
+    const pData = await pRes.json();
+    if (!pData.success) {
+      alert("Proposal rejected: " + pData.error);
+      return;
+    }
+
+    // 2. Confirm
+    const cRes = await fetch("/api/skyshield/response/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ proposal_id: pData.proposal.proposal_id, operator_confirmed: true })
+    });
+    const cData = await cRes.json();
+    alert(cData.message || (cData.success ? "Action executed successfully" : "Execution failed"));
+    closeSkyShieldIncidentModal();
+    renderSkyShieldDashboard();
+  } catch (err) {
+    alert("Error executing action: " + err.message);
+  }
+}
+
+async function checkDeviceVulnerabilities(deviceId) {
+  try {
+    const res = await fetch(`/api/skyshield/threats/check/${deviceId}`);
+    const data = await res.json();
+    if (data.success) {
+      alert(`Vulnerability Check for ${deviceId}:\nFound ${data.matched_advisories_count} matching advisories.\nHighest Severity: ${data.highest_severity}`);
+    } else {
+      alert("Check failed: " + (data.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Check error: " + err.message);
+  }
+}

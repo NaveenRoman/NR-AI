@@ -65,6 +65,23 @@ from app.security.health_analyzer import (
 )
 from app.security.pairing_manager import DevicePairingManager
 from app.security.scanner import SecurityScanner
+from app.security.incident_models import (
+    ActionConfirmationStatus,
+    AlertSeverity,
+    EvidenceVerificationState,
+    HIGH_IMPACT_ACTIONS,
+    IncidentState,
+    SafeActionProposal,
+    SafeResponseAction,
+    SecurityAlert,
+    SecurityEvidence,
+    SecurityIncident,
+    SourceAuthority,
+    ThreatAdvisory,
+)
+from app.security.threat_intelligence import ThreatIntelligenceService
+from app.security.safe_response_engine import SafeResponseEngine
+from app.security.incident_manager import SecurityIncidentEngine
 
 logger = logging.getLogger("NRAI.SkyShield.Coordinator")
 
@@ -94,6 +111,9 @@ class SecurityCoordinator:
         emergency_stop: Optional[EmergencyStopController] = None,
         pairing_manager: Optional[DevicePairingManager] = None,
         health_analyzer: Optional[DeviceHealthAnalyzer] = None,
+        threat_intel: Optional[ThreatIntelligenceService] = None,
+        incident_engine: Optional[SecurityIncidentEngine] = None,
+        response_engine: Optional[SafeResponseEngine] = None,
     ):
         self.scanner = scanner or SecurityScanner()
         self.auditor = auditor or PermissionAuditor()
@@ -104,6 +124,12 @@ class SecurityCoordinator:
             audit_logger_fn=self._record_audit,
         )
         self.health_analyzer = health_analyzer or DeviceHealthAnalyzer()
+        self.threat_intel = threat_intel or ThreatIntelligenceService()
+        self.incident_engine = incident_engine or SecurityIncidentEngine(audit_logger_fn=self._record_audit)
+        self.response_engine = response_engine or SafeResponseEngine(
+            emergency_stop=self.emergency_stop,
+            audit_logger_fn=self._record_audit,
+        )
         
         self._state: SecurityState = SecurityState.IDLE
         self._lock = threading.RLock()
@@ -202,6 +228,8 @@ class SecurityCoordinator:
             self._active_operation = None
             if hasattr(self, "pairing_manager") and self.pairing_manager:
                 self.pairing_manager.trigger_emergency_stop("Immediate operator or subsystem halt fired.")
+            if hasattr(self, "response_engine") and self.response_engine:
+                self.response_engine._on_emergency_stop_fired()
             logger.warning("🛑 SkyShield Emergency Stop triggered: all active scans halted.")
             self._record_audit(
                 initiator="EmergencyStopController",
@@ -431,6 +459,10 @@ class SecurityCoordinator:
                 "primary_device_posture": primary_posture.to_dict() if primary_posture else None,
                 "anomalies": active_anomalies,
                 "posture_scores": posture_scores,
+                "incidents": [i.to_dict() for i in self.incident_engine.list_incidents(limit=10)],
+                "alerts": [a.to_dict() for a in self.incident_engine.list_alerts(limit=10)],
+                "threat_advisories": [t.to_dict() for t in self.threat_intel.get_recent_advisories(limit=5)],
+                "security_overview": self.get_security_overview(),
                 "timestamp": time.time(),
             }
 
@@ -659,6 +691,14 @@ class SecurityCoordinator:
                 if len(self._events) > 100:
                     self._events.pop(0)
 
+            # 4b. Multi-signal event correlation for incident detection
+            correl_incidents = self.incident_engine.correlate_telemetry_and_events(
+                device_id=device_id,
+                snapshot=snap,
+                anomalies=anoms,
+                recent_events=self._events,
+            )
+
             # 5. Record operational audit log
             self._record_audit(
                 initiator="HealthAnalyzer",
@@ -686,5 +726,194 @@ class SecurityCoordinator:
                 "posture": post.to_dict(),
                 "recommendations": recs,
                 "advisory": advisory,
+                "incidents": [i.to_dict() for i in correl_incidents],
             }
 
+
+    # --------------------------------------------------------------------------
+    # Phase 4 Security Intelligence & Incident Management Methods
+    # --------------------------------------------------------------------------
+
+    def get_security_overview(self) -> Dict[str, Any]:
+        """Aggregates high-level security posture and incident metrics."""
+        with self._lock:
+            all_incs = self.incident_engine.list_incidents()
+            active_incs = [
+                i for i in all_incs
+                if i.status not in (IncidentState.RESOLVED, IncidentState.DISMISSED, IncidentState.STOPPED)
+            ]
+            all_alerts = self.incident_engine.list_alerts()
+            unack_alerts = [a for a in all_alerts if not a.acknowledged]
+            crit_alerts = [a for a in unack_alerts if a.severity == AlertSeverity.CRITICAL]
+            high_alerts = [a for a in unack_alerts if a.severity == AlertSeverity.HIGH]
+
+            # Devices at risk: devices with active high/critical incident or posture < 70
+            devices_at_risk = set()
+            for inc in active_incs:
+                if inc.severity in ("HIGH", "CRITICAL"):
+                    devices_at_risk.add(inc.device_id)
+            for dev_id, post in self._device_posture_cache.items():
+                if post.score < 70:
+                    devices_at_risk.add(dev_id)
+
+            # Calculate average posture score
+            scores = [p.score for p in self._device_posture_cache.values()]
+            avg_score = round(sum(scores) / len(scores), 1) if scores else 100.0
+
+            return {
+                "active_incidents_count": len(active_incs),
+                "critical_alerts_count": len(crit_alerts),
+                "high_alerts_count": len(high_alerts),
+                "devices_at_risk_count": len(devices_at_risk),
+                "devices_at_risk": list(devices_at_risk),
+                "overall_security_posture": avg_score,
+                "recent_events_count": len(self._events),
+                "timestamp": time.time(),
+            }
+
+    def list_incidents(
+        self,
+        device_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        incs = self.incident_engine.list_incidents(device_id=device_id, status=status, limit=limit)
+        return [i.to_dict() for i in incs]
+
+    def get_incident(self, incident_id: str) -> Optional[Dict[str, Any]]:
+        inc = self.incident_engine.get_incident(incident_id)
+        return inc.to_dict() if inc else None
+
+    def update_incident_status(
+        self,
+        incident_id: str,
+        new_status: str,
+        reason: Optional[str] = None,
+        actor: str = "Operator",
+    ) -> Tuple[bool, str]:
+        return self.incident_engine.update_incident_status(incident_id, new_status, reason, actor)
+
+    def mark_false_positive(
+        self,
+        incident_id: str,
+        reason: str,
+        actor: str = "Operator",
+    ) -> Tuple[bool, str]:
+        return self.incident_engine.mark_false_positive(incident_id, reason, actor)
+
+    def resolve_incident(
+        self,
+        incident_id: str,
+        resolution: str,
+        actor: str = "Operator",
+    ) -> Tuple[bool, str]:
+        return self.incident_engine.resolve_incident(incident_id, resolution, actor)
+
+    def escalate_incident(
+        self,
+        incident_id: str,
+        reason: str,
+        actor: str = "Operator",
+    ) -> Tuple[bool, str]:
+        return self.incident_engine.escalate_incident(incident_id, reason, actor)
+
+    def generate_incident_report(self, incident_id: str) -> Dict[str, Any]:
+        return self.incident_engine.generate_incident_report(incident_id)
+
+    def list_threat_advisories(
+        self,
+        limit: int = 10,
+        severity: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        advs = self.threat_intel.get_recent_advisories(limit=limit, severity=severity)
+        return [a.to_dict() for a in advs]
+
+    def get_threat_advisory(self, advisory_id: str) -> Optional[Dict[str, Any]]:
+        adv = self.threat_intel.get_advisory(advisory_id)
+        return adv.to_dict() if adv else None
+
+    def check_device_vulnerability(self, device_id: str) -> Dict[str, Any]:
+        dev = self.get_device(device_id)
+        if not dev:
+            return {"success": False, "error": f"Device '{device_id}' not found"}
+        if isinstance(dev, dict):
+            os_ver = dev.get("os_version", "Android 14")
+            platform = dev.get("platform", "android")
+            model = dev.get("device_name", "Vivo V2334")
+        else:
+            os_ver = getattr(dev, "os_version", "Android 14")
+            platform = getattr(dev, "platform", "android")
+            model = getattr(dev, "device_name", "Vivo V2334")
+        return self.threat_intel.check_device_vulnerability(
+            device_id=device_id,
+            os_version=os_ver,
+            platform=platform,
+            hardware_model=model,
+        )
+
+    def list_alerts(self, limit: int = 50) -> List[Dict[str, Any]]:
+        alts = self.incident_engine.list_alerts(limit=limit)
+        return [a.to_dict() for a in alts]
+
+    def acknowledge_alert(self, alert_id: str) -> bool:
+        return self.incident_engine.acknowledge_alert(alert_id)
+
+    def propose_response_action(
+        self,
+        action: str,
+        device_id: str,
+        incident_id: Optional[str] = None,
+        reason: str = "",
+        initiated_by: str = "Operator",
+        details: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        prop = self.response_engine.propose_action(
+            action=action,
+            device_id=device_id,
+            incident_id=incident_id,
+            reason=reason,
+            initiated_by=initiated_by,
+            details=details,
+        )
+        return prop.to_dict()
+
+    def confirm_response_action(
+        self,
+        proposal_id: str,
+        operator_confirmed: bool = True,
+        confirmed_by: str = "Operator",
+    ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        def _executor(prop: SafeActionProposal) -> Tuple[bool, str]:
+            act = prop.action
+            dev_id = prop.device_id
+            if act == SafeResponseAction.SUSPEND_DEVICE.value or act == SafeResponseAction.ISOLATE_DEVICE.value:
+                return self.suspend_device(dev_id, reason=f"SafeResponse: {prop.reason}")
+            elif act == SafeResponseAction.REVOKE_DEVICE.value:
+                return self.revoke_device(dev_id, reason=f"SafeResponse: {prop.reason}")
+            elif act == SafeResponseAction.RESET_BASELINE.value:
+                res = self.reset_device_baseline(dev_id)
+                if isinstance(res, tuple):
+                    return res[0], f"Baseline reset: {res[1]}"
+                elif isinstance(res, dict):
+                    return res.get("success", False), "Baseline reset executed."
+                return bool(res), "Baseline reset executed."
+            elif act == SafeResponseAction.EMERGENCY_STOP.value:
+                self.trigger_emergency_stop(reason=f"SafeResponse triggered: {prop.reason}")
+                return True, "Emergency Stop executed."
+            elif act == SafeResponseAction.REQUEST_REAUTH.value:
+                dev = self.get_device(dev_id)
+                if dev:
+                    return self.suspend_device(dev_id, reason="Re-authentication required by security policy.")
+                return False, "Device not found"
+            elif act in (SafeResponseAction.REVIEW_PERMISSIONS.value, SafeResponseAction.REVIEW_NETWORK.value):
+                return True, f"Action '{act}' acknowledged and scheduled for operator review."
+            else:
+                return False, f"Unknown executor action '{act}'"
+
+        ok, msg, p = self.response_engine.confirm_and_execute_action(
+            proposal_id=proposal_id,
+            operator_confirmed=operator_confirmed,
+            confirmed_by=confirmed_by,
+            executor_fn=_executor,
+        )
+        return ok, msg, (p.to_dict() if p else None)

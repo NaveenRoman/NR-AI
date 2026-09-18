@@ -2631,3 +2631,108 @@ body {
 
 
 
+
+
+/* Phase 4 SkyShield UI Extensions */
+.skyshield-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.skyshield-kpi-item {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(51, 65, 85, 0.4);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.kpi-label {
+  font-size: 10px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.kpi-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.kpi-value.crit { color: #ef4444; }
+.kpi-value.high { color: #f97316; }
+.kpi-value.warn { color: #f59e0b; }
+.kpi-value.green { color: #10b981; }
+
+.alerts-feed-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.alert-chip-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  background: rgba(30, 41, 59, 0.5);
+  border-left: 3px solid #38bdf8;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.alert-chip-item.crit { border-left-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+.alert-chip-item.high { border-left-color: #f97316; background: rgba(249, 115, 22, 0.1); }
+
+.incident-entry-card {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  border-radius: 6px;
+}
+.incident-entry-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.incident-title-text {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.incident-meta-row {
+  display: flex;
+  gap: 12px;
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+.incident-actions-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.threat-advisory-item {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  border-left: 3px solid #3b82f6;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.threat-advisory-item.CRITICAL { border-left-color: #ef4444; }
+.threat-advisory-item.HIGH { border-left-color: #f97316; }
+.threat-advisory-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.threat-cve-id { color: #38bdf8; font-family: monospace; }
