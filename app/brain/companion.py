@@ -408,7 +408,11 @@ class NRCompanion:
         c_candidate = re.sub(r"^(?:please\s+|can you\s+|could you\s+)", "", c).strip()
         c_candidate = re.sub(r"[.?!]+$", "", c_candidate).strip()
 
-        explicit_android_prefixes = ("android:", "studio:", "android workflow:", "android agent:", "run android workflow:")
+        explicit_android_prefixes = (
+            "android:", "studio:", "android workflow:", "android agent:", "run android workflow:",
+            "droid:", "androidstudio:", "android studio:", "androidstudioagent:", "android studio agent:",
+            "run droid:", "run android:"
+        )
         if any(c_candidate.lower().startswith(pfx) for pfx in explicit_android_prefixes):
             return CommandCategory.ANDROID_STUDIO
 
@@ -940,6 +944,10 @@ class NRCompanion:
             "android": ("android_unified_agent", "Droid"),
             "android agent": ("android_unified_agent", "Droid"),
             "android_unified_agent": ("android_unified_agent", "Droid"),
+            "androidstudio": ("android_unified_agent", "Droid"),
+            "android studio": ("android_unified_agent", "Droid"),
+            "androidstudioagent": ("android_unified_agent", "Droid"),
+            "android studio agent": ("android_unified_agent", "Droid"),
             "studio": ("vs_unified_agent", "Studio"),
             "vs": ("vs_unified_agent", "Studio"),
             "visual studio": ("vs_unified_agent", "Studio"),
@@ -1078,8 +1086,8 @@ class NRCompanion:
                         "Deterministic verification requires running the Gradle build. Would you like me to run it now?"
                     )
 
-            # Specialist follow-up 4: Build / Run execution
-            elif any(k in c_low for k in ("build", "run", "compile")):
+            # Specialist follow-up 4: Build / Run / Inspect / Workflow execution
+            elif any(k in c_low for k in ("build", "run", "compile", "inspect", "test", "workflow", "clean", "deploy", "repair", "fix", "assemble", "device", "emulator", "pipeline", "logcat")):
                 resp = self._handle_android_studio(command)
                 self.add_agent_chat_message(agent_id, role="agent", text=resp.text, data=resp.data)
                 return resp
@@ -2429,7 +2437,12 @@ class NRCompanion:
         self.current_task_status = "Executing Android Workflow"
 
         clean_goal = command.strip()
-        clean_goal = re.sub(r"^(?:android|studio|android\s+workflow|android\s+agent)\s*:\s*", "", clean_goal, flags=re.IGNORECASE).strip()
+        clean_goal = re.sub(
+            r"^(?:android|droid|studio|androidstudio|androidstudioagent|android\s+studio|android\s+studio\s+agent|android\s+workflow|android\s+agent)\s*:\s*",
+            "",
+            clean_goal,
+            flags=re.IGNORECASE,
+        ).strip()
 
         user_confirmed = False
         if clean_goal.lower().startswith(("confirm ", "yes confirm ", "force ")):
