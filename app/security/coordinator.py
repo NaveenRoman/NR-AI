@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from app.remote.emergency import EmergencyStopController
 from app.security.auditor import PermissionAuditor
@@ -38,11 +38,30 @@ from app.security.models import (
     redact_sensitive_data,
 )
 from app.security.enrollment_models import (
+    AuthorizationState,
     DeviceIdentityModel,
     DeviceSession,
     EnrollmentState,
     PairingRequest,
     SkyShieldCapability,
+)
+from app.security.health_models import (
+    AnomalyEvent,
+    AnomalySeverity,
+    DeviceBaseline,
+    DeviceHealthSnapshot,
+    DeviceHealthState,
+    SafeResponseAction,
+    SecurityPostureScore,
+    TelemetryProcessingState,
+    ThreatCategory,
+    ThreatConclusion,
+)
+from app.security.health_analyzer import (
+    AUTH_FAILURE_BURST_THRESHOLD,
+    CPU_CRITICAL_THRESHOLD,
+    CPU_WARNING_THRESHOLD,
+    DeviceHealthAnalyzer,
 )
 from app.security.pairing_manager import DevicePairingManager
 from app.security.scanner import SecurityScanner
@@ -74,6 +93,7 @@ class SecurityCoordinator:
         auditor: Optional[PermissionAuditor] = None,
         emergency_stop: Optional[EmergencyStopController] = None,
         pairing_manager: Optional[DevicePairingManager] = None,
+        health_analyzer: Optional[DeviceHealthAnalyzer] = None,
     ):
         self.scanner = scanner or SecurityScanner()
         self.auditor = auditor or PermissionAuditor()
@@ -83,6 +103,7 @@ class SecurityCoordinator:
             emergency_stop=self.emergency_stop,
             audit_logger_fn=self._record_audit,
         )
+        self.health_analyzer = health_analyzer or DeviceHealthAnalyzer()
         
         self._state: SecurityState = SecurityState.IDLE
         self._lock = threading.RLock()
@@ -90,6 +111,11 @@ class SecurityCoordinator:
         self._findings: List[SecurityFinding] = []
         self._events: List[SecurityEvent] = []
         self._audit_log: List[SecurityAuditRecord] = []
+        
+        # Device Health & Anomaly caches (device_id -> data)
+        self._device_health_cache: Dict[str, DeviceHealthSnapshot] = {}
+        self._device_anomalies_cache: Dict[str, List[AnomalyEvent]] = {}
+        self._device_posture_cache: Dict[str, SecurityPostureScore] = {}
         
         # Register callback with emergency stop
         self.emergency_stop.register_cancellation_callback(self._on_emergency_stop_fired)
@@ -101,6 +127,9 @@ class SecurityCoordinator:
         self._cached_microphone: MicrophoneSecurityModel = self.scanner.scan_microphone()
         self._cached_permissions: Dict[str, PermissionStatus] = self.scanner.scan_permissions()
 
+        # Seed initial health telemetry for mock device
+        self._seed_mock_device_health()
+
         # Seed initial audit log record
         self._record_audit(
             initiator="System Bootstrap",
@@ -109,6 +138,18 @@ class SecurityCoordinator:
             result="SUCCESS",
             details={"initial_state": SecurityState.IDLE.value},
         )
+
+    def _seed_mock_device_health(self) -> None:
+        """Seeds initial mock device health and baseline for local verification."""
+        mock_id = "dev_mock_vivo_v2334"
+        try:
+            snap = self.health_analyzer.generate_mock_scenario("NORMAL_DEVICE", device_id=mock_id)
+            h_state, anoms, post, _ = self.health_analyzer.analyze_health(snap)
+            self._device_health_cache[mock_id] = snap
+            self._device_anomalies_cache[mock_id] = anoms
+            self._device_posture_cache[mock_id] = post
+        except Exception as ex:
+            logger.warning(f"Failed to seed initial mock device health: {ex}")
 
     # --------------------------------------------------------------------------
     # State Machine Management
@@ -357,6 +398,16 @@ class SecurityCoordinator:
             device_dict = self._cached_device.to_dict()
             device_dict["security_status"] = overall_status
 
+            # Phase 3 Device Health Telemetry
+            device_health_list = [snap.to_dict() for snap in self._device_health_cache.values()]
+            active_anomalies = []
+            for anom_list in self._device_anomalies_cache.values():
+                active_anomalies.extend([a.to_dict() for a in anom_list])
+            posture_scores = [p.to_dict() for p in self._device_posture_cache.values()]
+
+            primary_snap = self._device_health_cache.get("dev_mock_vivo_v2334")
+            primary_posture = self._device_posture_cache.get("dev_mock_vivo_v2334")
+
             return {
                 "success": True,
                 "state": self._state.value,
@@ -375,6 +426,11 @@ class SecurityCoordinator:
                 "enrolled_devices": self.pairing_manager.list_devices(),
                 "pairing_requests": self.pairing_manager.list_pairing_requests(),
                 "active_sessions": self.pairing_manager.list_active_sessions(),
+                "device_health": device_health_list,
+                "primary_device_health": primary_snap.to_dict() if primary_snap else None,
+                "primary_device_posture": primary_posture.to_dict() if primary_posture else None,
+                "anomalies": active_anomalies,
+                "posture_scores": posture_scores,
                 "timestamp": time.time(),
             }
 
@@ -414,4 +470,221 @@ class SecurityCoordinator:
 
     def validate_session_request(self, *args, **kwargs):
         return self.pairing_manager.validate_session_request(*args, **kwargs)
+
+    # --------------------------------------------------------------------------
+    # Phase 3 Device Health, Telemetry & Anomaly Detection APIs
+    # --------------------------------------------------------------------------
+
+    def verify_device_telemetry_authorized(
+        self,
+        device_id: str,
+        scope: str = "health:read",
+    ) -> Tuple[bool, str, Optional[DeviceIdentityModel]]:
+        """
+        Strict pre-flight verification before processing device telemetry (Section 11).
+        Verifies:
+        - Device exists
+        - Device is enrolled
+        - Device is authenticated or in valid enrolled state
+        - Device is NOT suspended or revoked
+        - Capability scope is granted
+        - Emergency stop is NOT active
+        """
+        if self.emergency_stop.is_active() or self._state == SecurityState.STOPPED:
+            return False, "EMERGENCY_STOP_ACTIVE", None
+
+        dev = self.pairing_manager.get_device(device_id)
+        if not dev:
+            return False, f"DEVICE_NOT_FOUND: '{device_id}'", None
+
+        if dev.enrollment_state == EnrollmentState.REVOKED or dev.authorization_state == AuthorizationState.REVOKED:
+            return False, f"DEVICE_REVOKED: '{device_id}' is permanently revoked", dev
+
+        if dev.enrollment_state == EnrollmentState.SUSPENDED or dev.authorization_state == AuthorizationState.SUSPENDED:
+            return False, f"DEVICE_SUSPENDED: '{device_id}' is suspended", dev
+
+        if dev.enrollment_state not in (EnrollmentState.ENROLLED, EnrollmentState.AUTHENTICATED):
+            return False, f"DEVICE_NOT_ENROLLED: '{device_id}' is in state {dev.enrollment_state.value}", dev
+
+        # Verify capability
+        allowed_scopes = {"telemetry:read", "health:read", "security_events:read", SkyShieldCapability.READ_DEVICE_STATUS.value}
+        granted = set(dev.granted_capabilities)
+        if scope not in granted and not (granted & allowed_scopes):
+            return False, f"CAPABILITY_NOT_GRANTED: missing scope '{scope}'", dev
+
+        return True, "AUTHORIZED", dev
+
+    def get_device_health(self, device_id: str) -> Dict[str, Any]:
+        """Retrieves current health snapshot for an authorized device."""
+        ok, msg, dev = self.verify_device_telemetry_authorized(device_id, scope="health:read")
+        if not ok:
+            return {"success": False, "error": msg, "device_id": device_id}
+
+        with self._lock:
+            snap = self._device_health_cache.get(device_id)
+            if not snap:
+                # Generate default baseline snapshot
+                snap = self.health_analyzer.generate_mock_scenario("NORMAL_DEVICE", device_id=device_id)
+                self._device_health_cache[device_id] = snap
+            return {"success": True, "device_id": device_id, "health": snap.to_dict()}
+
+    def get_device_anomalies(self, device_id: str) -> Dict[str, Any]:
+        """Retrieves active detected anomalies for an authorized device."""
+        ok, msg, dev = self.verify_device_telemetry_authorized(device_id, scope="health:read")
+        if not ok:
+            return {"success": False, "error": msg, "device_id": device_id}
+
+        with self._lock:
+            anomalies = self._device_anomalies_cache.get(device_id, [])
+            return {
+                "success": True,
+                "device_id": device_id,
+                "count": len(anomalies),
+                "anomalies": [a.to_dict() for a in anomalies],
+            }
+
+    def get_device_posture(self, device_id: str) -> Dict[str, Any]:
+        """Retrieves transparent security posture score and contributing factors."""
+        ok, msg, dev = self.verify_device_telemetry_authorized(device_id, scope="health:read")
+        if not ok:
+            return {"success": False, "error": msg, "device_id": device_id}
+
+        with self._lock:
+            posture = self._device_posture_cache.get(device_id)
+            if not posture:
+                snap = self._device_health_cache.get(device_id) or self.health_analyzer.generate_mock_scenario("NORMAL_DEVICE", device_id=device_id)
+                anoms = self._device_anomalies_cache.get(device_id, [])
+                posture = self.health_analyzer.calculate_security_posture(device_id, anoms, snap)
+                self._device_posture_cache[device_id] = posture
+
+            return {"success": True, "device_id": device_id, "posture": posture.to_dict()}
+
+    def get_device_events(self, device_id: str) -> Dict[str, Any]:
+        """Retrieves chronological security events associated with device."""
+        ok, msg, dev = self.verify_device_telemetry_authorized(device_id, scope="security_events:read")
+        if not ok:
+            return {"success": False, "error": msg, "device_id": device_id}
+
+        with self._lock:
+            dev_events = [e.to_dict() for e in self._events if e.target == device_id or f"Device:{device_id}" in e.initiator or device_id in e.initiator]
+            return {"success": True, "device_id": device_id, "count": len(dev_events), "events": dev_events[-30:]}
+
+    def reset_device_baseline(self, device_id: str) -> Tuple[bool, str]:
+        """Resets baseline history for authorized device."""
+        ok, msg, dev = self.verify_device_telemetry_authorized(device_id, scope="health:read")
+        if not ok:
+            return False, msg
+
+        with self._lock:
+            self.health_analyzer.reset_baseline(device_id)
+            self._record_audit(
+                initiator="SkyShield Operator",
+                operation="BASELINE_RESET",
+                target=device_id,
+                result="SUCCESS",
+                classification="DEVICE_HEALTH",
+                details={"action": "baseline_reset"},
+            )
+            return True, "BASELINE_RESET"
+
+    def analyze_device_telemetry(
+        self,
+        device_id: str,
+        snapshot_data: Optional[Dict[str, Any]] = None,
+        mock_scenario: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Executes deterministic device health & anomaly analysis.
+        Integrates anomalies into immutable SecurityEvent stream.
+        """
+        ok, msg, dev = self.verify_device_telemetry_authorized(device_id, scope="health:read")
+        if not ok:
+            return {"success": False, "error": msg, "device_id": device_id}
+
+        with self._lock:
+            # 1. Obtain or generate snapshot
+            if mock_scenario:
+                snap = self.health_analyzer.generate_mock_scenario(mock_scenario, device_id=device_id)
+            elif snapshot_data:
+                # Sanitized construction
+                s_copy = dict(snapshot_data)
+                s_copy["device_id"] = device_id
+                s_copy.setdefault("data_source", DataVerificationState.MOCK.value)
+                if isinstance(s_copy.get("data_source"), str):
+                    try:
+                        s_copy["data_source"] = DataVerificationState(s_copy["data_source"])
+                    except Exception:
+                        s_copy["data_source"] = DataVerificationState.MOCK
+                snap = DeviceHealthSnapshot(**s_copy)
+            else:
+                snap = self._device_health_cache.get(device_id) or self.health_analyzer.generate_mock_scenario("NORMAL_DEVICE", device_id=device_id)
+
+            # 2. Run analysis
+            h_state, anoms, post, recs = self.health_analyzer.analyze_health(snap)
+
+            # 3. Update caches
+            self._device_health_cache[device_id] = snap
+            self._device_anomalies_cache[device_id] = anoms
+            self._device_posture_cache[device_id] = post
+
+            # 4. Integrate into SecurityEvent stream
+            for anom in anoms:
+                event_type = f"{anom.category.value}_ANOMALY" if "ANOMALY" not in anom.category.value else anom.category.value
+                sec_sev = SecuritySeverity.INFO
+                if anom.severity == AnomalySeverity.CRITICAL:
+                    sec_sev = SecuritySeverity.CRITICAL
+                elif anom.severity == AnomalySeverity.HIGH:
+                    sec_sev = SecuritySeverity.HIGH
+                elif anom.severity == AnomalySeverity.MEDIUM:
+                    sec_sev = SecuritySeverity.MEDIUM
+                elif anom.severity == AnomalySeverity.LOW:
+                    sec_sev = SecuritySeverity.LOW
+
+                event = SecurityEvent(
+                    event_id=f"evt_{anom.anomaly_id}",
+                    timestamp=time.time(),
+                    device_id=device_id,
+                    event_type=event_type,
+                    source=f"HealthAnalyzer:{device_id}",
+                    severity=sec_sev,
+                    description=anom.evidence,
+                    evidence=str(anom.observed_value),
+                    status="DETECTED",
+                    result="DETECTED",
+                    action=anom.category.value,
+                    initiator=f"HealthAnalyzer:{device_id}",
+                    target=device_id,
+                )
+                self._events.append(event)
+                if len(self._events) > 100:
+                    self._events.pop(0)
+
+            # 5. Record operational audit log
+            self._record_audit(
+                initiator="HealthAnalyzer",
+                operation="DEVICE_HEALTH_ANALYZED",
+                target=device_id,
+                result="SUCCESS",
+                classification="DEVICE_HEALTH",
+                details={
+                    "health_state": h_state.value,
+                    "anomaly_count": len(anoms),
+                    "posture_score": post.score,
+                    "data_source": snap.data_source.value,
+                },
+            )
+
+            # 6. Generate advisory summary
+            advisory = self.health_analyzer.generate_advisory_summary(h_state, anoms, post)
+
+            return {
+                "success": True,
+                "device_id": device_id,
+                "health_state": h_state.value,
+                "snapshot": snap.to_dict(),
+                "anomalies": [a.to_dict() for a in anoms],
+                "posture": post.to_dict(),
+                "recommendations": recs,
+                "advisory": advisory,
+            }
 

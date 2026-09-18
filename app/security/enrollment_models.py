@@ -77,6 +77,8 @@ class SkyShieldCapability(str, Enum):
     READ_SECURITY_EVENTS = "READ_SECURITY_EVENTS"
     READ_AUDIT_LOG = "READ_AUDIT_LOG"
     TELEMETRY_READ = "telemetry:read"
+    HEALTH_READ = "health:read"
+    SECURITY_EVENTS_READ = "security_events:read"
     CONFIG_AUDIT = "config:audit"
     HARDWARE_STATUS = "hardware:status"
     NETWORK_DIAGNOSTICS = "network:diagnostics"
@@ -135,11 +137,15 @@ DEFAULT_PHASE2_CAPABILITIES = [
     SkyShieldCapability.READ_SECURITY_EVENTS.value,
     SkyShieldCapability.READ_AUDIT_LOG.value,
     "telemetry:read",
+    "health:read",
+    "security_events:read",
     "config:audit",
     "hardware:status",
     "network:diagnostics",
     "permission:monitor",
 ]
+
+DEFAULT_PHASE3_CAPABILITIES = list(DEFAULT_PHASE2_CAPABILITIES)
 
 
 # ==============================================================================

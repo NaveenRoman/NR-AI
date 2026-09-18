@@ -2242,6 +2242,154 @@ async function renderSkyShieldDashboard(cachedData) {
       devicesBody.innerHTML = dHtml;
     }
   }
+
+  // 11. Device Operational Health Card (Phase 3)
+  const primaryHealth = data.primary_device_health || (data.device_health && data.device_health[0]);
+  if (primaryHealth) {
+    const tagEl = document.getElementById("cardDeviceHealthTag");
+    if (tagEl) tagEl.textContent = primaryHealth.data_source || "MOCK";
+
+    const statusEl = document.getElementById("cardDeviceHealthStatus");
+    if (statusEl) {
+      statusEl.textContent = primaryHealth.security_posture || "HEALTHY";
+      const s = String(primaryHealth.security_posture).toUpperCase();
+      if (s === "CRITICAL") {
+        statusEl.style.background = "rgba(239, 68, 68, 0.2)";
+        statusEl.style.color = "#ef4444";
+      } else if (s === "WARNING") {
+        statusEl.style.background = "rgba(245, 158, 11, 0.2)";
+        statusEl.style.color = "#f59e0b";
+      } else if (s === "DEGRADED") {
+        statusEl.style.background = "rgba(234, 179, 8, 0.2)";
+        statusEl.style.color = "#eab308";
+      } else {
+        statusEl.style.background = "rgba(16, 185, 129, 0.2)";
+        statusEl.style.color = "#10b981";
+      }
+    }
+
+    const devNameEl = document.getElementById("healthDevName");
+    if (devNameEl) devNameEl.textContent = `${primaryHealth.platform || "Android"} (${primaryHealth.device_id})`;
+
+    const battEl = document.getElementById("healthBattery");
+    if (battEl) battEl.textContent = `${primaryHealth.battery_level}% (${primaryHealth.charging_state})`;
+
+    const cpuEl = document.getElementById("healthCpu");
+    if (cpuEl) cpuEl.textContent = `${primaryHealth.cpu_usage}%`;
+
+    const memEl = document.getElementById("healthMemory");
+    if (memEl) {
+      const mu = primaryHealth.memory_usage || {};
+      memEl.textContent = `${mu.percentage || 0}% (${mu.used_mb || 0} / ${mu.total_mb || 0} MB)`;
+    }
+
+    const storEl = document.getElementById("healthStorage");
+    if (storEl) {
+      const su = primaryHealth.storage_usage || {};
+      storEl.textContent = `${su.percentage || 0}% (${su.used_gb || 0} / ${su.total_gb || 0} GB)`;
+    }
+
+    const netEl = document.getElementById("healthNetwork");
+    if (netEl) netEl.textContent = `${primaryHealth.network_state} (${primaryHealth.network_type})`;
+
+    const uptimeEl = document.getElementById("healthUptime");
+    if (uptimeEl) {
+      const sec = primaryHealth.uptime || 0;
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      uptimeEl.textContent = `${h}h ${m}m (${Math.round(sec)}s)`;
+    }
+
+    const seenEl = document.getElementById("healthLastSeen");
+    if (seenEl) seenEl.textContent = primaryHealth.last_seen_iso || "Recent heartbeat";
+  }
+
+  // 12. Detected Anomalies Card (Phase 3)
+  const anomBody = document.getElementById("cardAnomaliesBody");
+  const anomCount = document.getElementById("cardAnomaliesCount");
+  const anomList = data.anomalies || [];
+  if (anomCount) anomCount.textContent = `${anomList.length} ANOMALIES`;
+  if (anomBody) {
+    if (anomList.length === 0) {
+      anomBody.innerHTML = '<div class="skyshield-empty-state">No active anomalies detected. All metrics within normal baseline.</div>';
+    } else {
+      let anomHtml = "";
+      anomList.forEach(a => {
+        const sevLower = String(a.severity || "info").toLowerCase();
+        anomHtml += `
+          <div class="anomaly-item-row ${sevLower}">
+            <div class="anomaly-header">
+              <span style="color: #38bdf8;">[${escapeHtml(a.category)}] ${escapeHtml(a.observed_value || "")}</span>
+              <span class="threat-badge ${sevLower}">${escapeHtml(a.severity)}</span>
+            </div>
+            <div class="anomaly-evidence">${escapeHtml(a.evidence || "")}</div>
+            <div style="font-size: 0.62rem; color: #94a3b8; display: flex; justify-content: space-between;">
+              <span>Expected: ${escapeHtml(String(a.expected_range || "N/A"))}</span>
+              <span>Confidence: ${Math.round((a.confidence || 1) * 100)}%</span>
+            </div>
+          </div>
+        `;
+      });
+      anomBody.innerHTML = anomHtml;
+    }
+  }
+
+  // 13. Security Posture Score Card (Phase 3)
+  const postureData = data.primary_device_posture || (data.posture_scores && data.posture_scores[0]);
+  if (postureData) {
+    const scoreBadge = document.getElementById("cardPostureScore");
+    if (scoreBadge) scoreBadge.textContent = `${postureData.score} / 100 [${postureData.rating}]`;
+
+    const scoreVal = document.getElementById("postureScoreValue");
+    if (scoreVal) {
+      scoreVal.textContent = `${postureData.score} / 100`;
+      scoreVal.style.color = postureData.score >= 80 ? "#10b981" : (postureData.score >= 50 ? "#f59e0b" : "#ef4444");
+    }
+
+    const ratingEl = document.getElementById("postureRating");
+    if (ratingEl) ratingEl.textContent = postureData.rating;
+
+    const factorsList = document.getElementById("postureFactorsList");
+    if (factorsList && postureData.contributing_factors) {
+      let fHtml = "";
+      postureData.contributing_factors.forEach(f => {
+        const isZero = f.deduction === 0;
+        fHtml += `
+          <div class="posture-factor-item">
+            <div>
+              <span style="font-weight: 600; color: #f1f5f9;">${escapeHtml(f.factor)}:</span>
+              <span style="color: #94a3b8;"> ${escapeHtml(f.evidence)}</span>
+            </div>
+            <span class="posture-factor-deduction ${isZero ? 'zero' : ''}">${f.deduction > 0 ? '-' + f.deduction : f.deduction} pts</span>
+          </div>
+        `;
+      });
+      factorsList.innerHTML = fHtml;
+    }
+  }
+
+  // 14. Device Security Timeline Card (Phase 3)
+  const timelineBody = document.getElementById("cardTimelineBody");
+  if (timelineBody && data.events) {
+    let tHtml = "";
+    const recentEvts = data.events.slice(-8).reverse();
+    if (recentEvts.length === 0) {
+      timelineBody.innerHTML = '<div class="skyshield-empty-state">No security events recorded yet.</div>';
+    } else {
+      recentEvts.forEach(evt => {
+        tHtml += `
+          <div class="stream-event-row">
+            <div class="stream-event-top">
+              <span>${escapeHtml(evt.timestamp || "")}</span>
+              <span class="stream-event-action">${escapeHtml(evt.action || "")}</span>
+            </div>
+            <div class="stream-event-msg">${escapeHtml(evt.result || "")}</div>
+          </div>
+        `;
+      });
+      timelineBody.innerHTML = tHtml;
+    }
+  }
 }
 
 async function triggerSkyShieldScan() {
@@ -2533,5 +2681,87 @@ async function reauthorizeSkyShieldDevice(deviceId) {
     console.warn("Device reauthorize failed:", err);
   }
 }
+
+// Phase 3 Device Health, Telemetry & Anomaly Handlers
+async function triggerDeviceHealthAnalysis(deviceId) {
+  const targetId = deviceId || "dev_mock_vivo_v2334";
+  const statusEl = document.getElementById("safeResponseStatus");
+  if (statusEl) statusEl.textContent = "Analyzing telemetry...";
+  try {
+    const res = await fetch(`/api/skyshield/devices/${targetId}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mock_scenario: "NORMAL_DEVICE" }),
+    });
+    if (res.ok) {
+      if (statusEl) statusEl.textContent = "Telemetry analyzed";
+      renderSkyShieldDashboard();
+    }
+  } catch (err) {
+    console.warn("Telemetry analysis failed:", err);
+    if (statusEl) statusEl.textContent = "Analysis failed";
+  }
+}
+
+async function simulateMockAnomaly(scenario) {
+  const targetId = "dev_mock_vivo_v2334";
+  const statusEl = document.getElementById("safeResponseStatus");
+  if (statusEl) statusEl.textContent = `Injecting ${scenario}...`;
+  try {
+    const res = await fetch(`/api/skyshield/devices/${targetId}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mock_scenario: scenario }),
+    });
+    if (res.ok) {
+      if (statusEl) statusEl.textContent = `Scenario '${scenario}' active`;
+      renderSkyShieldDashboard();
+    }
+  } catch (err) {
+    console.warn("Anomaly injection failed:", err);
+    if (statusEl) statusEl.textContent = "Injection failed";
+  }
+}
+
+async function resetDeviceBaseline(deviceId) {
+  const targetId = deviceId || "dev_mock_vivo_v2334";
+  const statusEl = document.getElementById("safeResponseStatus");
+  if (statusEl) statusEl.textContent = "Resetting baseline...";
+  try {
+    const res = await fetch(`/api/skyshield/devices/${targetId}/baseline/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (res.ok) {
+      if (statusEl) statusEl.textContent = "Baseline reset complete";
+      renderSkyShieldDashboard();
+    }
+  } catch (err) {
+    console.warn("Baseline reset failed:", err);
+    if (statusEl) statusEl.textContent = "Reset failed";
+  }
+}
+
+async function triggerDeviceResponse(action) {
+  const statusEl = document.getElementById("safeResponseStatus");
+  if (action === "reauth") {
+    if (statusEl) statusEl.textContent = "Re-authenticating session...";
+    await fetch("/api/skyshield/session/authenticate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_id: "dev_mock_vivo_v2334" }),
+    });
+    if (statusEl) statusEl.textContent = "Session re-authenticated";
+    renderSkyShieldDashboard();
+  } else if (action === "permissions") {
+    sendSkyShieldCommand("Audit high risk permissions");
+  } else if (action === "reconnect") {
+    if (statusEl) statusEl.textContent = "Reconnecting device...";
+    await triggerDeviceHealthAnalysis("dev_mock_vivo_v2334");
+    if (statusEl) statusEl.textContent = "Device reconnected";
+  }
+}
+
 
 

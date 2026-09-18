@@ -368,6 +368,10 @@ class SecurityEvent:
     description: str
     evidence: str = ""
     status: str = "LOGGED"
+    result: str = "DETECTED"
+    action: str = ""
+    initiator: str = ""
+    target: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         raw = {
@@ -376,10 +380,14 @@ class SecurityEvent:
             "device_id": self.device_id,
             "event_type": self.event_type,
             "source": self.source,
-            "severity": self.severity.value,
+            "severity": self.severity.value if isinstance(self.severity, SecuritySeverity) else str(self.severity),
             "description": self.description,
             "evidence": self.evidence,
             "status": self.status,
+            "result": self.result or self.status,
+            "action": self.action or self.event_type,
+            "initiator": self.initiator or self.source,
+            "target": self.target or self.device_id,
         }
         return redact_sensitive_data(raw)
 

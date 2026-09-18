@@ -938,18 +938,33 @@ class SecureDashboardServer:
                     payload = json.dumps({"success": True, "devices": devices}, indent=2).encode("utf-8")
                     self._send_response(200, "application/json", payload)
 
-                # SkyShield Enrolled Device Detail
+                # SkyShield Enrolled Device Detail & Phase 3 Health Telemetry
                 elif parsed.path.startswith("/api/skyshield/devices/"):
                     parts = parsed.path.strip("/").split("/")
                     device_id = parts[3] if len(parts) >= 4 else ""
+                    sub_action = parts[4] if len(parts) >= 5 else ""
                     coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
-                    dev = coord.get_device(device_id) if coord and device_id else None
-                    if dev:
-                        payload = json.dumps({"success": True, "device": dev.to_dict()}, indent=2).encode("utf-8")
-                        self._send_response(200, "application/json", payload)
+
+                    if sub_action == "health":
+                        res = coord.get_device_health(device_id) if coord else {"success": False, "error": "Coordinator unavailable"}
+                        self._send_response(200 if res.get("success") else 404, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+                    elif sub_action == "anomalies":
+                        res = coord.get_device_anomalies(device_id) if coord else {"success": False, "error": "Coordinator unavailable"}
+                        self._send_response(200 if res.get("success") else 404, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+                    elif sub_action == "events":
+                        res = coord.get_device_events(device_id) if coord else {"success": False, "error": "Coordinator unavailable"}
+                        self._send_response(200 if res.get("success") else 404, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+                    elif sub_action == "posture":
+                        res = coord.get_device_posture(device_id) if coord else {"success": False, "error": "Coordinator unavailable"}
+                        self._send_response(200 if res.get("success") else 404, "application/json", json.dumps(res, indent=2).encode("utf-8"))
                     else:
-                        payload = json.dumps({"success": False, "error": f"Device '{device_id}' not found"}, indent=2).encode("utf-8")
-                        self._send_response(404, "application/json", payload)
+                        dev = coord.get_device(device_id) if coord and device_id else None
+                        if dev:
+                            payload = json.dumps({"success": True, "device": dev.to_dict()}, indent=2).encode("utf-8")
+                            self._send_response(200, "application/json", payload)
+                        else:
+                            payload = json.dumps({"success": False, "error": f"Device '{device_id}' not found"}, indent=2).encode("utf-8")
+                            self._send_response(404, "application/json", payload)
 
                 # SkyShield Pairing Requests List
                 elif parsed.path in ("/api/skyshield/pair/requests", "/api/skyshield/pair/requests/"):
@@ -1658,6 +1673,35 @@ class SecureDashboardServer:
                     ok, msg = coord.reauthorize_device(device_id=device_id, reason=reason)
                     payload = json.dumps({"success": ok, "message": msg, "device_id": device_id}, indent=2).encode("utf-8")
                     self._send_response(200 if ok else 400, "application/json", payload)
+
+                # Phase 3 Device Health Baseline Reset
+                elif parsed.path.startswith("/api/skyshield/devices/") and (parsed.path.endswith("/baseline/reset") or parsed.path.endswith("/baseline/reset/")):
+                    coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
+                    if not coord:
+                        self._send_response(503, "application/json", json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    parts = parsed.path.strip("/").split("/")
+                    device_id = parts[3] if len(parts) >= 4 else ""
+                    ok, msg = coord.reset_device_baseline(device_id=device_id)
+                    payload = json.dumps({"success": ok, "message": msg, "device_id": device_id}, indent=2).encode("utf-8")
+                    self._send_response(200 if ok else 400, "application/json", payload)
+
+                # Phase 3 Device Telemetry Analysis Trigger
+                elif parsed.path.startswith("/api/skyshield/devices/") and (parsed.path.endswith("/analyze") or parsed.path.endswith("/analyze/")):
+                    coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
+                    if not coord:
+                        self._send_response(503, "application/json", json.dumps({"success": False, "error": "Security coordinator unavailable"}).encode("utf-8"))
+                        return
+                    parts = parsed.path.strip("/").split("/")
+                    device_id = parts[3] if len(parts) >= 4 else ""
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    mock_scen = b_data.get("mock_scenario")
+                    snap_data = b_data.get("snapshot")
+                    res = coord.analyze_device_telemetry(device_id=device_id, snapshot_data=snap_data, mock_scenario=mock_scen)
+                    self._send_response(200 if res.get("success") else 400, "application/json", json.dumps(res, indent=2).encode("utf-8"))
 
                 elif parsed.path in ("/api/skyshield/session/authenticate", "/api/skyshield/session/authenticate/"):
                     coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
