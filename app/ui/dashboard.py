@@ -407,6 +407,8 @@ class CompanionDashboard:
 
                 elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/activate") or parsed.path.endswith("/activate/")):
                     agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/activate", "").strip("/")
+                    if agent_id in ("nova_discovery_agent", "aegis_verification_agent"):
+                        agent_id = "universal_knowledge_engine"
                     speech = "Yes Boss, I'm ready."
                     is_first = False
                     if dashboard_ref.companion and hasattr(dashboard_ref.companion, "activate_agent_session"):
@@ -425,6 +427,8 @@ class CompanionDashboard:
 
                 elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/chat") or parsed.path.endswith("/chat/")):
                     agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/chat", "").strip("/")
+                    if agent_id in ("nova_discovery_agent", "aegis_verification_agent"):
+                        agent_id = "universal_knowledge_engine"
                     try:
                         c_data = json.loads(body) if body else {}
                     except Exception:

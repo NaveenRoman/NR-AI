@@ -375,6 +375,10 @@ class EpistemicBadge:
     def from_type(cls, epistemic_type: EpistemicType, confidence: float = 1.0) -> "EpistemicBadge":
         return cls(badge_type=epistemic_type, confidence=max(0.0, min(1.0, confidence)))
 
+    @property
+    def tag(self) -> str:
+        return self.format_tag()
+
     def format_tag(self) -> str:
         conf_pct = int(self.confidence * 100)
         return f"[{self.label} | {conf_pct}%]"

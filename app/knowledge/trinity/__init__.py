@@ -52,6 +52,18 @@ from app.knowledge.trinity.schemas import (
     SourceAuthorityTier,
 )
 
+from app.knowledge.trinity.coordinator import (
+    ConversationalMemoryManager,
+    ConversationState,
+    KnowledgeTrinityCoordinator,
+    KnowledgeUpdateCategory,
+    KnowledgeVersioningManager,
+    QueryCategory,
+    QueryDecisionEngine,
+    TrinityResponse,
+    VersionedKnowledgeRecord,
+)
+
 __all__ = [
     "SourceAuthorityTier",
     "MediaType",
@@ -87,4 +99,13 @@ __all__ = [
     "TemporalVerifier",
     "ContradictionDetector",
     "FounderValidationEngine",
+    "KnowledgeTrinityCoordinator",
+    "QueryDecisionEngine",
+    "QueryCategory",
+    "ConversationalMemoryManager",
+    "ConversationState",
+    "KnowledgeVersioningManager",
+    "VersionedKnowledgeRecord",
+    "KnowledgeUpdateCategory",
+    "TrinityResponse",
 ]

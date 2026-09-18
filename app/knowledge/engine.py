@@ -69,9 +69,17 @@ class UniversalKnowledgeEngine:
         from app.knowledge.trinity.aegis import AegisVerificationAgent
         from app.knowledge.trinity.nova import NovaDiscoveryAgent
         from app.knowledge.trinity.protocol import TrinityBus
+        from app.knowledge.trinity.coordinator import KnowledgeTrinityCoordinator
         self.trinity_bus = TrinityBus()
         self.aegis = AegisVerificationAgent(bus=self.trinity_bus)
         self.nova = NovaDiscoveryAgent(bus=self.trinity_bus)
+        self.coordinator = KnowledgeTrinityCoordinator(
+            bus=self.trinity_bus,
+            nova=self.nova,
+            aegis=self.aegis,
+            knowledge_store=self.store,
+            research_engine=self.research_engine,
+        )
 
         if auto_seed:
             populate_knowledge_store(self.store, force=False)
@@ -153,60 +161,29 @@ class UniversalKnowledgeEngine:
     def query_companion_card(self, text: str, session_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Generates a structured payload optimized for the mobile companion app,
-        desktop avatar, and WebSocket telemetry streams.
+        desktop avatar, and WebSocket telemetry streams via KnowledgeTrinityCoordinator.
         """
-        report = self.query(text, session_context=session_context)
-        badge = report.badges[0] if report.badges else EpistemicBadge.from_type(report.epistemic_type, report.confidence)
-
-        # Aegis Verification Gate
-        verification_rep = None
-        if self.should_verify(text, report.primary_answer):
-            from app.knowledge.trinity.schemas import DiscoveryEvidence, SourceAuthorityTier
-            evidence_items = []
-            for s in report.sources:
-                s_name = getattr(s, "name", "Known Source")
-                s_url = getattr(s, "url", None)
-                s_snippet = getattr(s, "snippet", None) or s_name
-                evidence_items.append(DiscoveryEvidence(
-                    evidence_id=f"ev-rep-{abs(hash(s_url or s_name)) % 10000}",
-                    query_id=f"q-{int(time.time()*1000)}",
-                    claim_candidate=s_snippet,
-                    source_name=s_name,
-                    source_url=s_url,
-                    authority_tier=SourceAuthorityTier.RELIABLE_SECONDARY,
-                    raw_snippet=s_snippet,
-                ))
-            for c in getattr(report, "claims", []):
-                c_text = getattr(c, "statement", getattr(c, "text", str(c)))
-                evidence_items.append(DiscoveryEvidence(
-                    evidence_id=f"ev-claim-{abs(hash(c_text)) % 10000}",
-                    query_id=f"q-{int(time.time()*1000)}",
-                    claim_candidate=c_text,
-                    source_name="Knowledge Fabric",
-                    authority_tier=SourceAuthorityTier.PRIMARY_CANONICAL,
-                    raw_snippet=c_text,
-                ))
-            verification_rep = self.verify_answer(
-                query=text,
-                draft_text=report.primary_answer,
-                subject=getattr(report, "primary_subject", text),
-                evidence_items=evidence_items,
-            )
+        t_resp = self.coordinator.coordinate(text, session_context=session_context)
+        badge_dict = t_resp.badge.to_dict() if t_resp.badge else {}
 
         return {
-            "query": report.query,
-            "speech_text": report.format_speech(),
-            "display_text": report.primary_answer,
-            "markdown": report.format_markdown(),
-            "epistemic_type": report.epistemic_type.value,
-            "badge": badge.to_dict(),
-            "confidence": report.confidence,
-            "sources": [s.to_dict() for s in report.sources],
-            "verification_report": verification_rep.to_dict() if verification_rep else None,
-            "retrieval_tier": report.retrieval_tier,
-            "latency_ms": report.latency_ms,
-            "nodes_consulted": report.nodes_consulted,
-            "timestamp": report.timestamp,
+            "query": t_resp.query,
+            "speech_text": t_resp.speech_text,
+            "display_text": t_resp.primary_answer,
+            "markdown": t_resp.markdown,
+            "epistemic_type": t_resp.epistemic_type.value,
+            "badge": badge_dict,
+            "confidence": t_resp.confidence,
+            "sources": t_resp.sources,
+            "evidence_items": [e.to_dict() for e in t_resp.evidence_items],
+            "media_items": [m.to_dict() for m in t_resp.media_items],
+            "verification_report": t_resp.verification_report.to_dict() if t_resp.verification_report else None,
+            "collaboration_block": t_resp.collaboration_block,
+            "review_cycles": t_resp.review_cycles,
+            "retrieval_tier": t_resp.route_category.value,
+            "latency_ms": t_resp.latency_ms,
+            "nodes_consulted": len(t_resp.sources),
+            "timestamp": time.time(),
         }
 
     def query_timeline_year(self, year: int) -> List[TimelineEvent]:

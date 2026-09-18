@@ -132,6 +132,42 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
             {"id": "knowledge.verify_facts", "label": "Verify Facts", "icon": "check-square"},
         ],
     },
+    "nova_discovery_agent": {
+        "friendly_name": "Nova",
+        "workspace_name": "Universal Knowledge",
+        "project_name": "Multi-Source Research",
+        "role": "Discovery Agent",
+        "category": "Intelligence & Research",
+        "color": "#06b6d4",  # Cyan
+        "glow": "rgba(6, 182, 212, 0.6)",
+        "orbit_ring": 2,
+        "base_angle": 30,
+        "icon_type": "search",
+        "parent_department": "universal_knowledge_engine",
+        "greeting": "Hi Boss! I'm Nova, your Autonomous Discovery & Continuous Research Agent. I search arXiv, Wikipedia, GitHub, and news feeds internally for Knowledge.",
+        "suggested_actions": [
+            {"id": "nova.search", "label": "Discover Sources", "icon": "search"},
+            {"id": "nova.check_freshness", "label": "Check News & TTL", "icon": "refresh-cw"},
+        ],
+    },
+    "aegis_verification_agent": {
+        "friendly_name": "Aegis",
+        "workspace_name": "Universal Knowledge",
+        "project_name": "Epistemic Gatekeeper",
+        "role": "Verification Agent",
+        "category": "Intelligence & Research",
+        "color": "#eab308",  # Amber / Gold
+        "glow": "rgba(234, 179, 8, 0.6)",
+        "orbit_ring": 2,
+        "base_angle": 6,
+        "icon_type": "shield",
+        "parent_department": "universal_knowledge_engine",
+        "greeting": "Hi Boss! I'm Aegis, your Epistemic Gatekeeper. I decompose claims, check independent corroboration, and prevent hallucinations for Knowledge.",
+        "suggested_actions": [
+            {"id": "aegis.verify_claim", "label": "Verify Claims", "icon": "check-circle"},
+            {"id": "aegis.check_contradictions", "label": "Check Contradictions", "icon": "alert-octagon"},
+        ],
+    },
     "computer_control_agent": {
         "friendly_name": "Sentinel",
         "workspace_name": "Windows Desktop",

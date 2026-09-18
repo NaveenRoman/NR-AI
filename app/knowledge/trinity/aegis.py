@@ -369,21 +369,25 @@ class ContradictionDetector:
         for ev in evidence_items:
             ev_low = (ev.raw_snippet + " " + ev.claim_candidate).lower()
 
+            # Direct match or quotation of evidence cannot contradict itself
+            if c_low in ev_low or ev_low in c_low:
+                continue
+
             # 1. Date Disagreement
-            if claim.dates_mentioned:
-                for c_date in claim.dates_mentioned:
-                    # If claim states born in year X, and evidence states born in year Y
-                    if "born" in c_low and "born" in ev_low:
-                        ev_years = re.findall(r"\bborn\s+(?:in|on)?\s*([A-Za-z0-9,\s]{4,15})\b", ev_low)
-                        c_years = re.findall(r"\bborn\s+(?:in|on)?\s*([A-Za-z0-9,\s]{4,15})\b", c_low)
-                        if ev_years and c_years and ev_years[0].strip() != c_years[0].strip():
-                            conflicts.append({
-                                "conflict_type": "DATE_CONFLICT",
-                                "claim_text": claim.text,
-                                "evidence_id": ev.evidence_id,
-                                "evidence_snippet": ev.raw_snippet[:200],
-                                "rationale": f"Claim asserts born in '{c_years[0]}', but evidence indicates '{ev_years[0]}'.",
-                            })
+            if claim.dates_mentioned or re.search(r"\b(18\d\d|19\d\d|20\d\d)\b", c_low):
+                action_verbs = ("born", "released", "founded", "created", "invented", "published", "launched", "patented")
+                matched_verb = next((v for v in action_verbs if v in c_low and v in ev_low), None)
+                if matched_verb:
+                    ev_years = re.findall(r"\b(18\d\d|19\d\d|20\d\d)\b", ev_low)
+                    c_years = re.findall(r"\b(18\d\d|19\d\d|20\d\d)\b", c_low)
+                    if ev_years and c_years and not any(cy in ev_years for cy in c_years):
+                        conflicts.append({
+                            "conflict_type": "DATE_CONFLICT",
+                            "claim_text": claim.text,
+                            "evidence_id": ev.evidence_id,
+                            "evidence_snippet": ev.raw_snippet[:200],
+                            "rationale": f"Claim asserts {matched_verb} in '{c_years[0]}', but authoritative evidence indicates '{ev_years[0]}'.",
+                        })
 
             # 2. Numerical Disagreement
             if claim.claim_type == ClaimType.FACTUAL_NUMERICAL and claim.numbers_mentioned:
@@ -410,13 +414,14 @@ class ContradictionDetector:
                 tokens = [t for t in pos_candidate.split() if len(t) > 3]
                 if len(tokens) >= 2 and all(t in ev_low for t in tokens[:3]):
                     if any(pos in ev_low for pos in ("supports", "enabled", "released", "announced", "features")):
-                        conflicts.append({
-                            "conflict_type": "NEGATION_CONFLICT",
-                            "claim_text": claim.text,
-                            "evidence_id": ev.evidence_id,
-                            "evidence_snippet": ev.raw_snippet[:200],
-                            "rationale": "Claim makes an absolute negative assertion contradicted by positive evidence.",
-                        })
+                        if not any(neg in ev_low for neg in ("unannounced", "could not verify", "not released", "not announced", "not documented", "cannot establish")):
+                            conflicts.append({
+                                "conflict_type": "NEGATION_CONFLICT",
+                                "claim_text": claim.text,
+                                "evidence_id": ev.evidence_id,
+                                "evidence_snippet": ev.raw_snippet[:200],
+                                "rationale": "Claim makes an absolute negative assertion contradicted by positive evidence.",
+                            })
 
         return conflicts
 

@@ -641,21 +641,27 @@ function handleCanvasClick(screenX, screenY) {
 
 async function selectAgent(node) {
   state.selectedNode = node;
-  state.activeConversationAgent = node.agent_id;
-  state.activeConversationAgentName = node.friendly_name;
+
+  // Knowledge Trinity: Nova and Aegis belong to the ONE Knowledge Department
+  const isTrinityChild = (node.agent_id === "nova_discovery_agent" || node.agent_id === "aegis_verification_agent" || node.parent_department === "universal_knowledge_engine");
+  const targetAgentId = isTrinityChild ? "universal_knowledge_engine" : node.agent_id;
+  const targetFriendlyName = isTrinityChild ? "Knowledge" : node.friendly_name;
+
+  state.activeConversationAgent = targetAgentId;
+  state.activeConversationAgentName = targetFriendlyName;
 
   // Show Active Conversation Banner in Central Viewport
   const banner = document.getElementById("activeChatBanner");
   const bannerName = document.getElementById("activeChatAgentName");
   if (banner) banner.style.display = "flex";
-  if (bannerName) bannerName.textContent = node.friendly_name;
+  if (bannerName) bannerName.textContent = isTrinityChild ? `Knowledge (${node.friendly_name} Sub-Agent)` : node.friendly_name;
 
   // Render Base Agent Panel immediately
   renderAgentPanel(node);
 
   // Asynchronously activate agent session (session-aware greeting)
   try {
-    const actRes = await fetch(`/api/agent/${node.agent_id}/activate`, {
+    const actRes = await fetch(`/api/agent/${targetAgentId}/activate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" }
     });
@@ -674,10 +680,10 @@ async function selectAgent(node) {
   }
 
   // Load detailed workspace context (Focus, checklist, telemetry)
-  loadAgentWorkspace(node.agent_id);
+  loadAgentWorkspace(targetAgentId);
 
-  // Load existing chat history
-  loadAgentChatHistory(node.agent_id);
+  // Load existing chat history from the ONE Knowledge workspace
+  loadAgentChatHistory(targetAgentId);
 }
 
 // -----------------------------------------------------------------------------
@@ -918,7 +924,10 @@ async function sendAgentTurn(text) {
     return;
   }
 
-  const aid = state.activeConversationAgent || (state.selectedNode ? state.selectedNode.agent_id : "android_unified_agent");
+  let aid = state.activeConversationAgent || (state.selectedNode ? state.selectedNode.agent_id : "universal_knowledge_engine");
+  if (aid === "nova_discovery_agent" || aid === "aegis_verification_agent") {
+    aid = "universal_knowledge_engine";
+  }
   appendChatMessage("user", text);
   updatePttState("UNDERSTANDING");
 

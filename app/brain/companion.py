@@ -702,8 +702,13 @@ class NRCompanion:
         - Subsequent times in same session: Returns crisp readiness confirmation.
         Returns: (speech_text, is_first_time)
         """
-        self.active_conversation_agent = agent_id
         resolved_name = agent_name
+        # Knowledge Trinity: Nova and Aegis belong to the ONE Knowledge Department
+        if agent_id in ("nova_discovery_agent", "aegis_verification_agent"):
+            agent_id = "universal_knowledge_engine"
+            resolved_name = "Knowledge"
+
+        self.active_conversation_agent = agent_id
         if not resolved_name:
             _, resolved_name, _ = self.resolve_addressed_agent(agent_id)
         if not resolved_name:
@@ -739,6 +744,10 @@ class NRCompanion:
         data: Optional[Dict[str, Any]] = None
     ) -> None:
         """Appends a sanitized, bounded message to the agent's chat history."""
+        # Knowledge Trinity: Nova and Aegis share the single Knowledge chat workspace
+        if agent_id in ("nova_discovery_agent", "aegis_verification_agent"):
+            agent_id = "universal_knowledge_engine"
+
         if agent_id not in self.agent_conversation_histories:
             self.agent_conversation_histories[agent_id] = []
 
@@ -761,6 +770,10 @@ class NRCompanion:
 
     def get_agent_chat_history(self, agent_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Returns bounded chat history for a specific agent."""
+        # Knowledge Trinity: Nova and Aegis share the single Knowledge chat workspace
+        if agent_id in ("nova_discovery_agent", "aegis_verification_agent"):
+            agent_id = "universal_knowledge_engine"
+
         history = self.agent_conversation_histories.get(agent_id, [])
         return history[-limit:]
 
@@ -3044,6 +3057,8 @@ class NRCompanion:
         e_type = card.get("epistemic_type", "VERIFIED_FACT")
         badge_tag = card.get("badge", {}).get("tag", "[VERIFIED FACT]")
         display_text = f"{badge_tag}\n\n{card['display_text']}"
+        if card.get("collaboration_block"):
+            display_text += f"\n\n{card['collaboration_block']}"
 
         # Update conversational memory for multi-turn coreference follow-ups
         try:
