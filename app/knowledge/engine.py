@@ -206,6 +206,25 @@ class UniversalKnowledgeEngine:
         """Stops background continuous learning worker."""
         self.scheduler.stop()
 
+    def get_telemetry_snapshot(self) -> Dict[str, Any]:
+        """Returns the live structured Trinity telemetry snapshot from coordinator."""
+        if hasattr(self, "coordinator") and hasattr(self.coordinator, "get_telemetry_snapshot"):
+            return self.coordinator.get_telemetry_snapshot()
+        return {
+            "active_agent": None,
+            "workflow_state": "IDLE",
+            "query_id": "",
+            "knowledge_state": "IDLE",
+            "nova_state": "IDLE",
+            "aegis_state": "IDLE",
+            "progress": 0.0,
+            "source_count": 0,
+            "verification_status": "PENDING",
+            "current_operation": "Knowledge Engine standing by.",
+            "error_state": None,
+            "timestamp": time.time(),
+        }
+
     def get_status(self) -> Dict[str, Any]:
         """Returns runtime diagnostics across knowledge subsystems."""
         return {
@@ -215,3 +234,4 @@ class UniversalKnowledgeEngine:
             "scheduler_stats": self.scheduler.get_stats(),
             "db_path": self.store.db_path,
         }
+

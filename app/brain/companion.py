@@ -768,6 +768,10 @@ class NRCompanion:
         if len(self.agent_conversation_histories[agent_id]) > 20:
             self.agent_conversation_histories[agent_id] = self.agent_conversation_histories[agent_id][-20:]
 
+    @property
+    def agent_chat_histories(self) -> Dict[str, List[Dict[str, Any]]]:
+        return self.agent_conversation_histories
+
     def get_agent_chat_history(self, agent_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Returns bounded chat history for a specific agent."""
         # Knowledge Trinity: Nova and Aegis share the single Knowledge chat workspace
@@ -776,6 +780,25 @@ class NRCompanion:
 
         history = self.agent_conversation_histories.get(agent_id, [])
         return history[-limit:]
+
+    def get_agent_workspace_context(self, agent_id: str) -> Dict[str, Any]:
+        """
+        Returns workspace context ensuring Trinity nodes share the single Universal Knowledge Workspace,
+        while maintaining strict specialist isolation.
+        """
+        if agent_id in ("universal_knowledge_engine", "nova_discovery_agent", "aegis_verification_agent"):
+            return {
+                "workspace_id": "universal_knowledge_engine",
+                "workspace_name": "Universal Knowledge Workspace",
+                "shared": True,
+                "role_agent": agent_id,
+            }
+        return {
+            "workspace_id": agent_id,
+            "workspace_name": f"{agent_id} Workspace",
+            "shared": False,
+            "role_agent": agent_id,
+        }
 
     def get_active_development_context(self, agent_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -1107,6 +1130,7 @@ class NRCompanion:
             k_resp = self._handle_knowledge(command)
             k_resp.text = f"Knowledge: {k_resp.text}"
             k_resp.data["active_conversation_agent"] = "universal_knowledge_engine"
+            self.add_agent_chat_message(agent_id, role="agent", text=k_resp.text, data=k_resp.data)
             return k_resp
 
         elif agent_id == "security_agent":

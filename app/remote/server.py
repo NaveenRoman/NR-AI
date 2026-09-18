@@ -912,6 +912,13 @@ class SecureDashboardServer:
                     state = gateway_ref.galaxy_engine.get_galaxy_state(companion_snapshot=snapshot)
                     self._send_response(200, "application/json", json.dumps(state, indent=2).encode("utf-8"))
 
+                elif parsed.path in ("/api/trinity/telemetry", "/api/trinity/telemetry/"):
+                    telemetry = {}
+                    if gateway_ref.companion and hasattr(gateway_ref.companion, "knowledge_engine"):
+                        telemetry = gateway_ref.companion.knowledge_engine.get_telemetry_snapshot()
+                    payload = json.dumps({"success": True, "telemetry": telemetry}, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
                 elif parsed.path == "/api/diagnostics/credentials":
                     from app.agent.credential_diagnostics import CredentialDiagnosticEngine
                     diag = CredentialDiagnosticEngine().diagnose_all()
@@ -1500,6 +1507,7 @@ class SecureDashboardServer:
                         "agent_id": agent_id,
                         "reply": reply,
                         "response": resp_dict,
+                        "card": resp_dict.get("data", {}) if isinstance(resp_dict, dict) else {},
                     }, indent=2).encode("utf-8")
                     self._send_response(200, "application/json", payload)
 

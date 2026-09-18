@@ -118,14 +118,15 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "friendly_name": "Knowledge",
         "workspace_name": "Universal Knowledge",
         "project_name": "FTS5 / Scholarly",
-        "role": "Oracle Agent",
+        "role": "Primary Knowledge Agent",
         "category": "Intelligence & Research",
         "color": "#3b82f6",  # Royal Blue
         "glow": "rgba(59, 130, 246, 0.6)",
         "orbit_ring": 2,
         "base_angle": 18,
+        "base_radius": 34.0,
         "icon_type": "book",
-        "greeting": "Hi Boss! I'm Knowledge, your Universal Knowledge & Research Agent. I query local FTS5 stores, arXiv, Wikipedia, and PubMed for verified facts.",
+        "greeting": "I am Knowledge, the main Universal Knowledge agent. Nova researches information and Aegis verifies it before I answer when verification is needed.",
         "suggested_actions": [
             {"id": "knowledge.search", "label": "Search Knowledge", "icon": "search"},
             {"id": "knowledge.research_topic", "label": "Scholarly Research", "icon": "book-open"},
@@ -136,15 +137,16 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "friendly_name": "Nova",
         "workspace_name": "Universal Knowledge",
         "project_name": "Multi-Source Research",
-        "role": "Discovery Agent",
+        "role": "Discovery & Research Engine",
         "category": "Intelligence & Research",
         "color": "#06b6d4",  # Cyan
         "glow": "rgba(6, 182, 212, 0.6)",
         "orbit_ring": 2,
         "base_angle": 30,
+        "base_radius": 24.0,
         "icon_type": "search",
         "parent_department": "universal_knowledge_engine",
-        "greeting": "Hi Boss! I'm Nova, your Autonomous Discovery & Continuous Research Agent. I search arXiv, Wikipedia, GitHub, and news feeds internally for Knowledge.",
+        "greeting": "I am Nova, the discovery and research engine behind Knowledge. I search available public sources and bring new evidence into the Knowledge system.",
         "suggested_actions": [
             {"id": "nova.search", "label": "Discover Sources", "icon": "search"},
             {"id": "nova.check_freshness", "label": "Check News & TTL", "icon": "refresh-cw"},
@@ -154,15 +156,16 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "friendly_name": "Aegis",
         "workspace_name": "Universal Knowledge",
         "project_name": "Epistemic Gatekeeper",
-        "role": "Verification Agent",
+        "role": "Verification & Epistemic Gatekeeper",
         "category": "Intelligence & Research",
         "color": "#eab308",  # Amber / Gold
         "glow": "rgba(234, 179, 8, 0.6)",
         "orbit_ring": 2,
         "base_angle": 6,
+        "base_radius": 24.0,
         "icon_type": "shield",
         "parent_department": "universal_knowledge_engine",
-        "greeting": "Hi Boss! I'm Aegis, your Epistemic Gatekeeper. I decompose claims, check independent corroboration, and prevent hallucinations for Knowledge.",
+        "greeting": "I am Aegis, the verification layer. I check claims, detect contradictions and help Knowledge avoid unsupported answers.",
         "suggested_actions": [
             {"id": "aegis.verify_claim", "label": "Verify Claims", "icon": "check-circle"},
             {"id": "aegis.check_contradictions", "label": "Check Contradictions", "icon": "alert-octagon"},
@@ -336,6 +339,8 @@ class CelestialNode:
     workspace_name: str = "Central Workspace"
     project_name: str = "None"
     focus_mode: str = "IDLE" 
+    base_radius: float = 26.0
+    parent_department: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -351,6 +356,10 @@ class GalaxyEngine:
         self.registry = registry or AgentRegistry()
         self.emergency_stop = emergency_stop or EmergencyStopController()
         self.start_time = time.time()
+
+    @property
+    def profiles(self) -> Dict[str, Any]:
+        return BUILTIN_CELESTIAL_PROFILES
 
     def get_real_system_metrics(self) -> Dict[str, Any]:
         """
@@ -462,6 +471,27 @@ class GalaxyEngine:
             real_progress = companion_snapshot.get("task_progress") if isinstance(companion_snapshot.get("task_progress"), (int, float)) else None
             curr_task = {"description": task_status, "progress": real_progress} if status == "WORKING" else None
 
+            # Real Trinity Telemetry State Binding (Zero fabricated activity)
+            trinity_tel = companion_snapshot.get("trinity_telemetry") or {}
+            if aid == "universal_knowledge_engine" and trinity_tel:
+                k_state = trinity_tel.get("knowledge_state", "IDLE")
+                if k_state in ("UNDERSTANDING", "RETRIEVING", "SYNTHESIZING", "RESPONDING"):
+                    status = "WORKING"
+                    status_color = "#38bdf8"
+                    curr_task = {"description": trinity_tel.get("current_operation", "Processing Knowledge"), "progress": trinity_tel.get("progress", 0.5)}
+            elif aid == "nova_discovery_agent" and trinity_tel:
+                n_state = trinity_tel.get("nova_state", "IDLE")
+                if n_state in ("DISCOVERING", "SEARCHING", "COLLECTING"):
+                    status = "WORKING"
+                    status_color = "#06b6d4"
+                    curr_task = {"description": trinity_tel.get("current_operation", "Discovering Sources"), "progress": trinity_tel.get("progress", 0.45)}
+            elif aid == "aegis_verification_agent" and trinity_tel:
+                a_state = trinity_tel.get("aegis_state", "IDLE")
+                if a_state in ("VERIFYING", "DECOMPOSING", "CORRECTING"):
+                    status = "WORKING"
+                    status_color = "#eab308"
+                    curr_task = {"description": trinity_tel.get("current_operation", "Verifying Claims"), "progress": trinity_tel.get("progress", 0.80)}
+
             node = CelestialNode(
                 agent_id=aid,
                 friendly_name=profile["friendly_name"],
@@ -485,6 +515,8 @@ class GalaxyEngine:
                 workspace_name=profile.get("workspace_name", "Central Workspace"),
                 project_name=profile.get("project_name", "None"),
                 focus_mode="WORKING" if status == "WORKING" else "IDLE",
+                base_radius=float(profile.get("base_radius", 26.0)),
+                parent_department=profile.get("parent_department"),
             )
             nodes.append(node)
 
@@ -590,6 +622,41 @@ class GalaxyEngine:
                 "animated": n.status in ("WORKING", "THINKING"),
             })
 
+        # Trinity Department Inter-Agent Connections (Knowledge <-> Nova <-> Aegis)
+        trinity_tel = (companion_snapshot.get("trinity_telemetry") if companion_snapshot else None) or {}
+        trinity_active_agent = trinity_tel.get("active_agent")
+        nova_active = trinity_tel.get("nova_state") not in ("IDLE", "STOPPED", None) or trinity_active_agent == "nova"
+        aegis_active = trinity_tel.get("aegis_state") not in ("IDLE", "STOPPED", None) or trinity_active_agent == "aegis"
+        knowledge_active = trinity_tel.get("knowledge_state") not in ("IDLE", "STOPPED", None) or trinity_active_agent == "knowledge"
+
+        connections.append({
+            "from": "universal_knowledge_engine",
+            "to": "nova_discovery_agent",
+            "status": trinity_tel.get("nova_state", "IDLE"),
+            "color": "#06b6d4",
+            "glow": "rgba(6, 182, 212, 0.7)",
+            "animated": nova_active or knowledge_active,
+            "is_trinity": True,
+        })
+        connections.append({
+            "from": "universal_knowledge_engine",
+            "to": "aegis_verification_agent",
+            "status": trinity_tel.get("aegis_state", "IDLE"),
+            "color": "#eab308",
+            "glow": "rgba(234, 179, 8, 0.7)",
+            "animated": aegis_active or knowledge_active,
+            "is_trinity": True,
+        })
+        connections.append({
+            "from": "nova_discovery_agent",
+            "to": "aegis_verification_agent",
+            "status": trinity_tel.get("verification_status", "IDLE"),
+            "color": "#10b981" if trinity_tel.get("verification_status") == "APPROVED" else "#eab308",
+            "glow": "rgba(234, 179, 8, 0.6)",
+            "animated": aegis_active and trinity_tel.get("source_count", 0) > 0,
+            "is_trinity": True,
+        })
+
         active_agent = companion_snapshot.get("active_conversation_agent") if companion_snapshot else None
         handoff = companion_snapshot.get("handoff_path", []) if companion_snapshot else []
         try:
@@ -606,6 +673,7 @@ class GalaxyEngine:
             "credential_diagnostics": diag,
             "nodes": [n.to_dict() for n in nodes],
             "connections": connections,
+            "trinity_telemetry": trinity_tel,
             "system_metrics": metrics,
             "timestamp": time.time(),
         }
@@ -692,7 +760,11 @@ class GalaxyEngine:
         elif node.agent_id == "vs_unified_agent":
             return "Hi Boss, I'm Studio, your Visual Studio Agent. I inspect solutions, build MSBuild targets, and diagnose compilation errors."
         elif node.agent_id == "universal_knowledge_engine":
-            return "Hi Boss, I'm Knowledge, your Universal Knowledge Agent. I query local FTS5 stores, arXiv, and verified news for factual answers."
+            return "I am Knowledge, the main Universal Knowledge agent. Nova researches information and Aegis verifies it before I answer when verification is needed."
+        elif node.agent_id == "nova_discovery_agent":
+            return "I am Nova, the discovery and research engine behind Knowledge. I search available public sources and bring new evidence into the Knowledge system."
+        elif node.agent_id == "aegis_verification_agent":
+            return "I am Aegis, the verification layer. I check claims, detect contradictions and help Knowledge avoid unsupported answers."
         elif node.agent_id == "vision_agent":
             return "Hi Boss, I'm Vision, your visual grounding and OCR Agent. I inspect screen pixels, detect UI hierarchies, and identify visual targets."
         elif node.agent_id == "voice_agent":

@@ -162,6 +162,7 @@ class CompanionDashboard:
                 "completed_tasks": orch_metrics.get("completed_tasks", 0),
             },
             "latest_news": latest_news,
+            "trinity_telemetry": getattr(self.companion, "knowledge_engine", None) and hasattr(self.companion.knowledge_engine, "get_telemetry_snapshot") and self.companion.knowledge_engine.get_telemetry_snapshot() or {},
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
@@ -226,6 +227,14 @@ class CompanionDashboard:
                     snapshot = dashboard_ref.get_status_snapshot()
                     state = dashboard_ref.galaxy_engine.get_galaxy_state(companion_snapshot=snapshot)
                     payload = json.dumps(state, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 1a. Trinity Real-Time Telemetry API
+                elif parsed.path in ("/api/trinity/telemetry", "/api/trinity/telemetry/"):
+                    telemetry = {}
+                    if dashboard_ref.companion and hasattr(dashboard_ref.companion, "knowledge_engine"):
+                        telemetry = dashboard_ref.companion.knowledge_engine.get_telemetry_snapshot()
+                    payload = json.dumps({"success": True, "telemetry": telemetry}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
                 # 1b. Galaxy Introduction API
@@ -449,6 +458,7 @@ class CompanionDashboard:
                         "agent_id": agent_id,
                         "reply": reply,
                         "response": resp_dict,
+                        "card": resp_dict.get("data", {}) if isinstance(resp_dict, dict) else {},
                     }, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 

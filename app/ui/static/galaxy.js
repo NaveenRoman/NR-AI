@@ -227,62 +227,123 @@ function drawConnections(now) {
   ctx.save();
 
   const timeSec = now * 0.002;
-
+  const nodeMap = new Map();
   for (const node of state.galaxy.nodes) {
-    const isSpeaker = state.introMode && state.currentSpeakerId === node.agent_id;
-    const isFiltered = isNodeFilteredOut(node);
-    const alpha = isFiltered ? 0.05 : (state.introMode && !isSpeaker ? 0.12 : 0.25);
+    nodeMap.set(node.agent_id, node);
+  }
 
-    const pos = getNodePosition(node, now);
-    const nx = pos.x;
-    const ny = pos.y;
+  // Render connections list (Central and Trinity Inter-Agent)
+  if (state.galaxy.connections && Array.isArray(state.galaxy.connections)) {
+    for (const conn of state.galaxy.connections) {
+      if (conn.from === "nr_ai_central_intelligence") {
+        const toNode = nodeMap.get(conn.to);
+        if (!toNode) continue;
+        const isSpeaker = state.introMode && state.currentSpeakerId === toNode.agent_id;
+        const isFiltered = isNodeFilteredOut(toNode);
+        const alpha = isFiltered ? 0.05 : (state.introMode && !isSpeaker ? 0.12 : 0.25);
 
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(nx, ny);
+        const pos = getNodePosition(toNode, now);
+        const nx = pos.x;
+        const ny = pos.y;
 
-    if (isSpeaker) {
-      // High-energy luminous gravitational beam from Central Core to Speaking Agent
-      ctx.strokeStyle = "#00f0ff";
-      ctx.lineWidth = 3.5;
-      ctx.shadowColor = "#00f0ff";
-      ctx.shadowBlur = 18;
-      ctx.stroke();
-
-      // Energy pulse traveling along the beam
-      for (let k = 0; k < 3; k++) {
-        const t = ((timeSec * 2.0 + k * 0.33) % 1);
-        const px = nx * t;
-        const py = ny * t;
         ctx.beginPath();
-        ctx.arc(px, py, 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = "#ffffff";
-        ctx.shadowColor = "#00f0ff";
-        ctx.shadowBlur = 16;
-        ctx.fill();
-      }
-    } else if (node.status === "WORKING" || node.status === "THINKING") {
-      ctx.strokeStyle = node.color;
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = node.color;
-      ctx.shadowBlur = 12;
-      ctx.stroke();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(nx, ny);
 
-      // Traveling photon particle
-      const t = (timeSec % 1);
-      const px = nx * t;
-      const py = ny * t;
+        if (isSpeaker) {
+          ctx.strokeStyle = "#00f0ff";
+          ctx.lineWidth = 3.5;
+          ctx.shadowColor = "#00f0ff";
+          ctx.shadowBlur = 18;
+          ctx.stroke();
+
+          for (let k = 0; k < 3; k++) {
+            const t = ((timeSec * 2.0 + k * 0.33) % 1);
+            const px = nx * t;
+            const py = ny * t;
+            ctx.beginPath();
+            ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#ffffff";
+            ctx.shadowColor = "#00f0ff";
+            ctx.shadowBlur = 16;
+            ctx.fill();
+          }
+        } else if (conn.animated || toNode.status === "WORKING" || toNode.status === "THINKING") {
+          ctx.strokeStyle = conn.color || toNode.color;
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = conn.color || toNode.color;
+          ctx.shadowBlur = 12;
+          ctx.stroke();
+
+          const t = (timeSec % 1);
+          const px = nx * t;
+          const py = ny * t;
+          ctx.beginPath();
+          ctx.arc(px, py, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.shadowColor = "#ffffff";
+          ctx.shadowBlur = 16;
+          ctx.fill();
+        } else {
+          ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      } else if (conn.is_trinity) {
+        // Inter-Agent Trinity Department Connection (Knowledge <-> Nova <-> Aegis)
+        const fromNode = nodeMap.get(conn.from);
+        const toNode = nodeMap.get(conn.to);
+        if (!fromNode || !toNode) continue;
+
+        const posA = getNodePosition(fromNode, now);
+        const posB = getNodePosition(toNode, now);
+
+        ctx.beginPath();
+        ctx.moveTo(posA.x, posA.y);
+        ctx.lineTo(posB.x, posB.y);
+
+        if (conn.animated) {
+          ctx.strokeStyle = conn.color || "#06b6d4";
+          ctx.lineWidth = 2.8;
+          ctx.shadowColor = conn.glow || conn.color;
+          ctx.shadowBlur = 16;
+          ctx.stroke();
+
+          for (let k = 0; k < 2; k++) {
+            const t = ((timeSec * 1.8 + k * 0.5) % 1);
+            const px = posA.x + (posB.x - posA.x) * t;
+            const py = posA.y + (posB.y - posA.y) * t;
+            ctx.beginPath();
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = "#ffffff";
+            ctx.shadowColor = conn.color || "#06b6d4";
+            ctx.shadowBlur = 14;
+            ctx.fill();
+          }
+        } else {
+          // Luminous idle harmonic bond for Trinity cluster
+          ctx.strokeStyle = conn.glow || "rgba(6, 182, 212, 0.35)";
+          ctx.lineWidth = 1.4;
+          ctx.setLineDash([4, 6]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    }
+  } else {
+    // Fallback: draw straight central beams to nodes
+    for (const node of state.galaxy.nodes) {
+      const pos = getNodePosition(node, now);
       ctx.beginPath();
-      ctx.arc(px, py, 4, 0, Math.PI * 2);
-      ctx.fillStyle = "#ffffff";
-      ctx.shadowColor = "#ffffff";
-      ctx.shadowBlur = 16;
-      ctx.fill();
-    } else {
-      ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
+      ctx.moveTo(0, 0);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.strokeStyle = `rgba(56, 189, 248, 0.25)`;
       ctx.lineWidth = 1;
       ctx.setLineDash([2, 4]);
       ctx.stroke();
+      ctx.setLineDash([]);
     }
   }
   ctx.restore();
@@ -398,7 +459,7 @@ function drawNodes(now) {
 
     if (isSpeaker) {
       // 🌟 THE STAR OF THE GALAXY 🌟
-      const speakerRadius = 32 + Math.sin(now * 0.008) * 3;
+      const speakerRadius = ((node.base_radius || 26) + 6) + Math.sin(now * 0.008) * 3;
 
       // Outer Breathing Concentric Glowing Rings
       ctx.beginPath();
@@ -486,14 +547,23 @@ function drawNodes(now) {
         drawMiniEqualizer(0, speakerRadius + 64, now);
       }
     } else {
-      // Normal Node
-      const baseRadius = 26;
+      // Normal Node (Knowledge: 34px, Nova/Aegis: 24px, Specialists: 26px)
+      const baseRadius = node.base_radius || 26;
 
       // Outer Glow Ring
       ctx.beginPath();
       ctx.arc(0, 0, baseRadius + 8, 0, Math.PI * 2);
       ctx.fillStyle = node.glow;
       ctx.fill();
+
+      // Distinctive Epistemic Anchor Ring for Universal Knowledge Engine
+      if (node.agent_id === "universal_knowledge_engine") {
+        ctx.beginPath();
+        ctx.arc(0, 0, baseRadius + 7, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(59, 130, 246, 0.75)";
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+      }
 
       if (isActiveChat) {
         // High-emphasis active conversational focus halo
@@ -620,9 +690,10 @@ function handleCanvasClick(screenX, screenY) {
   const worldY = screenY - canvas.height / 2;
 
   let clickedNode = null;
-  const hitRadius = 38;
+  const now = performance.now();
 
   for (const node of state.galaxy.nodes) {
+    const hitRadius = (node.base_radius || 26) + 12;
     const pos = getNodePosition(node, now);
     const nx = pos.x;
     const ny = pos.y;
@@ -643,18 +714,28 @@ async function selectAgent(node) {
   state.selectedNode = node;
 
   // Knowledge Trinity: Nova and Aegis belong to the ONE Knowledge Department
-  const isTrinityChild = (node.agent_id === "nova_discovery_agent" || node.agent_id === "aegis_verification_agent" || node.parent_department === "universal_knowledge_engine");
+  const isTrinityChild = (node.agent_id === "nova_discovery_agent" || node.agent_id === "aegis_verification_agent" || node.agent_id === "universal_knowledge_engine" || node.parent_department === "universal_knowledge_engine");
   const targetAgentId = isTrinityChild ? "universal_knowledge_engine" : node.agent_id;
   const targetFriendlyName = isTrinityChild ? "Knowledge" : node.friendly_name;
 
   state.activeConversationAgent = targetAgentId;
   state.activeConversationAgentName = targetFriendlyName;
 
-  // Show Active Conversation Banner in Central Viewport
+  // Show Active Conversation Banner in Central Viewport with role-specific mode
   const banner = document.getElementById("activeChatBanner");
   const bannerName = document.getElementById("activeChatAgentName");
   if (banner) banner.style.display = "flex";
-  if (bannerName) bannerName.textContent = isTrinityChild ? `Knowledge (${node.friendly_name} Sub-Agent)` : node.friendly_name;
+  if (bannerName) {
+    if (node.agent_id === "nova_discovery_agent") {
+      bannerName.textContent = "Knowledge (Nova Discovery Mode)";
+    } else if (node.agent_id === "aegis_verification_agent") {
+      bannerName.textContent = "Knowledge (Aegis Verification Mode)";
+    } else if (node.agent_id === "universal_knowledge_engine") {
+      bannerName.textContent = "Knowledge (Epistemic Reasoning Core)";
+    } else {
+      bannerName.textContent = node.friendly_name;
+    }
+  }
 
   // Render Base Agent Panel immediately
   renderAgentPanel(node);
@@ -718,15 +799,29 @@ function renderAgentPanel(node) {
   if (modelPill) modelPill.textContent = node.model_name || "Auto-Routed";
 
   // Set Workspace Focus & Project Defaults
+  const isTrinityChild = (node.agent_id === "nova_discovery_agent" || node.agent_id === "aegis_verification_agent" || node.agent_id === "universal_knowledge_engine" || node.parent_department === "universal_knowledge_engine");
+
   const wsFocus = document.getElementById("panelWorkspaceFocus");
-  if (wsFocus) wsFocus.textContent = `● ${node.workspace_name || "Central Workspace"}`;
+  if (wsFocus) {
+    wsFocus.textContent = isTrinityChild ? "● Universal Knowledge Workspace" : `● ${node.workspace_name || "Central Workspace"}`;
+  }
 
   const actProj = document.getElementById("panelActiveProject");
-  if (actProj) actProj.textContent = node.project_name || "None";
+  if (actProj) {
+    actProj.textContent = isTrinityChild ? "Knowledge Trinity (Epistemic Core)" : (node.project_name || "None");
+  }
 
   const currTask = document.getElementById("panelCurrentTask");
   if (currTask) {
-    currTask.textContent = node.current_task ? (node.current_task.task_name || "Standing by") : "Standing by in workspace";
+    if (isTrinityChild) {
+      currTask.textContent = node.agent_id === "nova_discovery_agent"
+        ? "Scouting deep web sources & live developments"
+        : node.agent_id === "aegis_verification_agent"
+        ? "Auditing factual claims & enforcing ground truth"
+        : (node.current_task ? (node.current_task.task_name || "Synthesizing verified knowledge & multi-hop continuum") : "Synthesizing verified knowledge & multi-hop continuum");
+    } else {
+      currTask.textContent = node.current_task ? (node.current_task.task_name || "Standing by") : "Standing by in workspace";
+    }
   }
 
   // Set PTT button initial ready state
@@ -803,13 +898,264 @@ async function loadAgentChatHistory(agentId) {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Rich Markdown, Epistemic Badges, Provenance Accordion & Media Grid Helpers
+// -----------------------------------------------------------------------------
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+window.copyCode = function(btn) {
+  const wrapper = btn.closest('.code-block-wrapper');
+  if (!wrapper) return;
+  const codeElem = wrapper.querySelector('code');
+  if (!codeElem) return;
+  const text = codeElem.innerText || codeElem.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    btn.textContent = 'Failed';
+  });
+};
+
+window.retryLastUserTurn = function() {
+  if (state.lastUserTurn) {
+    sendAgentTurn(state.lastUserTurn);
+  }
+};
+
+function renderMarkdownText(rawText) {
+  if (!rawText) return "";
+  let text = rawText;
+
+  // 1. Fenced Code blocks
+  const codeBlocks = [];
+  text = text.replace(/```([a-zA-Z0-9_\-\+]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push({ lang: lang || "code", code: code.trim() });
+    return `__CODE_BLOCK_${idx}__`;
+  });
+
+  // 2. Escape HTML on prose
+  text = escapeHtml(text);
+
+  // 3. Inline code `code`
+  text = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+
+  // 4. Bold **text**
+  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // 5. Safe Markdown links: [text](url)
+  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, (match, linkText, url) => {
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${linkText}</a>`;
+  });
+
+  // 6. Paragraphs and Linebreaks
+  text = text.split(/\n\n+/).map(para => `<p>${para.replace(/\n/g, '<br>')}</p>`).join('');
+
+  // 7. Re-insert formatted code blocks
+  codeBlocks.forEach((b, idx) => {
+    const safeCode = escapeHtml(b.code);
+    const blockHtml = `
+      <div class="code-block-wrapper">
+        <div class="code-block-header">
+          <span class="code-block-lang">${escapeHtml(b.lang)}</span>
+          <button class="code-copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre><code>${safeCode}</code></pre>
+      </div>
+    `;
+    text = text.replace(`__CODE_BLOCK_${idx}__`, blockHtml);
+    text = text.replace(`<p>__CODE_BLOCK_${idx}__</p>`, blockHtml);
+  });
+
+  return text;
+}
+
+function extractEpistemicBadge(text, meta) {
+  let badge = null;
+  let cleanText = text || "";
+  const card = (meta && (meta.card || (meta.response && meta.response.card) || (meta.response && meta.response.data) || meta.data || meta)) || {};
+
+  if (card.badge && (card.badge.tag || card.badge.label)) {
+    badge = {
+      tag: card.badge.tag || "[VERIFIED FACT]",
+      label: card.badge.label || card.epistemic_type || "Verified Fact",
+      type: card.epistemic_type || "VERIFIED_FACT",
+      confidence: card.confidence != null ? card.confidence : 1.0,
+      css_class: card.badge.css_class || "badge-verified",
+    };
+  }
+
+  // Check for leading tag in text e.g. [VERIFIED FACT]
+  const match = cleanText.match(/^\[([A-Z\s_]+)\]\s*\n*/);
+  if (match) {
+    const matchedTag = match[1].trim();
+    cleanText = cleanText.substring(match[0].length).trim();
+    if (!badge) {
+      const typeKey = matchedTag.replace(/\s+/g, '_');
+      badge = {
+        tag: `[${matchedTag}]`,
+        label: matchedTag.replace(/_/g, ' '),
+        type: typeKey,
+        confidence: card.confidence != null ? card.confidence : 1.0,
+        css_class: `badge-${typeKey.toLowerCase()}`,
+      };
+    }
+  }
+
+  return { badge, cleanText, card };
+}
+
+function getEpistemicBadgeClass(type) {
+  const t = (type || "").toUpperCase();
+  if (t.includes("VERIFIED")) return "epistemic-verified";
+  if (t.includes("EMPIRICAL")) return "epistemic-empirical";
+  if (t.includes("INFER")) return "epistemic-inferred";
+  if (t.includes("CONTEST")) return "epistemic-contested";
+  if (t.includes("UNVERIFIED") || t.includes("HYPOTHESIS")) return "epistemic-unverified";
+  if (t.includes("REFUTED") || t.includes("CONTRADICTION")) return "epistemic-refuted";
+  return "epistemic-default";
+}
+
+function renderProvenanceAccordion(evidenceItems, sources) {
+  const items = (evidenceItems && evidenceItems.length > 0) ? evidenceItems : (sources || []).map(s => ({
+    title: typeof s === 'string' ? s : (s.title || s.url || 'Source'),
+    url: typeof s === 'string' && s.startsWith('http') ? s : (s.url || ''),
+    snippet: s.snippet || '',
+    source_type: s.source_type || 'SOURCE ATTRIBUTED',
+  }));
+
+  if (!items || items.length === 0) return "";
+
+  let cardsHtml = "";
+  items.forEach(it => {
+    const title = escapeHtml(it.title || it.snippet || "Evidence Source");
+    const snippet = it.snippet ? escapeHtml(it.snippet) : "";
+    const stype = escapeHtml(it.source_type || it.domain || "EVIDENCE");
+    const safeUrl = it.url && (it.url.startsWith("http://") || it.url.startsWith("https://")) ? escapeHtml(it.url) : null;
+    const linkHtml = safeUrl ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="evidence-link">🔗 View Source</a>` : "";
+
+    cardsHtml += `
+      <div class="evidence-card">
+        <div class="evidence-card-header">
+          <span class="evidence-title">${title}</span>
+          <span class="evidence-source-tag">${stype}</span>
+        </div>
+        ${snippet ? `<div class="evidence-snippet">${snippet}</div>` : ""}
+        ${linkHtml}
+      </div>
+    `;
+  });
+
+  return `
+    <details class="provenance-accordion">
+      <summary class="provenance-summary">
+        <span>📚 Sources & Provenance (${items.length})</span>
+        <span class="acc-arrow">▼</span>
+      </summary>
+      <div class="evidence-list">
+        ${cardsHtml}
+      </div>
+    </details>
+  `;
+}
+
+function renderMediaGrid(mediaItems) {
+  if (!mediaItems || !Array.isArray(mediaItems) || mediaItems.length === 0) return "";
+
+  let gridHtml = '<div class="media-card-grid">';
+  mediaItems.forEach(m => {
+    const type = (m.type || "doc").toLowerCase();
+    let icon = "🌐";
+    let badgeText = "Document";
+    if (type.includes("video") || type.includes("youtube")) {
+      icon = "🎬";
+      badgeText = "Video";
+    } else if (type.includes("paper") || type.includes("arxiv") || type.includes("scholarly")) {
+      icon = "📄";
+      badgeText = "Paper";
+    } else if (type.includes("github") || type.includes("code") || type.includes("repo")) {
+      icon = "💻";
+      badgeText = "Code Repo";
+    }
+
+    const title = escapeHtml(m.title || "Media Resource");
+    const desc = escapeHtml(m.description || m.snippet || "");
+    const safeUrl = m.url && (m.url.startsWith("http://") || m.url.startsWith("https://")) ? escapeHtml(m.url) : "#";
+
+    gridHtml += `
+      <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="media-card">
+        <div class="media-card-badge">${icon} ${badgeText}</div>
+        <div class="media-card-title">${title}</div>
+        ${desc ? `<div class="media-card-desc">${desc}</div>` : ""}
+      </a>
+    `;
+  });
+  gridHtml += '</div>';
+  return gridHtml;
+}
+
 function appendChatMessage(role, text, meta, scroll = true) {
   const container = document.getElementById("panelChatHistory");
   if (!container) return;
 
   const bubble = document.createElement("div");
   bubble.className = `chat-bubble ${role}`;
-  bubble.textContent = text;
+
+  if (role === "user") {
+    bubble.textContent = text;
+  } else {
+    if (meta && meta.is_error) {
+      bubble.classList.add("error-bubble");
+      bubble.innerHTML = `
+        <span>⚠️ ${escapeHtml(text)}</span>
+        <button class="chat-retry-btn" onclick="retryLastUserTurn()">🔄 Retry</button>
+      `;
+    } else {
+      const { badge, cleanText, card } = extractEpistemicBadge(text, meta);
+      let contentHtml = "";
+
+      // 1. Epistemic Badge Pill
+      if (badge) {
+        const badgeClass = getEpistemicBadgeClass(badge.type);
+        const confPct = Math.round((badge.confidence != null ? badge.confidence : 1.0) * 100);
+        contentHtml += `<div class="epistemic-badge-pill ${badgeClass}">● ${escapeHtml(badge.label)} (${confPct}%)</div>`;
+      }
+
+      // 2. Trinity Collaboration Box
+      if (card && card.collaboration_block) {
+        contentHtml += `<div class="trinity-collab-box"><span class="collab-tag">⚡ TRINITY</span> ${escapeHtml(card.collaboration_block)}</div>`;
+      }
+
+      // 3. Formatted Markdown Body
+      contentHtml += renderMarkdownText(cleanText);
+
+      // 4. Provenance Accordion (Evidence & Sources)
+      const evidence = (card && card.evidence_items) || [];
+      const sources = (card && card.sources) || [];
+      if (evidence.length > 0 || sources.length > 0) {
+        contentHtml += renderProvenanceAccordion(evidence, sources);
+      }
+
+      // 5. Media Resources Grid (Videos, Papers, Code)
+      const media = (card && card.media_items) || [];
+      if (media.length > 0) {
+        contentHtml += renderMediaGrid(media);
+      }
+
+      bubble.innerHTML = contentHtml;
+    }
+  }
+
   container.appendChild(bubble);
 
   if (scroll) {
@@ -847,7 +1193,7 @@ function updatePttState(newState) {
     LISTENING: "🔴 LISTENING...",
     TRANSCRIBING: "◌ TRANSCRIBING...",
     UNDERSTANDING: "◌ UNDERSTANDING...",
-    RESPONDING: "◌ RESPONDING...",
+    RESPONDING: "◌ SYNTHESIZING...",
     SPEAKING: "🔊 SPEAKING (TAP TO STOP)",
     ERROR: "⚠️ MIC ERROR (USE TEXT)"
   };
@@ -857,11 +1203,8 @@ function updatePttState(newState) {
 
 function toggleAgentPushToTalk() {
   // If agent is currently speaking, tap acts as instant barge-in / interruption
-  if (state.pttState === "SPEAKING") {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    fetch("/api/conversation/interrupt", { method: "POST" }).catch(() => {});
+  if (state.pttState === "SPEAKING" || state.isSpeakingAudio) {
+    interruptSpeech();
     updatePttState("READY");
     return;
   }
@@ -924,12 +1267,32 @@ async function sendAgentTurn(text) {
     return;
   }
 
+  state.lastUserTurn = text;
   let aid = state.activeConversationAgent || (state.selectedNode ? state.selectedNode.agent_id : "universal_knowledge_engine");
   if (aid === "nova_discovery_agent" || aid === "aegis_verification_agent") {
     aid = "universal_knowledge_engine";
   }
   appendChatMessage("user", text);
   updatePttState("UNDERSTANDING");
+
+  // If Knowledge Trinity active, render real-time in-flight activity banner
+  const container = document.getElementById("panelChatHistory");
+  if (aid === "universal_knowledge_engine" && container) {
+    const activityElem = document.createElement("div");
+    activityElem.id = "trinityActivityIndicator";
+    activityElem.className = "chat-bubble agent trinity-activity-bubble";
+    activityElem.innerHTML = `
+      <div class="trinity-activity-banner">
+        <div class="trinity-pulse-dot"></div>
+        <div>
+          <div class="trinity-activity-phase">KNOWLEDGE TRINITY ACTIVE</div>
+          <div class="trinity-activity-sub" id="trinityActivitySub">Scouting sources & verifying epistemics...</div>
+        </div>
+      </div>
+    `;
+    container.appendChild(activityElem);
+    container.scrollTop = container.scrollHeight;
+  }
 
   try {
     updatePttState("RESPONDING");
@@ -939,9 +1302,14 @@ async function sendAgentTurn(text) {
       body: JSON.stringify({ text: text, speak_output: false })
     });
 
+    // Remove in-flight indicator
+    const liveIndicator = document.getElementById("trinityActivityIndicator");
+    if (liveIndicator) liveIndicator.remove();
+
     const data = await res.json();
     const reply = data.reply || (data.response && data.response.text) || "Understood.";
-    appendChatMessage("agent", reply);
+    const card = data.card || (data.response && data.response.card) || (data.response && data.response.data);
+    appendChatMessage("agent", reply, { card: card });
 
     // Update checklist step visually if relevant
     const low = text.toLowerCase();
@@ -964,7 +1332,9 @@ async function sendAgentTurn(text) {
     }
   } catch (err) {
     console.error("Error sending agent turn:", err);
-    appendChatMessage("agent", "Error communicating with agent.");
+    const liveIndicator = document.getElementById("trinityActivityIndicator");
+    if (liveIndicator) liveIndicator.remove();
+    appendChatMessage("agent", "Error communicating with Knowledge Trinity.", { is_error: true });
     updatePttState("READY");
   }
 }
@@ -1343,6 +1713,8 @@ async function sendGlobalCommand() {
 }
 
 async function triggerEmergencyStop() {
+  interruptSpeech();
+  updatePttState("READY");
   if (!confirm("TRIGGER EMERGENCY STOP: Halt all active agent workflows and computer actions immediately?")) {
     return;
   }
@@ -1378,11 +1750,40 @@ async function pollGalaxyState() {
     const banner = document.getElementById("activeChatBanner");
     const bannerName = document.getElementById("activeChatAgentName");
     if (activeId && banner && bannerName) {
-      const matchingNode = data.nodes ? data.nodes.find(n => n.agent_id.toLowerCase() === activeId.toLowerCase()) : null;
-      bannerName.textContent = matchingNode ? matchingNode.friendly_name : activeId;
+      if (activeId === "universal_knowledge_engine") {
+        if (state.selectedNode && state.selectedNode.agent_id === "nova_discovery_agent") {
+          bannerName.textContent = "Knowledge (Nova Discovery Mode)";
+        } else if (state.selectedNode && state.selectedNode.agent_id === "aegis_verification_agent") {
+          bannerName.textContent = "Knowledge (Aegis Verification Mode)";
+        } else {
+          bannerName.textContent = "Knowledge (Epistemic Reasoning Core)";
+        }
+      } else {
+        const matchingNode = data.nodes ? data.nodes.find(n => n.agent_id.toLowerCase() === activeId.toLowerCase()) : null;
+        bannerName.textContent = matchingNode ? matchingNode.friendly_name : activeId;
+      }
       banner.style.display = "flex";
     } else if (banner) {
       banner.style.display = "none";
+    }
+
+    // Update live Trinity activity indicator if in flight and telemetry reports progress
+    if (data.trinity_telemetry) {
+      const sub = document.getElementById("trinityActivitySub");
+      const phase = document.getElementById("trinityActivityPhase");
+      const tt = data.trinity_telemetry;
+      if (sub && phase && tt.workflow_state && tt.workflow_state !== "IDLE" && tt.workflow_state !== "COMPLETED") {
+        phase.textContent = `KNOWLEDGE TRINITY: ${tt.workflow_state}`;
+        if (tt.current_operation) {
+          sub.textContent = tt.current_operation;
+        } else if (tt.workflow_state === "DISCOVERING") {
+          sub.textContent = `Nova: Discovering sources... (${tt.source_count || 0} found)`;
+        } else if (tt.workflow_state === "VERIFYING") {
+          sub.textContent = `Aegis: Verifying claims (${tt.verification_status || 'CHECKING'})...`;
+        } else if (tt.workflow_state === "SYNTHESIZING") {
+          sub.textContent = `Knowledge: Synthesizing verified answer...`;
+        }
+      }
     }
 
     // Update Central Core Status
