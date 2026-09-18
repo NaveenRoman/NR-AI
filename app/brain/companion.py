@@ -562,6 +562,11 @@ class NRCompanion:
             "who made", "where is", "where was", "which country", "which city",
             "tell me about", "explain", "how does", "how do", "how can", "how is", "why does",
             "why is", "when did", "when was", "compare", "difference between",
+            "what is the difference between", "what is the different between",
+            "do you know about", "do you known about", "do you know", "do you known",
+            "what technology was released", "what technology released", "what technologie releaase",
+            "what technologie release", "what was released", "what is released",
+            "current news of", "news of", "news about", "latest news of",
             "history of", "theory of", "algorithm for", "principles of", "timeline of", "evolution of",
             "is agi", "is it possible", "is there", "will humans", "will ai", "will agi", "can ai"
         )
@@ -1435,8 +1440,21 @@ class NRCompanion:
 
     def _handle_general_news(self, command: str) -> CompanionResponse:
         """Handles general, India, tech, gaming, or world news with live feed retrieval."""
-        cat = "World"
         c = command.lower()
+
+        # Check if the query is asking about a specific person or entity rather than broad category news
+        try:
+            from app.knowledge.taxonomy import ResearchMode
+            u_query = self.knowledge_engine.query_understanding.understand(command)
+            if u_query.research_mode == ResearchMode.PERSON_ENTITY_NEWS or (
+                u_query.entities and any(e.entity_type in ("person", "organization", "technology", "model") for e in u_query.entities)
+                and any(w in c for w in ("news", "happening", "current", "latest", "update", "status"))
+            ):
+                return self._handle_knowledge(command)
+        except Exception as e:
+            logger.warning(f"Error checking entity news in _handle_general_news: {e}")
+
+        cat = "World"
         if "india" in c:
             cat = "India"
         elif "tech" in c or "technology" in c:

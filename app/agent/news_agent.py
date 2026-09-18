@@ -1086,3 +1086,87 @@ class NewsAgent:
             "research_preprints": research_preprints,
             "formatted_text": formatted_report,
         }
+
+    def search_entity_news(
+        self,
+        entity: str,
+        limit: int = 5,
+        force_live: bool = True,
+        timeout: float = 6.0,
+    ) -> Dict[str, Any]:
+        """
+        Performs targeted live search for a specific entity or person via Google News Search RSS,
+        enforcing strict entity containment and date freshness.
+        Prevents generic World news substitution when entity reporting is insufficient.
+        """
+        clean_entity = entity.strip()
+        if not clean_entity:
+            return {
+                "success": False,
+                "entity": entity,
+                "total_articles_retrieved": 0,
+                "stories": [],
+                "message": "I couldn't find enough reliable current reporting to answer confidently.",
+            }
+
+        search_url = f"https://news.google.com/rss/search?q={urllib.parse.quote(clean_entity)}&hl=en-US&gl=US&ceid=US:en"
+        headers = {"User-Agent": "NR-AI-NewsAgent/1.0"}
+        items: List[Dict[str, Any]] = []
+        entity_tokens = [
+            t.lower() for t in re.findall(r"\w+", clean_entity)
+            if len(t) > 2 and t not in ("the", "and", "for", "with", "from", "that", "news", "current")
+        ]
+
+        try:
+            req = urllib.request.Request(search_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw_bytes = resp.read(1024 * 1024)
+                root = ET.fromstring(raw_bytes)
+                for item in root.findall(".//item")[:limit * 2]:
+                    title_el = item.find("title")
+                    link_el = item.find("link")
+                    pub_date_el = item.find("pubDate")
+                    desc_el = item.find("description")
+                    source_el = item.find("source")
+
+                    title = title_el.text if title_el is not None else ""
+                    link = link_el.text if link_el is not None else ""
+                    pub_date = pub_date_el.text if pub_date_el is not None else ""
+                    desc = desc_el.text if desc_el is not None else ""
+                    source_name = source_el.text if source_el is not None else "Google News"
+
+                    # Strict Entity Containment: check title and description
+                    item_text = f"{title} {desc}".lower()
+                    if entity_tokens and not any(tok in item_text for tok in entity_tokens):
+                        continue  # REJECT unrelated news
+
+                    freshness_label, _, _ = calculate_freshness(pub_date)
+                    items.append({
+                        "title": title,
+                        "url": link,
+                        "publication_time": pub_date,
+                        "publisher": normalize_publisher(source_name),
+                        "summary": re.sub(r"<[^>]+>", "", desc).strip(),
+                        "freshness": freshness_label,
+                    })
+                    if len(items) >= limit:
+                        break
+        except Exception as e:
+            logger.warning(f"Failed to fetch targeted entity news for '{clean_entity}': {e}")
+
+        if not items:
+            return {
+                "success": True,
+                "entity": clean_entity,
+                "total_articles_retrieved": 0,
+                "stories": [],
+                "message": f"I couldn't find enough reliable current reporting about {clean_entity} to answer confidently.",
+            }
+
+        return {
+            "success": True,
+            "entity": clean_entity,
+            "total_articles_retrieved": len(items),
+            "stories": items,
+            "message": f"Found {len(items)} current reporting items for {clean_entity}.",
+        }

@@ -37,6 +37,76 @@ class EpistemicType(str, Enum):
     SPECULATION_PREDICTION = "SPECULATION_PREDICTION"
 
 
+class ResearchMode(str, Enum):
+    """
+    Explicit Research Modes for targeted, source-aware investigation.
+    Directs the ResearchEngine to appropriate verification sources and freshness constraints.
+    """
+    GENERAL_RESEARCH = "GENERAL_RESEARCH"
+    CURRENT_NEWS = "CURRENT_NEWS"
+    CURRENT_TECHNOLOGY = "CURRENT_TECHNOLOGY"
+    CURRENT_SOFTWARE_RELEASE = "CURRENT_SOFTWARE_RELEASE"
+    ACADEMIC_RESEARCH = "ACADEMIC_RESEARCH"
+    PERSON_ENTITY_NEWS = "PERSON_ENTITY_NEWS"
+    COMPANY_NEWS = "COMPANY_NEWS"
+    PRODUCT_NEWS = "PRODUCT_NEWS"
+    HISTORICAL_RESEARCH = "HISTORICAL_RESEARCH"
+    TECHNICAL_DOCUMENTATION = "TECHNICAL_DOCUMENTATION"
+    MODEL_VERIFICATION = "MODEL_VERIFICATION"
+
+
+@dataclass
+class KnowledgeClaim:
+    """
+    Claim-level epistemic representation with provenance, source attribution,
+    and verification confidence. Ensures epistemic separation within composite answers.
+    """
+    claim: str
+    source: str
+    source_url: Optional[str] = None
+    retrieval_time: float = field(default_factory=time.time)
+    publication_date: Optional[str] = None
+    evidence: str = ""
+    epistemic_type: EpistemicType = EpistemicType.VERIFIED_FACT
+    confidence: float = 1.0
+    authority_level: str = "primary"  # primary, authoritative, secondary, unverified, speculative
+    verified_against_source: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "claim": self.claim,
+            "source": self.source,
+            "source_url": self.source_url,
+            "retrieval_time": self.retrieval_time,
+            "publication_date": self.publication_date,
+            "evidence": self.evidence,
+            "epistemic_type": self.epistemic_type.value,
+            "confidence": round(self.confidence, 3),
+            "authority_level": self.authority_level,
+            "verified_against_source": self.verified_against_source,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "KnowledgeClaim":
+        raw_type = data.get("epistemic_type", EpistemicType.VERIFIED_FACT.value)
+        try:
+            e_type = EpistemicType(raw_type)
+        except ValueError:
+            e_type = EpistemicType.VERIFIED_FACT
+        return cls(
+            claim=str(data.get("claim", "")),
+            source=str(data.get("source", "NR-AI Evidence Base")),
+            source_url=data.get("source_url"),
+            retrieval_time=float(data.get("retrieval_time", time.time())),
+            publication_date=data.get("publication_date"),
+            evidence=str(data.get("evidence", "")),
+            epistemic_type=e_type,
+            confidence=float(data.get("confidence", 1.0)),
+            authority_level=str(data.get("authority_level", "primary")),
+            verified_against_source=bool(data.get("verified_against_source", True)),
+        )
+
+
 class KnowledgeDomain(str, Enum):
     """Supported Knowledge Domains in NR-AI Universal Knowledge Brain."""
     HISTORY = "history"
@@ -459,6 +529,8 @@ class ResearchReport:
     retrieval_tier: str = "local_store"  # local_store, web_research, multi_model_consensus
     latency_ms: float = 0.0
     timestamp: float = field(default_factory=time.time)
+    claims: List[KnowledgeClaim] = field(default_factory=list)
+    research_mode: Optional[str] = None
 
     def __post_init__(self):
         if not self.badges:
@@ -499,6 +571,15 @@ class ResearchReport:
             self.primary_answer,
             f"",
         ]
+        if self.claims:
+            lines.append("#### Claim-Level Epistemic Breakdown:")
+            for idx, cl in enumerate(self.claims, 1):
+                cl_badge = EpistemicBadge.from_type(cl.epistemic_type, cl.confidence)
+                lines.append(f"{idx}. {cl_badge.format_tag()} **{cl.claim}**")
+                if cl.source:
+                    lines.append(f"   *Source*: {cl.source}")
+            lines.append("")
+
         if self.contradictions_found:
             lines.append("> [!WARNING]")
             lines.append("> **Conflicting Sources Detected**:")
@@ -529,6 +610,8 @@ class ResearchReport:
             "retrieval_tier": self.retrieval_tier,
             "latency_ms": round(self.latency_ms, 2),
             "timestamp": self.timestamp,
+            "claims": [c.to_dict() for c in self.claims],
+            "research_mode": self.research_mode,
         }
 
     @classmethod
@@ -541,6 +624,7 @@ class ResearchReport:
 
         badges = [EpistemicBadge.from_dict(b) for b in data.get("badges", [])]
         sources = [KnowledgeSource.from_dict(s) for s in data.get("sources", [])]
+        claims = [KnowledgeClaim.from_dict(c) for c in data.get("claims", [])]
 
         return cls(
             query=str(data.get("query", "")),
@@ -554,4 +638,6 @@ class ResearchReport:
             retrieval_tier=str(data.get("retrieval_tier", "local_store")),
             latency_ms=float(data.get("latency_ms", 0.0)),
             timestamp=float(data.get("timestamp", time.time())),
+            claims=claims,
+            research_mode=data.get("research_mode"),
         )
