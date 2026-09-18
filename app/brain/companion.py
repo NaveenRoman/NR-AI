@@ -568,21 +568,34 @@ class NRCompanion:
             "what technologie release", "what was released", "what is released",
             "current news of", "news of", "news about", "latest news of",
             "history of", "theory of", "algorithm for", "principles of", "timeline of", "evolution of",
-            "is agi", "is it possible", "is there", "will humans", "will ai", "will agi", "can ai"
+            "is agi", "is it possible", "is there", "will humans", "will ai", "will agi", "can ai",
+            "give me a real-world example", "give me a real world example", "give me an example", "give an example",
+            "real-world example", "real world example",
+            "explain it like i am a beginner", "explain like i'm 5", "eli5", "simplify this", "in simple terms"
         )
-        if any(c_candidate.lower().startswith(pfx + " ") or c_candidate.lower() == pfx or f" {pfx} " in f" {c_candidate.lower()} " for pfx in knowledge_prefixes):
+        c_low_cand = c_candidate.lower()
+        if any(c_low_cand.startswith(pfx + " ") or c_low_cand == pfx or f" {pfx} " in f" {c_low_cand} " for pfx in knowledge_prefixes):
+            return CommandCategory.KNOWLEDGE
+
+        # Known technical & knowledge entity terms
+        knowledge_terms = ("flashattention", "pagedattention", "deepseek", "tri dao", "ram and rom", "ram vs rom", "quantum computing")
+        if any(kt in c_low_cand for kt in knowledge_terms):
             return CommandCategory.KNOWLEDGE
 
         # Check follow-up coreference knowledge queries when previous subject exists
         if getattr(self, "last_knowledge_subject", None):
             followup_patterns = (
+                r"^(?:who\s+(?:is|was)\s+(?:he|she|it|this|that))[.?!]*$",
                 r"^(?:who\s+(?:created|invented|founded|developed|wrote|discovered|made)\s+(?:it|this|that|him|her))[.?!]*$",
+                r"^(?:when\s+did\s+(?:he|she|it|this|that)\s+(?:die|win|discover|invent|create|found|publish|release|write))[.?!]*$",
                 r"^(?:when\s+was\s+(?:it|this|that)\s+(?:created|invented|founded|released|discovered|made))[.?!]*$",
                 r"^(?:what\s+is\s+its\s+(?:architecture|version|capital|population|speed|purpose|meaning))[.?!]*$",
                 r"^(?:tell\s+me\s+more\s+about\s+(?:it|this|that))[.?!]*$",
                 r"^(?:how\s+does\s+(?:it|this)\s+work)[.?!]*$",
+                r"^(?:explain\s+it\s+like\s+i\s+am\s+a\s+beginner|explain\s+like\s+i'?m\s+5|eli5|simplify\s+this|for\s+beginners|in\s+simple\s+terms)[.?!]*$",
+                r"^(?:give\s+me\s+a\s+real[\s-]world\s+example|give\s+an\s+example|give\s+me\s+an\s+example|real[\s-]world\s+example)[.?!]*$",
             )
-            if any(re.match(p, c_candidate.lower()) for p in followup_patterns):
+            if any(re.match(p, c_low_cand) for p in followup_patterns):
                 return CommandCategory.KNOWLEDGE
 
         # 3. AI News

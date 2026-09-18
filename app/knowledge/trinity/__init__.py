@@ -9,6 +9,16 @@ Coordinates:
 - Real-time backend telemetry without fake animations
 """
 
+from app.knowledge.trinity.aegis import (
+    AegisVerificationAgent,
+    AtomicClaim,
+    ClaimDecomposer,
+    ClaimType,
+    ContradictionDetector,
+    CorroborationEngine,
+    FounderValidationEngine,
+    TemporalVerifier,
+)
 from app.knowledge.trinity.nova import (
     ArXivDiscoverySource,
     ContinuousDiscoveryScheduler,
@@ -69,4 +79,12 @@ __all__ = [
     "ContinuousDiscoveryScheduler",
     "canonicalize_url",
     "compute_content_hash",
+    "AegisVerificationAgent",
+    "ClaimDecomposer",
+    "AtomicClaim",
+    "ClaimType",
+    "CorroborationEngine",
+    "TemporalVerifier",
+    "ContradictionDetector",
+    "FounderValidationEngine",
 ]

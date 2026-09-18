@@ -66,6 +66,13 @@ class UniversalKnowledgeEngine:
             news_agent=self.news_agent,
         )
 
+        from app.knowledge.trinity.aegis import AegisVerificationAgent
+        from app.knowledge.trinity.nova import NovaDiscoveryAgent
+        from app.knowledge.trinity.protocol import TrinityBus
+        self.trinity_bus = TrinityBus()
+        self.aegis = AegisVerificationAgent(bus=self.trinity_bus)
+        self.nova = NovaDiscoveryAgent(bus=self.trinity_bus)
+
         if auto_seed:
             populate_knowledge_store(self.store, force=False)
 
@@ -94,6 +101,55 @@ class UniversalKnowledgeEngine:
         report = self.query(text, session_context=session_context)
         return report.format_speech()
 
+    def should_verify(self, text: str, draft_text: str = "") -> bool:
+        """
+        Determines deterministically if a proposed answer warrants Aegis verification.
+        High-stakes triggers: numbers, dates, technology specifications,
+        current/latest queries, research papers, people, or unknown entities.
+        """
+        q_low = text.strip().lower()
+        greetings = {
+            "hello", "hi", "hey", "good morning", "good afternoon",
+            "good evening", "how are you", "what's up", "thanks", "thank you",
+            "bye", "goodbye", "help", "who are you"
+        }
+        if q_low in greetings or (len(q_low.split()) <= 2 and any(g in q_low for g in ("hello", "hi", "hey"))):
+            return False
+
+        triggers = (
+            "latest", "currently", "specifications", "specs",
+            "release", "version", "invented", "created", "born", "died",
+            "paper", "research", "quantum", "gpt", "model", "percent", "%",
+            "who is", "who was", "who invented", "who created", "founded",
+        )
+        combined = (text + " " + draft_text).lower()
+        if any(t in combined for t in triggers):
+            return True
+
+        if any(w in q_low for w in ("today", "yesterday", "tomorrow", "this year", "now")):
+            return True
+
+        return False
+
+    def verify_answer(
+        self,
+        query: str,
+        draft_text: str,
+        subject: str = "",
+        evidence_items: Optional[List[Any]] = None,
+        cycle: int = 1,
+    ) -> Any:
+        """Runs proposed answer through Aegis verification gate."""
+        from app.knowledge.trinity.protocol import VerificationRequest
+        req = VerificationRequest(
+            query_id=f"q-{int(time.time()*1000)}",
+            draft_text=draft_text,
+            subject=subject or query,
+            evidence_items=evidence_items or [],
+            cycle_number=cycle,
+        )
+        return self.aegis.verify(req)
+
     def query_companion_card(self, text: str, session_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Generates a structured payload optimized for the mobile companion app,
@@ -101,6 +157,41 @@ class UniversalKnowledgeEngine:
         """
         report = self.query(text, session_context=session_context)
         badge = report.badges[0] if report.badges else EpistemicBadge.from_type(report.epistemic_type, report.confidence)
+
+        # Aegis Verification Gate
+        verification_rep = None
+        if self.should_verify(text, report.primary_answer):
+            from app.knowledge.trinity.schemas import DiscoveryEvidence, SourceAuthorityTier
+            evidence_items = []
+            for s in report.sources:
+                s_name = getattr(s, "name", "Known Source")
+                s_url = getattr(s, "url", None)
+                s_snippet = getattr(s, "snippet", None) or s_name
+                evidence_items.append(DiscoveryEvidence(
+                    evidence_id=f"ev-rep-{abs(hash(s_url or s_name)) % 10000}",
+                    query_id=f"q-{int(time.time()*1000)}",
+                    claim_candidate=s_snippet,
+                    source_name=s_name,
+                    source_url=s_url,
+                    authority_tier=SourceAuthorityTier.RELIABLE_SECONDARY,
+                    raw_snippet=s_snippet,
+                ))
+            for c in getattr(report, "claims", []):
+                c_text = getattr(c, "statement", getattr(c, "text", str(c)))
+                evidence_items.append(DiscoveryEvidence(
+                    evidence_id=f"ev-claim-{abs(hash(c_text)) % 10000}",
+                    query_id=f"q-{int(time.time()*1000)}",
+                    claim_candidate=c_text,
+                    source_name="Knowledge Fabric",
+                    authority_tier=SourceAuthorityTier.PRIMARY_CANONICAL,
+                    raw_snippet=c_text,
+                ))
+            verification_rep = self.verify_answer(
+                query=text,
+                draft_text=report.primary_answer,
+                subject=getattr(report, "primary_subject", text),
+                evidence_items=evidence_items,
+            )
 
         return {
             "query": report.query,
@@ -111,6 +202,7 @@ class UniversalKnowledgeEngine:
             "badge": badge.to_dict(),
             "confidence": report.confidence,
             "sources": [s.to_dict() for s in report.sources],
+            "verification_report": verification_rep.to_dict() if verification_rep else None,
             "retrieval_tier": report.retrieval_tier,
             "latency_ms": report.latency_ms,
             "nodes_consulted": report.nodes_consulted,

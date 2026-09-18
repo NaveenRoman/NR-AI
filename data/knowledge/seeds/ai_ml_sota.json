@@ -59,7 +59,7 @@
     "domain": "ai_ml",
     "topic": "llm_inference_systems",
     "title": "LLM Inference Acceleration: FlashAttention, PagedAttention, and Quantization",
-    "content": "Inference optimization addresses the quadratic memory and I/O bandwidth bottlenecks of autoregressive transformer decoding: 1) FlashAttention (Dao et al., 2022) tiles attention computation into GPU SRAM blocks to minimize High Bandwidth Memory (HBM) read/writes, achieving 2-4x speedups without approximation; 2) PagedAttention (vLLM, Kwon et al., 2023) applies virtual memory paging concepts to the Key-Value (KV) cache, eliminating internal memory fragmentation and enabling near-optimal GPU memory utilization; 3) Post-Training Quantization (AWQ, GPTQ, FP8, INT4) compresses weight and activation tensors from FP16/BF16 down to 8-bit or 4-bit precision, reducing memory footprint by 50-75% with minimal perplexity degradation.",
+    "content": "FlashAttention was created by Tri Dao and collaborators at Stanford University, introduced and published in 2022. It is a fast, memory-efficient, IO-aware exact attention algorithm that tiles attention computation into GPU SRAM blocks to minimize High Bandwidth Memory (HBM) read/writes, achieving 2-4x speedups in transformer training and LLM inference without approximation. Complementing techniques include: 1) PagedAttention (vLLM, Kwon et al., 2023) which applies virtual memory paging concepts to the Key-Value (KV) cache, eliminating internal memory fragmentation; 2) Post-Training Quantization (AWQ, GPTQ, FP8, INT4) which compresses weight and activation tensors from FP16 down to 8-bit or 4-bit precision, reducing GPU memory footprint by 50-75% with minimal perplexity degradation.",
     "epistemic_type": "VERIFIED_FACT",
     "confidence": 1.0,
     "sources": [
@@ -73,6 +73,10 @@
     ],
     "tags": [
       "flashattention",
+      "tri_dao",
+      "tri dao",
+      "stanford",
+      "2022",
       "pagedattention",
       "vllm",
       "quantization",

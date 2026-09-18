@@ -282,17 +282,22 @@ class AnswerGroundingGate:
             core_subject = re.sub(r"\(.*?\)", "", target_subject).strip()
             clean_subject = re.sub(r"[^\w\s]", " ", target_subject)
             subject_words = [w for w in clean_subject.split() if len(w) > 2 and w not in ("the", "and", "for", "with", "from", "that")]
+            generic_nouns = {"architecture", "system", "model", "algorithm", "types", "type", "method", "language", "structure", "memory", "technology", "concept", "hardware", "software"}
+            distinctive_words = [w for w in subject_words if w not in generic_nouns]
+
             if target_subject in all_text_lower:
                 subject_matched = True
-            elif core_subject and (core_subject in all_text_lower or any(w in all_text_lower for w in core_subject.split() if len(w) > 2)):
+            elif core_subject and core_subject in all_text_lower:
                 subject_matched = True
-            elif subject_words and all(w in all_text_lower for w in subject_words):
+            elif distinctive_words and all(w in all_text_lower for w in distinctive_words):
                 subject_matched = True
-            elif len(subject_words) >= 2 and any(f"{subject_words[i]} {subject_words[i+1]}" in all_text_lower for i in range(len(subject_words)-1)):
+            elif len(distinctive_words) >= 2 and any(f"{distinctive_words[i]} {distinctive_words[i+1]}" in all_text_lower for i in range(len(distinctive_words)-1)):
                 subject_matched = True
-            elif subject_words and (len([w for w in subject_words if w in all_text_lower]) >= max(1, int(len(subject_words) * 0.5))):
+            elif distinctive_words and (len([w for w in distinctive_words if w in all_text_lower]) >= max(1, int(len(distinctive_words) * 0.6))):
                 subject_matched = True
-            elif any(e.name.lower() in all_text_lower for e in understood_query.entities):
+            elif not distinctive_words and subject_words and all(w in all_text_lower for w in subject_words):
+                subject_matched = True
+            elif any(e.name.lower() in all_text_lower for e in understood_query.entities if e.name.lower() not in generic_nouns):
                 subject_matched = True
             elif understood_query.time_anchor and understood_query.time_anchor in all_text_lower:
                 subject_matched = True

@@ -319,5 +319,33 @@
       "truth"
     ],
     "temporal_anchor": "1965-2026"
+  },
+  {
+    "node_id": "cs-arch-ram-vs-rom",
+    "domain": "computer_science",
+    "topic": "computer_architecture",
+    "title": "Comparison of RAM (Random Access Memory) and ROM (Read-Only Memory)",
+    "content": "RAM (Random Access Memory) and ROM (Read-Only Memory) are foundational primary memory types with contrasting operational characteristics: 1) Volatility: RAM is volatile memory that requires continuous electrical power to maintain state, losing all stored data when powered down, whereas ROM is non-volatile memory that retains stored instructions and data permanently without electrical power. 2) Read/Write Capabilities: RAM supports high-speed read and write operations by the CPU during active program execution, whereas ROM is read-only during standard operation (or altered only through specialized reprogramming like EEPROM or Flash). 3) Primary Purpose: RAM serves as temporary working memory holding operating system processes, active runtime data structures, and application execution code; ROM stores permanent system firmware, bootstrap code (BIOS/UEFI), and essential microcode required to initialize hardware upon startup.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Computer Organization and Design: The Hardware/Software Interface",
+        "publisher": "Morgan Kaufmann / Patterson & Hennessy",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": [
+      "ram",
+      "rom",
+      "memory",
+      "volatile",
+      "non_volatile",
+      "hardware",
+      "storage",
+      "firmware"
+    ],
+    "temporal_anchor": "1950s-present"
   }
 ]

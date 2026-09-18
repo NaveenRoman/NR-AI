@@ -643,10 +643,11 @@ class QueryUnderstandingEngine:
         # Freshness Requirement
         # ---------------------------------------------------------------------
         freshness = FreshnessRequirement.NOT_REQUIRED
-        if target_attribute == "version" or any(w in q_low for w in (
+        is_when_released = bool(re.search(r"\bwhen\s+(?:was|did)\b.*\b(?:released|created|invented|founded)\b", q_low))
+        if not is_when_released and (target_attribute == "version" or any(w in q_low for w in (
             "latest", "today", "current", "now", "newest", "recently", "recent",
-            "released", "this year", "breaking", "announced", "2026"
-        )):
+            "this year", "breaking", "announced", "2026"
+        ))):
             freshness = FreshnessRequirement.REQUIRED
             if time_scope == TimeScope.ANY:
                 time_scope = TimeScope.CURRENT_2026

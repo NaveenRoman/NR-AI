@@ -54,7 +54,7 @@ from app.knowledge.timeline import KnowledgeTimelineEngine, TimelineEvent
 
 logger = logging.getLogger("NRAI.ResearchEngine")
 
-USER_AGENT = "NR-AI-ResearchBot/1.0 (mailto:dev@nr-ai.local; +https://github.com/NaveenRoman/NR-AI)"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 FRESHNESS_TRIGGERS: Set[str] = {
     "today", "latest", "current", "now", "recently", "recent", "this week",
@@ -347,7 +347,7 @@ class ArXivProvider:
             url,
             headers={
                 "User-Agent": USER_AGENT,
-                "Accept": "application/atom+xml, application/xml, text/xml",
+                "Accept": "*/*",
             },
         )
 

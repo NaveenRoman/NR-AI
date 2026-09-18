@@ -36,6 +36,12 @@ class EpistemicType(str, Enum):
     UNCERTAINTY = "UNCERTAINTY"
     SPECULATION_PREDICTION = "SPECULATION_PREDICTION"
 
+    # Epistemic aliases for backward and domain compatibility
+    SPECULATION = "SPECULATION_PREDICTION"
+    EMPIRICAL_OBSERVATION = "SOURCE_ATTRIBUTED_CLAIM"
+    HISTORICAL_RECORD = "VERIFIED_FACT"
+    CONSENSUS_ANALYSIS = "INFERENCE"
+
 
 class EpistemicClaimClass(str, Enum):
     """
@@ -413,6 +419,7 @@ class KnowledgeSource:
     published_date: Optional[str] = None
     reliability_weight: float = 1.0  # 0.0 to 1.0
     source_type: str = "primary"     # primary, academic, news, documentation, seed, web
+    snippet: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
