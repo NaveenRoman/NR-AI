@@ -81,7 +81,11 @@ def main():
         config.silent_mode = True
         config.tts_enabled = False
 
-    listener = VoiceListener(config=config)
+    if args.no_voice or args.silent:
+        from app.voice.listener import DummyVoiceListener
+        listener = DummyVoiceListener(config=config)
+    else:
+        listener = VoiceListener(config=config)
     speaker = VoiceSpeaker(config=config)
     companion = NRCompanion(
         voice_config=config,
@@ -176,10 +180,20 @@ def main():
         safe_print("\n🛑 Shutting down NR AI...")
         if not args.silent and config.tts_enabled:
             speaker.speak("Goodbye. NR AI is going offline.")
+    except Exception as ex:
+        safe_print(f"\n⚠️ Unexpected server exception: {ex}")
+        import traceback
+        traceback.print_exc()
     finally:
         if dashboard:
             dashboard.stop_http_server()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException as e:
+        safe_print(f"\n💥 FATAL BASE EXCEPTION: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise

@@ -84,6 +84,60 @@ class MockSpeechRecognizer(BaseSpeechRecognizer):
             return self.queued_texts.pop(0)
         return None
 
+class DummyVoiceListener:
+    """Safe no-op voice listener for server and headless environments (zero PortAudio/C dependencies)."""
+
+    def __init__(self, config: Optional[VoiceConfig] = None):
+        self.config = config or VoiceConfig()
+        self.state = ListeningState.IDLE
+        self._is_active = False
+        self._is_muted = True
+        self.last_recognized_phrase: Optional[str] = None
+        self.last_raw_speech: Optional[str] = None
+
+    def pause(self) -> None:
+        pass
+
+    def resume(self, cooldown: float = 0.6) -> None:
+        pass
+
+    def is_muted(self) -> bool:
+        return True
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def is_listening(self) -> bool:
+        return False
+
+    def normalize_command(self, text: Optional[str]) -> Optional[str]:
+        return (text or "").strip()
+
+    def listen(self, timeout: Optional[float] = None) -> Optional[str]:
+        return None
+
+    def probe_microphone(self) -> Dict[str, Any]:
+        return {
+            "available": False,
+            "device_count": 0,
+            "active_device": None,
+            "status": "HEADLESS_MODE",
+            "details": "Running in server/headless mode (microphone disabled).",
+            "push_to_talk_fallback": True,
+        }
+
+    def detect_wake_word(self, text: Optional[str]) -> Tuple[bool, Optional[str]]:
+        return False, None
+
+    def listen_for_wake_word(self, timeout: float = 3.0) -> Tuple[bool, Optional[str]]:
+        return False, None
+
+    def listen_for_command(self, timeout: float = 8.0) -> Optional[str]:
+        return None
+
 
 class VoiceListener:
     """
@@ -277,6 +331,18 @@ class VoiceListener:
         """
         Inspect physical microphone availability and return hardware diagnosis.
         """
+        if getattr(self, "_cached_mic_probe", None) is not None:
+            return self._cached_mic_probe
+        if getattr(self.config, "silent_mode", False):
+            self._cached_mic_probe = {
+                "available": False,
+                "device_count": 0,
+                "active_device": None,
+                "status": "SILENT_MODE",
+                "details": "Silent mode active; microphone querying disabled.",
+                "push_to_talk_fallback": True,
+            }
+            return self._cached_mic_probe
         try:
             mics = sr.Microphone.list_microphone_names()
             if not mics:

@@ -1177,6 +1177,12 @@ class SecureDashboardServer:
                     payload = json.dumps({"success": True, "count": len(nodes), "agents": [n.to_dict() for n in nodes]}, indent=2).encode("utf-8")
                     self._send_response(200, "application/json", payload)
 
+                elif parsed.path in ("/api/engineering/progress", "/api/engineering/progress/"):
+                    from app.agent.engineering_progress import EngineeringProgressTracker
+                    tracker = EngineeringProgressTracker.get_instance()
+                    payload = json.dumps({"success": True, "progress": tracker.get_current_dict()}, indent=2).encode("utf-8")
+                    self._send_response(200, "application/json", payload)
+
                 elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/context") or parsed.path.endswith("/context/")):
                     agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/context", "").strip("/")
                     snapshot = gateway_ref.companion.dashboard.get_status_snapshot() if (gateway_ref.companion and hasattr(gateway_ref.companion, "dashboard")) else {}

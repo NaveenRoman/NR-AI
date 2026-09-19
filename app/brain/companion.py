@@ -158,7 +158,13 @@ class NRCompanion:
         from app.knowledge.engine import UniversalKnowledgeEngine
         self.knowledge_engine = UniversalKnowledgeEngine(workspace=str(self.workspace), auto_seed=True)
         self.avatar = avatar_manager or AvatarStateManager()
-        self.listener = voice_listener or VoiceListener(config=self.voice_config)
+        if voice_listener is not None:
+            self.listener = voice_listener
+        elif getattr(self.voice_config, "silent_mode", False):
+            from app.voice.listener import DummyVoiceListener
+            self.listener = DummyVoiceListener(config=self.voice_config)
+        else:
+            self.listener = VoiceListener(config=self.voice_config)
         self.speaker = voice_speaker or VoiceSpeaker(config=self.voice_config)
         self.toolchains = ToolchainRegistry()
         self.memory = ProjectContextMemory(workspace=str(self.workspace))
@@ -1169,11 +1175,34 @@ class NRCompanion:
                         "Deterministic verification requires running the Gradle build. Would you like me to run it now?"
                     )
 
-            # Specialist follow-up 4: Build / Run / Inspect / Workflow execution
-            elif any(k in c_low for k in ("build", "run", "compile", "inspect", "test", "workflow", "clean", "deploy", "repair", "fix", "assemble", "device", "emulator", "pipeline", "logcat")):
-                resp = self._handle_android_studio(command)
-                self.add_agent_chat_message(agent_id, role="agent", text=resp.text, data=resp.data)
-                return resp
+            # Universal Engineering Intent Execution
+            act_ctx = self.engineering_context_manager.get_active_project()
+            eng_intent = EngineeringIntentParser.parse(
+                command,
+                active_context=act_ctx.to_dict() if act_ctx else None,
+                default_domain=EngineeringDomain.ANDROID,
+            )
+            if eng_intent.is_valid:
+                # Let existing Phase 1-5 diagnostic/audit commands pass to _handle_android_studio if matched
+                phase1_5_phrases = (
+                    "inspect android studio project", "build gradle knowledge graph",
+                    "analyze kotlin semantics", "check jetpack compose state flow",
+                    "audit android xml resources", "diagnose test failure",
+                    "debug android ui behavior", "measure android startup performance",
+                    "calculate android blast radius", "run advanced android engineering loop",
+                    "audit android readiness", "inspect studio workspace",
+                    "audit manifest merge", "audit android accessibility",
+                    "diagnose android jank", "list android projects",
+                    "reproduce crash", "boot pixel 6", "stop emulator",
+                    "preview compose", "run full e2e",
+                )
+                if any(p in c_low for p in phase1_5_phrases):
+                    resp = self._handle_android_studio(command)
+                    self.add_agent_chat_message(agent_id, role="agent", text=resp.text, data=resp.data)
+                    return resp
+
+                res = self.unified_android_agent.execute_engineering_intent(eng_intent)
+                resp_text = f"Droid: {res.get('message', 'Engineering workflow executed.')}"
 
             # Specialist capabilities inquiry
             elif any(k in c_low for k in ("what can you do", "capabilities", "who are you", "help")):
@@ -1182,38 +1211,15 @@ class NRCompanion:
                     "Gradle builds, code inspection, clean architecture scaffolds, and verification."
                 )
 
-            else:
-                # Universal Engineering Intent Execution
-                act_ctx = self.engineering_context_manager.get_active_project()
-                eng_intent = EngineeringIntentParser.parse(
-                    command,
-                    active_context=act_ctx.to_dict() if act_ctx else None,
-                    default_domain=EngineeringDomain.ANDROID,
-                )
-                if eng_intent.is_valid:
-                    # Let existing Phase 1-5 diagnostic/audit commands pass to _handle_android_studio if matched
-                    phase1_5_phrases = (
-                        "inspect android studio project", "build gradle knowledge graph",
-                        "analyze kotlin semantics", "check jetpack compose state flow",
-                        "audit android xml resources", "diagnose test failure",
-                        "debug android ui behavior", "measure android startup performance",
-                        "calculate android blast radius", "run advanced android engineering loop",
-                        "audit android readiness", "inspect studio workspace",
-                        "audit manifest merge", "audit android accessibility",
-                        "diagnose android jank", "list android projects",
-                        "reproduce crash", "boot pixel 6", "stop emulator",
-                        "preview compose", "run full e2e",
-                    )
-                    if any(p in c_low for p in phase1_5_phrases):
-                        resp = self._handle_android_studio(command)
-                        self.add_agent_chat_message(agent_id, role="agent", text=resp.text, data=resp.data)
-                        return resp
+            # Specialist follow-up 4: Legacy Build / Run / Inspect fallback
+            elif any(k in c_low for k in ("build", "run", "compile", "inspect", "test", "workflow", "clean", "deploy", "repair", "fix", "assemble", "device", "emulator", "pipeline", "logcat")):
+                resp = self._handle_android_studio(command)
+                self.add_agent_chat_message(agent_id, role="agent", text=resp.text, data=resp.data)
+                return resp
 
-                    res = self.unified_android_agent.execute_engineering_intent(eng_intent)
-                    resp_text = f"Droid: {res.get('message', 'Engineering workflow executed.')}"
-                else:
-                    proj_name = act_ctx.project_name if act_ctx else "nr_android_test"
-                    resp_text = f"Droid: Standing by in {proj_name} workspace. Ready to build, run, inspect, or modify."
+            else:
+                proj_name = act_ctx.project_name if act_ctx else "nr_android_test"
+                resp_text = f"Droid: Standing by in {proj_name} workspace. Ready to build, run, inspect, or modify."
 
             self.add_agent_chat_message(agent_id, role="agent", text=resp_text)
             resp_data = {"active_conversation_agent": "android_unified_agent", "agent_name": "Droid"}

@@ -66,13 +66,24 @@ class AndroidProjectScaffolder:
                 f"Project target '{target_dir}' escapes approved development sandbox root.",
             )
 
-        # Overwrite Protection
+        is_java = language.lower() == "java"
+
+        # Overwrite Protection & Safe Preservation
         if target_dir.exists() and any(target_dir.iterdir()):
             if not overwrite:
                 raise AndroidSafetyError(
                     AndroidErrorCode.ACTION_NOT_ALLOWED,
                     f"Project directory '{clean_name}' already exists. Overwrite denied.",
                 )
+            else:
+                # Safely back up existing project to preserve user's real project
+                backup_dir = DEV_PROJECTS_ROOT / f"{clean_name}_Kotlin_Backup"
+                try:
+                    if not backup_dir.exists():
+                        shutil.copytree(target_dir, backup_dir)
+                        logger.info(f"[AndroidScaffold] Preserved existing project at: {backup_dir}")
+                except Exception as b_err:
+                    logger.warning(f"[AndroidScaffold] Backup warning: {b_err}")
 
         is_login = template in ("login_activity", "login")
 
@@ -130,7 +141,13 @@ include(":app")
         created_files.append(str(p_settings))
 
         # 2. build.gradle.kts (root)
-        root_build_content = """plugins {
+        if is_java:
+            root_build_content = """plugins {
+    id("com.android.application") version "8.7.0" apply false
+}
+"""
+        else:
+            root_build_content = """plugins {
     id("com.android.application") version "8.7.0" apply false
     id("org.jetbrains.kotlin.android") version "1.9.24" apply false
 }
@@ -140,7 +157,42 @@ include(":app")
         created_files.append(str(p_root_build))
 
         # 3. app/build.gradle.kts
-        app_build_content = """plugins {
+        if is_java:
+            app_build_content = """plugins {
+    id("com.android.application")
+}
+
+android {
+    namespace = "__PKG__"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "__PKG__"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
+""".replace("__PKG__", pkg_name)
+        else:
+            app_build_content = """plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -187,9 +239,7 @@ dependencies {
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:allowBackup="true"
-        android:icon="@android:drawable/sym_def_app_icon"
         android:label="__NAME__"
-        android:roundIcon="@android:drawable/sym_def_app_icon"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.Light">
         <activity
@@ -350,7 +400,31 @@ class LoginActivity : AppCompatActivity() {
     }
 }
 """.replace("__PKG__", pkg_name)
-            p_kt = src_dir / "LoginActivity.kt"
+            p_act = src_dir / "LoginActivity.kt"
+            cls._safe_write(p_act, kt_content)
+            created_files.append(str(p_act))
+        elif is_java:
+            java_content = """package __PKG__;
+
+import android.app.Activity;
+import android.os.Bundle;
+
+public class MainActivity extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+    }
+}
+""".replace("__PKG__", pkg_name)
+            p_act = src_dir / "MainActivity.java"
+            cls._safe_write(p_act, java_content)
+            created_files.append(str(p_act))
+            for old_kt in src_dir.glob("*.kt"):
+                try:
+                    old_kt.unlink()
+                except Exception:
+                    pass
         else:
             kt_content = """package __PKG__
 
@@ -364,9 +438,9 @@ class MainActivity : Activity() {
     }
 }
 """.replace("__PKG__", pkg_name)
-            p_kt = src_dir / "MainActivity.kt"
-        cls._safe_write(p_kt, kt_content)
-        created_files.append(str(p_kt))
+            p_act = src_dir / "MainActivity.kt"
+            cls._safe_write(p_act, kt_content)
+            created_files.append(str(p_act))
 
         # 8. Copy Gradle wrapper from authorized project
         auth_wrapper = Path(r"C:\NR-AI\nr_android_test\gradle\wrapper")

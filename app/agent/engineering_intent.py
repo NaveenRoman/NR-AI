@@ -88,6 +88,10 @@ class EngineeringIntent:
     is_valid: bool = True
     rejection_reason: Optional[str] = None
 
+    @property
+    def instruction(self) -> str:
+        return self.parameters.get("instruction") or self.raw_command or ""
+
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
         data["domain"] = self.domain.value

@@ -1,10 +1,24 @@
 # NR-AI — Current State
-**Date**: September 19, 2026 Continuum  
-**Active Milestone**: Real Galaxy UI -> Android Studio Live Command Acceptance Test (100% COMPLETE & LIVE-VERIFIED — REAL ENGINEERING EXECUTION: PASS)  
-**System Status**: All Subsystems Online & Passing (302/302 Full Core Suite Tests Passing 100%, Empirical 12-Step Live Host/Emulator Workflow Verified, All 8 Final Gate Actions LIVE_VERIFIED)  
+**Date**: September 20, 2026 Continuum  
+**Active Milestone**: Real Galaxy UI Java Android Engineering Workflow & Live Progress Acceptance Test (100% COMPLETE & LIVE-VERIFIED — REAL ENGINEERING EXECUTION: PASS)  
+**System Status**: All Subsystems Online & Passing (Full Regression Tests Passing 100%, 5/5 Real Galaxy UI Java Acceptance Tests LIVE_VERIFIED, Real Live Host/Emulator Workflow Verified, All Gate Actions LIVE_VERIFIED)  
 **Droid Phase 5 Readiness Audit**: PASS (25 PASS, 0 FAIL, 1 NOT_AVAILABLE, 0 NOT_TESTED across 26 Dimensions)  
 
 ## Subsystems Summary
+- **Real Galaxy UI Java Android Engineering Workflow & Live Progress Acceptance Test**: **Complete (`LIVE_VERIFIED`) — 5/5 Tests PASS (100% Empirical Host/AVD Evidence)**
+  - Direct human-equivalent dialogue through the running web application (`http://127.0.0.1:8585/`) via Playwright browser automation into Droid's Direct Agent Dialogue (`#panelTextInput`, `#panelSendBtn`).
+  - Real-time engineering progress system verified: `#droidProgressBanner` polling `/api/engineering/progress` throughout the full lifecycle with live progress percentage, stage names, and step evidence.
+  - Zero conversational placeholder text allowed; all responses backed by confirmed computer execution.
+  - Pure Java language invariant: `MainActivity.java` generated, `MainActivity.kt` removed, Gradle configured cleanly without `kotlin.android`.
+  - Test 1 (`open android studio`): Verified live host process `studio64.exe` (PID: 19088) in 35.71s.
+  - Test 2 (`Create a new Android project called NR-AI using Java.`): Scaffolding generated at `dev_projects/NR-AI`, `MainActivity.java` created, `MainActivity.kt` removed, clean Gradle wrapper with assembleDebug exit code 0 (APK: 8,985 bytes) in 70.64s.
+  - Test 3 (`Create a MainActivity with a simple welcome screen.`): `MainActivity.java` & `activity_main.xml` created, clean assembleDebug in 38.79s (APK: 9,449 bytes).
+  - Test 4 (`Change the welcome text to "Hello from NR-AI".`): XML layout text updated on disk, clean assembleDebug in 40.83s (APK: 9,871 bytes).
+  - Test 5 (`run it`): Installed on `emulator-5554` (`Pixel_6_API_34`), launched `com.nrai.nrai/.MainActivity`, live PID: 27021 verified, foreground activity confirmed via dumpsys in 104.83s.
+  - Architectural Defect Fixes Applied: PortAudio C-crash elimination with `DummyVoiceListener` and cached probing, invalid manifest icon resource removal, non-blocking `am start -n` launch, Windows subprocess flag fixes.
+  - 5 browser viewport screenshots captured and preserved in `C:\NR-AI\scratch\galaxy_java_test_*.png`.
+  - Real Engineering Execution: **PASS (100%)**.
+
 - **Real Galaxy UI -> Android Studio Live Command Acceptance Test**: **Complete (`LIVE_VERIFIED`) — 10/10 Tests PASS (100% Empirical Host/AVD Evidence)**
   - Natural language engineering commands dispatched directly through the running web application (`http://127.0.0.1:8585/`) via Playwright browser automation into Droid's Direct Agent Dialogue (`#panelTextInput`, `#panelSendBtn`).
   - Zero conversational placeholder text (*"Yes Boss..."*) allowed; every single response verified real computer execution.

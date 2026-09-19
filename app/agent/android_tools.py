@@ -193,8 +193,17 @@ class SafeAdbClient:
     def get_process_pid(self, serial: str, package_name: str) -> Optional[int]:
         """Queries the process PID for an installed package."""
         code, out, _ = self._run_adb(["-s", serial, "shell", "pidof", package_name])
-        if code == 0 and out.strip().isdigit():
-            return int(out.strip())
+        if code == 0 and out.strip():
+            for tok in out.strip().split():
+                if tok.isdigit():
+                    return int(tok)
+        code_ps, out_ps, _ = self._run_adb(["-s", serial, "shell", "ps", "-A"])
+        if code_ps == 0 and package_name in out_ps:
+            for line in out_ps.splitlines():
+                if package_name in line:
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[1].isdigit():
+                        return int(parts[1])
         return None
 
     def launch_package(self, serial: str, package_name: str) -> bool:
@@ -202,7 +211,7 @@ class SafeAdbClient:
         code, out, err = self._run_adb(
             ["-s", serial, "shell", "monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1"]
         )
-        return code == 0 and ("Events injected: 1" in out or "Monkey" in out)
+        return code == 0 and "Events injected: 1" in out and "No activities found" not in out
 
     def install_apk(self, serial: str, apk_path: Path) -> Tuple[bool, str]:
         """Installs an authorized APK onto an authorized device."""

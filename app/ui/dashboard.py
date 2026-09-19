@@ -69,8 +69,15 @@ class CompanionDashboard:
         }
         current_status = status_badges.get(mode, f"🟢 {mode.value}")
 
-        # Microphone status
-        mic_info = self.companion.listener.probe_microphone()
+        # Microphone status (cached to prevent frequent PortAudio driver enumeration)
+        now = time.time()
+        if not hasattr(self, "_cached_mic_time") or now - getattr(self, "_cached_mic_time", 0) > 30.0:
+            try:
+                self._cached_mic_info = self.companion.listener.probe_microphone() if hasattr(self.companion, "listener") and self.companion.listener else {"available": False, "status": "NO_LISTENER"}
+            except Exception:
+                self._cached_mic_info = {"available": False, "status": "ERROR"}
+            self._cached_mic_time = now
+        mic_info = self._cached_mic_info
 
         # Orchestrator & Slot status
         orch_metrics = self.companion.orchestrator.get_system_metrics()
@@ -251,7 +258,7 @@ class CompanionDashboard:
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(payload)
-                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                except Exception:
                     pass
 
             def _send_bytes(self, code: int, content_type: str, data: bytes):
@@ -262,7 +269,7 @@ class CompanionDashboard:
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(data)
-                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                except Exception:
                     pass
 
             def do_GET(self):
@@ -281,6 +288,13 @@ class CompanionDashboard:
                     if dashboard_ref.companion and hasattr(dashboard_ref.companion, "knowledge_engine"):
                         telemetry = dashboard_ref.companion.knowledge_engine.get_telemetry_snapshot()
                     payload = json.dumps({"success": True, "telemetry": telemetry}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # 1b. Engineering Real-Time Progress API
+                elif parsed.path in ("/api/engineering/progress", "/api/engineering/progress/"):
+                    from app.agent.engineering_progress import EngineeringProgressTracker
+                    tracker = EngineeringProgressTracker.get_instance()
+                    payload = json.dumps({"success": True, "progress": tracker.get_current_dict()}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
                 # 1c. SkyShield Security Dashboard API
@@ -938,14 +952,19 @@ class CompanionDashboard:
                     cmd = c_data.get("text") or c_data.get("command") or body.strip()
                     speak = bool(c_data.get("speak_output", False))
                     comp = dashboard_ref.companion
-                    if comp and hasattr(comp, "interact"):
-                        comp.active_conversation_agent = agent_id
-                        resp = comp.interact(cmd, speak_output=speak)
-                        resp_dict = resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}
-                        reply = getattr(resp, "text", str(resp))
-                    else:
-                        reply = f"Agent '{agent_id}' processed: {cmd}"
-                        resp_dict = {"text": reply}
+                    try:
+                        if comp and hasattr(comp, "interact"):
+                            comp.active_conversation_agent = agent_id
+                            resp = comp.interact(cmd, speak_output=speak)
+                            resp_dict = resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}
+                            reply = getattr(resp, "text", str(resp))
+                        else:
+                            reply = f"Agent '{agent_id}' processed: {cmd}"
+                            resp_dict = {"text": reply}
+                    except Exception as e:
+                        logger.exception(f"Error executing agent turn: {e}")
+                        reply = f"Error executing command: {e}"
+                        resp_dict = {"text": reply, "error": str(e)}
                     payload = json.dumps({
                         "success": True,
                         "agent_id": agent_id,

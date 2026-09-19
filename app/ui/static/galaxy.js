@@ -1377,6 +1377,57 @@ async function sendAgentTurn(text) {
     container.scrollTop = container.scrollHeight;
   }
 
+  // If Droid (Android Agent) active, render real-time in-flight engineering progress banner
+  let progressPollTimer = null;
+  if ((aid === "android_unified_agent" || aid === "droid") && container) {
+    const progressElem = document.createElement("div");
+    progressElem.id = "droidProgressBanner";
+    progressElem.className = "droid-progress-bubble";
+    progressElem.innerHTML = `
+      <div class="droid-progress-card" style="font-family: monospace; background: rgba(16, 24, 40, 0.95); border: 1px solid rgba(0, 255, 204, 0.4); border-radius: 8px; padding: 12px; margin: 4px 0; color: #e2e8f0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="color: #00ffcc; font-weight: bold;">DROID ● <span id="droidProgressStage">UNDERSTANDING</span></span>
+          <span id="droidProgressPct" style="color: #38bdf8; font-weight: bold;">[░░░░░░░░░░░░░░] 0%</span>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 8px; width: 100%; margin-bottom: 8px; overflow: hidden;">
+          <div id="droidProgressBarFill" style="background: linear-gradient(90deg, #00ffcc, #38bdf8); height: 100%; width: 5%; transition: width 0.3s ease;"></div>
+        </div>
+        <div id="droidProgressMsg" style="font-size: 13px; color: #f1f5f9; margin-bottom: 4px;">Understanding command...</div>
+        <div id="droidProgressEvidence" style="font-size: 11px; color: #94a3b8; font-style: italic;">Awaiting toolchain execution...</div>
+      </div>
+    `;
+    container.appendChild(progressElem);
+    container.scrollTop = container.scrollHeight;
+
+    // Start active polling of /api/engineering/progress
+    progressPollTimer = setInterval(async () => {
+      try {
+        const pRes = await fetch("/api/engineering/progress");
+        if (!pRes.ok) return;
+        const pData = await pRes.json();
+        if (pData.success && pData.progress) {
+          const p = pData.progress;
+          const stageElem = document.getElementById("droidProgressStage");
+          const pctElem = document.getElementById("droidProgressPct");
+          const fillElem = document.getElementById("droidProgressBarFill");
+          const msgElem = document.getElementById("droidProgressMsg");
+          const evElem = document.getElementById("droidProgressEvidence");
+
+          if (stageElem) stageElem.textContent = p.stage || "EXECUTING";
+          if (pctElem) pctElem.textContent = p.ascii_bar || `[${p.progress}%]`;
+          if (fillElem) fillElem.style.width = `${Math.max(5, p.progress || 0)}%`;
+          if (msgElem) msgElem.textContent = p.message || "Working...";
+          if (evElem && p.evidence && p.evidence.length > 0) {
+            evElem.textContent = "Evidence: " + p.evidence.join(" | ");
+          }
+          if (container) container.scrollTop = container.scrollHeight;
+        }
+      } catch (e) {
+        // ignore polling errors
+      }
+    }, 250);
+  }
+
   try {
     updatePttState("RESPONDING");
     const res = await fetch(`/api/agent/${aid}/chat`, {
@@ -1385,9 +1436,12 @@ async function sendAgentTurn(text) {
       body: JSON.stringify({ text: text, speak_output: false })
     });
 
-    // Remove in-flight indicator
+    // Remove in-flight indicators
+    if (progressPollTimer) clearInterval(progressPollTimer);
     const liveIndicator = document.getElementById("trinityActivityIndicator");
     if (liveIndicator) liveIndicator.remove();
+    const liveProg = document.getElementById("droidProgressBanner");
+    if (liveProg) liveProg.remove();
 
     const data = await res.json();
     const reply = data.reply || (data.response && data.response.text) || "Understood.";
@@ -1415,8 +1469,11 @@ async function sendAgentTurn(text) {
     }
   } catch (err) {
     console.error("Error sending agent turn:", err);
+    if (progressPollTimer) clearInterval(progressPollTimer);
     const liveIndicator = document.getElementById("trinityActivityIndicator");
     if (liveIndicator) liveIndicator.remove();
+    const liveProg = document.getElementById("droidProgressBanner");
+    if (liveProg) liveProg.remove();
     appendChatMessage("agent", "Error communicating with Knowledge Trinity.", { is_error: true });
     updatePttState("READY");
   }

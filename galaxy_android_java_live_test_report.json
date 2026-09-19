@@ -1,0 +1,104 @@
+{
+  "suite_name": "NR-AI Real Galaxy UI Java Android Engineering Workflow",
+  "timestamp": "2026-09-20 00:10:36",
+  "url": "http://127.0.0.1:8585/",
+  "agent_selected": "android_unified_agent (Droid)",
+  "tests": [
+    {
+      "test_id": "TEST_1",
+      "test_name": "OPEN ANDROID STUDIO",
+      "command": "open android studio",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 35.71,
+      "ui_reply": "Droid: LIVE VERIFIED: Android Studio workspace launched and confirmed active for target project (PID: 19088, C:\\Program Files\\Android\\Android Studio1\\bin\\studio64.exe).",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_java_test_1.png",
+      "progress_steps": [
+        "[\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591] 0% UNDERSTANDING: Understanding command...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591] 50% LAUNCHING: Launching Android Studio workspace...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591] 70% WAITING_PROCESS: Waiting for studio64.exe process (PID: 19088)..."
+      ],
+      "studio64_running": true,
+      "os_process_info": "Id Path                                                     \n   -- ----                                                     \n19088 C:\\Program Files\\Android\\Android Studio1\\bin\\studio64.exe"
+    },
+    {
+      "test_id": "TEST_2",
+      "test_name": "CREATE NEW PROJECT (JAVA)",
+      "command": "Create a new Android project called NR-AI using Java.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 70.64,
+      "ui_reply": "Droid: LIVE VERIFIED: Android project 'NR-AI' (Java) created successfully with Gradle wrapper. Initial assembleDebug build verified exit code: 0.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_java_test_2.png",
+      "progress_steps": [
+        "[\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591] 15% UNDERSTANDING: Understanding request: Create Android project 'NR-AI' using Java...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591] 60% CONFIGURING_GRADLE: Configuring Gradle wrapper and build.gradle.kts...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591] 75% BUILDING: Building project with Gradle assembleDebug..."
+      ],
+      "project_path": "C:\\NR-AI\\dev_projects\\NR-AI",
+      "main_activity_java_exists": true,
+      "main_activity_kt_removed": true,
+      "java_gradle_clean": true,
+      "apk_path": "C:\\NR-AI\\dev_projects\\NR-AI\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+      "apk_size_bytes": 8985
+    },
+    {
+      "test_id": "TEST_3",
+      "test_name": "CREATE MAINACTIVITY / WELCOME SCREEN",
+      "command": "Create a MainActivity with a simple welcome screen.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 38.79,
+      "ui_reply": "Droid: LIVE VERIFIED: MainActivity and layout activity_main.xml created for 'NR-AI'. Gradle build exit code: 0.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_java_test_3.png",
+      "progress_steps": [
+        "[\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591] 0% UNDERSTANDING: Understanding command...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591] 75% BUILDING: Building project with Gradle assembleDebug..."
+      ],
+      "main_activity_java": "C:\\NR-AI\\dev_projects\\NR-AI\\app\\src\\main\\java\\com\\nrai\\nrai\\MainActivity.java",
+      "activity_main_xml": "C:\\NR-AI\\dev_projects\\NR-AI\\app\\src\\main\\res\\layout\\activity_main.xml",
+      "apk_size_bytes": 9449
+    },
+    {
+      "test_id": "TEST_4",
+      "test_name": "CHANGE WELCOME TEXT",
+      "command": "Change the welcome text to \"Hello from NR-AI\".",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 40.83,
+      "ui_reply": "Droid: LIVE VERIFIED: Updated welcome text to 'Hello from NR-AI' on disk for 'NR-AI'. Gradle build exit code: 0.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_java_test_4.png",
+      "progress_steps": [
+        "[\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591] 15% UNDERSTANDING: Understanding request: Update welcome text...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591] 75% MODIFYING: Rebuilding project with Gradle assembleDebug...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591] 75% BUILDING: Rebuilding project with Gradle assembleDebug..."
+      ],
+      "text_found_in_xml": true,
+      "activity_main_xml": "C:\\NR-AI\\dev_projects\\NR-AI\\app\\src\\main\\res\\layout\\activity_main.xml",
+      "apk_size_bytes": 9871
+    },
+    {
+      "test_id": "TEST_5",
+      "test_name": "RUN IT ON EMULATOR",
+      "command": "run it",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 104.83,
+      "ui_reply": "Droid: LIVE VERIFIED: Deployed and launched 'NR-AI' on emulator 'emulator-5554' (PID: 27021). Foreground activity: .MainActivity.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_java_test_5.png",
+      "progress_steps": [
+        "[\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591] 0% UNDERSTANDING: Connecting to Android emulator (emulator-5554 / Pixel_6_API_34)...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591] 45% VERIFYING_EMULATOR: Connecting to Android emulator (emulator-5554 / Pixel_6_API_34)...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591] 60% INSTALLING_APK: Installing app-debug.apk on emulator-5554...",
+        "[\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591] 75% LAUNCHING_APP: Launching com.nrai.nrai/.MainActivity..."
+      ],
+      "emulator_serial": "emulator-5554",
+      "package": "com.nrai.nrai",
+      "live_pid": "27021",
+      "foreground_verified": true
+    }
+  ],
+  "overall_status": "ALL_PASS",
+  "pass_count": 5,
+  "total_count": 5
+}
