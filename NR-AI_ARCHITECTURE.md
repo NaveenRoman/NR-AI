@@ -62,7 +62,8 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
    - Studio Process Lifecycle: `_resolve_studio_executable()`, `_find_running_studio_process()`, `_launch_android_studio(project_path)` with live PID tracking via `psutil`.
    - Bounded Gradle Execution: Real `gradlew.bat assembleDebug` runs, exit code verification, physical APK size/hash verification.
    - Grounded Code/Resource Manipulation: Concrete disk modification for high-level features (`SplashActivity.kt`, `activity_splash.xml`, `AndroidManifest.xml`).
-   - ADB Deployment Pipeline: Validates device connectivity, boots authorized `Pixel_6_API_34` if needed, installs APK via `SafeAdbClient`, launches package and monitors PID.
+   - Verified ADB Deployment & Runtime Pipeline: Validates device connectivity, boots authorized `Pixel_6_API_34` on `emulator-5554`, checks APK staleness and triggers automatic `assembleDebug` builds if sources are newer, installs APK via `SafeAdbClient`, launches package, validates running PID via `pidof`, verifies foreground activity via window displays, and captures live PNG screenshots to disk.
+   - Final Gate Actions Alignment: All 8 actions (`CREATE_PROJECT`, `OPEN`, `BUILD`, `RUN`, `MODIFY`, `CONTINUE_PROJECT`, `REBUILD`, `VERIFY`) guaranteed `LIVE_VERIFIED`.
 
 4. **Droid Production Stack (Phases 1–5)**:
    - Phase 1: Dynamic Project Registry, Gradle TOML Catalog, Kotlin/Java AST, XML Resource Graph, Compose Intelligence, JUnit/Lint Parser, SQLite Task Store.

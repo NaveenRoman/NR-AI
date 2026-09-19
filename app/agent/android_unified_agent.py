@@ -2328,71 +2328,196 @@ class UnifiedAndroidAgent:
 
         # 5. RUN
         if act == EngineeringAction.RUN:
-            proj_dir = Path(act_proj.canonical_path) if act_proj and act_proj.canonical_path else Path(r"C:\NR-AI\nr_android_test")
-            apk_path = proj_dir / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
-            if not apk_path.exists():
-                gradle_bat = proj_dir / "gradlew.bat"
-                if gradle_bat.exists():
-                    subprocess.run([str(gradle_bat), "assembleDebug"], cwd=str(proj_dir), capture_output=True, text=True, timeout=90)
+            if act_proj and act_proj.canonical_path and os.path.exists(act_proj.canonical_path):
+                proj_dir = Path(act_proj.canonical_path)
+            elif (Path(r"C:\NR-AI\dev_projects") / project_name).exists():
+                proj_dir = Path(r"C:\NR-AI\dev_projects") / project_name
+            else:
+                proj_dir = Path(r"C:\NR-AI\nr_android_test")
 
-            devices = self.tools.adb.list_devices()
+            apk_path = proj_dir / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+
+            def _is_apk_stale(p_dir: Path, a_path: Path) -> bool:
+                if not a_path.exists():
+                    return True
+                a_mtime = a_path.stat().st_mtime
+                src = p_dir / "app" / "src"
+                if not src.exists():
+                    return False
+                for root, _, files in os.walk(src):
+                    for f in files:
+                        fp = Path(root) / f
+                        try:
+                            if fp.stat().st_mtime > a_mtime:
+                                return True
+                        except Exception:
+                            pass
+                return False
+
+            gradle_res = {"built": False, "cached": True}
+            gradle_bat = proj_dir / "gradlew.bat"
+            if _is_apk_stale(proj_dir, apk_path) and gradle_bat.exists():
+                t0_build = time.time()
+                res = subprocess.run([str(gradle_bat), "assembleDebug"], cwd=str(proj_dir), capture_output=True, text=True, timeout=90)
+                dur_b = round(time.time() - t0_build, 2)
+                gradle_res = {"built": True, "exit_code": res.returncode, "duration_s": dur_b}
+
+            apk_size = apk_path.stat().st_size if apk_path.exists() else 0
+
+            # Target device & emulator readiness
             serial = "emulator-5554"
-            if not devices or not any(d.get("serial") == serial and d.get("state") == "device" for d in devices):
+            avd_name = "Pixel_6_API_34"
+            devices = self.tools.adb.list_devices()
+            is_attached = any(d.get("serial") == serial and d.get("state") == "device" for d in devices)
+
+            ctrl = getattr(self, "lifecycle_controller", None) or DeviceLifecycleController()
+            if not is_attached:
                 try:
-                    if hasattr(self, "lifecycle_controller") and self.lifecycle_controller:
-                        self.lifecycle_controller.boot(BootConfiguration(avd_name="Pixel_6_API_34", no_window=True, timeout_seconds=45))
-                        time.sleep(4)
+                    ctrl.boot(BootConfiguration(avd_name=avd_name, no_window=False, timeout_seconds=120))
                 except Exception as ex:
                     logger.warning(f"Device boot warning: {ex}")
 
+            boot_ok = False
+            pm_ok = False
+            for _ in range(15):
+                try:
+                    c, out, _ = self.tools.adb._run_adb(["-s", serial, "shell", "getprop", "sys.boot_completed"], timeout=4.0)
+                    if c == 0 and out.strip() == "1":
+                        boot_ok = True
+                    c2, out2, _ = self.tools.adb._run_adb(["-s", serial, "shell", "pm", "path", "android"], timeout=5.0)
+                    if c2 == 0 and "package:" in out2:
+                        pm_ok = True
+                    if boot_ok and pm_ok:
+                        break
+                except Exception:
+                    pass
+                time.sleep(1.0)
+
             manifest_p = proj_dir / "app" / "src" / "main" / "AndroidManifest.xml"
-            pkg = f"com.nrai.{project_name.lower()}"
-            main_activity = ".MainActivity"
+            pkg = f"com.nrai.{re.sub(r'[^a-zA-Z0-9]', '', project_name).lower()}"
+            launcher_activity = ".MainActivity"
             if manifest_p.exists():
                 txt = manifest_p.read_text(encoding="utf-8")
                 m_pkg = re.search(r'package="([^"]+)"', txt)
                 if m_pkg:
                     pkg = m_pkg.group(1)
-                m_act = re.search(r'android:name="(\.[A-Za-z0-9_]+)"', txt)
+                m_act = re.search(r'<activity[^>]*android:name="([^"]+)"[^>]*>[\s\S]*?category\.LAUNCHER[\s\S]*?</activity>', txt)
                 if m_act:
-                    main_activity = m_act.group(1)
+                    launcher_activity = m_act.group(1)
+                else:
+                    m_act_gen = re.search(r'android:name="(\.[A-Za-z0-9_]+)"', txt)
+                    if m_act_gen:
+                        launcher_activity = m_act_gen.group(1)
 
             installed = False
+            install_msg = ""
             if apk_path.exists():
                 try:
-                    installed, _ = self.tools.adb.install_apk(serial, apk_path)
+                    installed, install_msg = self.tools.adb.install_apk(serial, apk_path)
                 except Exception as ie:
+                    install_msg = str(ie)
                     logger.warning(f"APK installation warning: {ie}")
+
+            pkg_verified = False
+            try:
+                pkg_verified = self.tools.adb.is_package_installed(serial, pkg)
+            except Exception:
+                pass
 
             launched = False
             try:
                 launched = self.tools.adb.launch_package(serial, pkg)
+                if not launched:
+                    act_cmd = f"{pkg}/{launcher_activity}" if not launcher_activity.startswith(pkg) else launcher_activity
+                    c_act, _, _ = self.tools.adb._run_adb(["-s", serial, "shell", "am", "start", "-n", act_cmd], timeout=8.0)
+                    launched = (c_act == 0)
             except Exception as le:
                 logger.warning(f"App launch warning: {le}")
 
             app_pid = None
+            for _ in range(10):
+                try:
+                    app_pid = self.tools.adb.get_process_pid(serial, pkg)
+                    if app_pid is not None:
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.5)
+
+            fg_info = {"package": "unknown", "activity": "unknown"}
             try:
-                app_pid = self.tools.adb.get_pid(serial, pkg)
+                fg_info = self.tools.adb.get_foreground_app(serial)
             except Exception:
                 pass
+            fg_pkg = fg_info.get("package", "unknown")
+            fg_act = fg_info.get("activity", "unknown")
 
-            self.context_manager.record_action("RUN", target=project_name, parameters={"serial": serial, "pkg": pkg, "pid": app_pid})
-            is_live = (installed and launched) or (app_pid is not None)
+            scratch_dir = Path(r"C:\NR-AI\scratch")
+            scratch_dir.mkdir(parents=True, exist_ok=True)
+            screenshot_path = scratch_dir / f"{project_name.lower()}_run_screen.png"
+            screenshot_size = 0
+            try:
+                raw_bytes = self.tools.adb.capture_screen(serial, dest_path=screenshot_path)
+                if raw_bytes:
+                    screenshot_size = len(raw_bytes)
+                elif screenshot_path.exists():
+                    screenshot_size = screenshot_path.stat().st_size
+            except Exception as se:
+                logger.warning(f"Screenshot capture warning: {se}")
+
+            is_live = (
+                apk_path.exists()
+                and apk_size > 0
+                and (installed or pkg_verified)
+                and (app_pid is not None)
+            )
+
+            self.context_manager.record_action(
+                "RUN",
+                target=project_name,
+                parameters={"serial": serial, "pkg": pkg, "pid": app_pid, "activity": launcher_activity}
+            )
+
+            status = "LIVE_VERIFIED" if is_live else "PARTIALLY_SUPPORTED"
+            msg = (
+                f"LIVE VERIFIED: Deployed and launched '{project_name}' ({pkg}{launcher_activity}) on Pixel_6_API_34 ({serial}) "
+                f"(PID: {app_pid}, Foreground: {fg_act}, APK: {apk_size:,} bytes)."
+                if is_live else
+                f"Deployed '{project_name}' on Pixel_6_API_34 ({serial}) (launch attempted)."
+            )
+
             return {
                 "success": True,
-                "status": "LIVE_VERIFIED" if is_live else "PARTIALLY_SUPPORTED",
+                "status": status,
                 "action": "RUN",
                 "project": project_name,
-                "serial": serial,
+                "project_path": str(proj_dir),
                 "package": pkg,
-                "activity": main_activity,
+                "package_name": pkg,
+                "activity": launcher_activity,
+                "launcher_activity": launcher_activity,
+                "apk_path": str(apk_path) if apk_path.exists() else None,
+                "apk_size": apk_size,
+                "apk_size_bytes": apk_size,
+                "gradle_result": gradle_res,
+                "serial": serial,
+                "device_serial": serial,
+                "avd_name": avd_name,
+                "boot_state": "READY" if boot_ok else "OFFLINE",
+                "boot_completed": boot_ok,
+                "package_manager_responsive": pm_ok,
+                "installation_result": {"success": installed or pkg_verified, "message": install_msg},
+                "apk_installed": installed or pkg_verified,
+                "launched_package": pkg,
+                "launched": launched,
+                "running_pid": app_pid,
                 "pid": app_pid,
-                "apk_installed": installed,
-                "message": (
-                    f"LIVE VERIFIED: Deployed and launched '{project_name}' ({pkg}{main_activity}) on Pixel_6_API_34 ({serial}) (PID: {app_pid})."
-                    if is_live else
-                    f"Deployed '{project_name}' on Pixel_6_API_34 ({serial}) (launch attempted)."
-                ),
+                "foreground_package": fg_pkg,
+                "foreground_activity": fg_act,
+                "screenshot_path": str(screenshot_path) if screenshot_path.exists() else None,
+                "screenshot_size_bytes": screenshot_size,
+                "verified": is_live,
+                "message": msg,
             }
 
         # 6. INSTALL
@@ -2513,10 +2638,21 @@ class SplashActivity : Activity() {{
                     if manifest_p.exists():
                         m_txt = manifest_p.read_text(encoding="utf-8")
                         if "SplashActivity" not in m_txt:
-                            m_txt = m_txt.replace(
-                                '</application>',
-                                '    <activity android:name=".SplashActivity" android:exported="true" />\n    </application>'
-                            )
+                            splash_block = """        <activity
+            android:name=".SplashActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>"""
+                            if "<intent-filter>" in m_txt:
+                                m_txt = re.sub(
+                                    r'(<activity[^>]*android:name="\.MainActivity"[^>]*>)\s*<intent-filter>[\s\S]*?</intent-filter>\s*(</activity>)',
+                                    r'\1\n        \2',
+                                    m_txt
+                                )
+                            m_txt = m_txt.replace('</application>', f'{splash_block}\n    </application>')
                             manifest_p.write_text(m_txt, encoding="utf-8")
 
                     affected = [str(splash_kt), str(splash_layout), str(manifest_p)]
@@ -2619,13 +2755,24 @@ class SplashActivity : Activity() {{
         if act == EngineeringAction.VERIFY:
             scorecard = self.audit_readiness()
             self.context_manager.record_action("VERIFY", target=project_name)
+            total_eval = scorecard.pass_count + scorecard.fail_count
+            pass_rate = round((scorecard.pass_count / total_eval * 100.0), 1) if total_eval > 0 else 100.0
+            is_live = (scorecard.overall_rating in ("EXCELLENT", "GOOD", "READY", "PASS")) and (scorecard.fail_count == 0)
             return {
                 "success": True,
-                "status": "IMPLEMENTED",
+                "status": "LIVE_VERIFIED" if is_live else "PARTIALLY_SUPPORTED",
                 "action": "VERIFY",
                 "project": project_name,
                 "overall_rating": scorecard.overall_rating,
-                "message": f"Readiness audit and verification completed for '{project_name}': rating {scorecard.overall_rating}.",
+                "pass_count": scorecard.pass_count,
+                "fail_count": scorecard.fail_count,
+                "pass_rate_percent": pass_rate,
+                "verified": is_live,
+                "message": (
+                    f"LIVE VERIFIED: Readiness audit and empirical verification completed for '{project_name}': rating {scorecard.overall_rating} ({scorecard.pass_count} passed, {scorecard.fail_count} failed)."
+                    if is_live else
+                    f"Readiness audit completed for '{project_name}': rating {scorecard.overall_rating} ({scorecard.pass_count} passed, {scorecard.fail_count} failed)."
+                ),
             }
 
         return {
