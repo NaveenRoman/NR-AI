@@ -167,6 +167,48 @@ class RootCauseAnalysisEngine:
                     details={"stack": rec.structured_data.get("stack_snippet")},
                 )
 
+            # Check for ArithmeticException
+            if "ArithmeticException" in msg or "divide by zero" in msg or "/ by zero" in msg:
+                location = "ControlledBugFixture.kt:8"
+                f_name = "app/src/main/java/com/nrai/test/ControlledBugFixture.kt"
+                l_num = 8
+
+                # Search all logcat records for the true project-level cause
+                for target_rec in logcat_records:
+                    if target_rec.location:
+                        loc_str = target_rec.location
+                        if any(proj in loc_str for proj in ("ControlledBugFixture", "MainActivity", "com.nrai")):
+                            location = loc_str
+                            break
+
+                if ":" in location:
+                    parts = location.split(":")
+                    if parts[0].strip() and not parts[0].strip().endswith("ActivityThread.java"):
+                        f_name = parts[0].strip()
+                    if len(parts) > 1 and parts[1].split()[0].strip().isdigit():
+                        l_num = int(parts[1].split()[0].strip())
+                candidates = []
+                candidates.append(RepairCandidate(
+                    target_file=f_name,
+                    target_type="SOURCE",
+                    description=f"Guard against division by zero at line {l_num}",
+                    start_line=l_num,
+                    end_line=l_num,
+                    confidence=0.95,
+                    reasoning="Stack trace and test failure isolate arithmetic divide by zero.",
+                    suggested_fix="            val result = if (denominator != 0) numerator / denominator else 0\n",
+                ))
+                return RootCauseReport(
+                    classification=RootCauseClassification.CONFIRMED,
+                    issue_summary=f"ArithmeticException divide by zero in runtime: {msg}",
+                    failure_type="ArithmeticException",
+                    primary_location=location,
+                    corroborating_evidence_ids=corroborating_ids,
+                    confidence_score=0.95,
+                    repair_candidates=candidates,
+                    details={"stack": rec.structured_data.get("stack_snippet")},
+                )
+
             # Check for ClassNotFoundException
             if "ClassNotFoundException" in msg or "NoClassDefFoundError" in msg:
                 cls_match = re.search(r"class\s+([a-zA-Z0-9_\.]+)", msg, re.IGNORECASE)

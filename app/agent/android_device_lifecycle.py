@@ -769,3 +769,7 @@ class DeviceLifecycleController:
         self._current_state = DeviceLifecycleState.UNKNOWN
         self._active_serial = None
         self._last_deployment = None
+
+
+AndroidDeviceLifecycleController = DeviceLifecycleController
+

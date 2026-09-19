@@ -674,6 +674,10 @@ class AndroidSafetyGate:
 
         return resolved
 
+    def verify_file_path(self, file_path: Union[str, Path]) -> Path:
+        """Validates that a file path is authorized for inspection or repair."""
+        return self.validate_editable_file(file_path)
+
     def validate_patch_size(self, patch_data: Union[int, str, bytes]) -> bool:
         """Ensures proposed patch does not exceed maximum patch size (100 KB)."""
         self.check_emergency_stop()

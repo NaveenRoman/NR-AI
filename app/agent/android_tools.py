@@ -583,6 +583,21 @@ class SafeGradleRunner:
                 error_code=se.code.value,
             )
 
+    def assemble_debug(self) -> Any:
+        """Executes assembleDebug and returns a result object with success and stderr attributes."""
+        res = self.run_action("assembleDebug")
+        from dataclasses import dataclass
+        @dataclass
+        class BuildResult:
+            success: bool
+            stderr: str
+            output: str
+        return BuildResult(
+            success=res.get("success", False),
+            stderr=res.get("output_sample", ""),
+            output=res.get("full_output", ""),
+        )
+
     def find_debug_apk(self) -> Optional[Path]:
         """Locates the debug APK generated in the authorized project, if any."""
         apk_dir = self.project_dir / "app" / "build" / "outputs" / "apk" / "debug"

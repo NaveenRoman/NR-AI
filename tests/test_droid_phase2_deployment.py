@@ -26,8 +26,15 @@ class TestDroidPhase2Deployment(unittest.TestCase):
 
     def test_deploy_missing_device(self):
         """Verify deployment fails if no authorized device is available."""
-        ctrl = DeviceLifecycleController()
+        mock_readiness = MagicMock()
+        mock_readiness.determine_avd_state.return_value = MagicMock(
+            state="not_installed",
+            serial=None,
+        )
+        ctrl = DeviceLifecycleController(readiness_checker=mock_readiness)
         ctrl._active_serial = None
+        ctrl.adb = MagicMock()
+        ctrl.adb.list_devices.return_value = []
 
         res = ctrl.deploy(serial=None, config=DeploymentConfiguration(package_name="com.nrai.test"))
         self.assertFalse(res.success)

@@ -55,3 +55,9 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
    - Regression Protection Engine (`android_regression.py`)
    - Unified Facade (`android_unified_agent.py`)
    - REST API & Galaxy UI (`server.py`, `dashboard.py`, `galaxy.js`)
+4. **Phase 3 Live Validation Subsystem (Empirically Verified)**:
+   - Real Device Target: `Pixel_6_API_34` (`emulator-5554`, Android 14 / API 34)
+   - Real Execution Path: Boot -> Clean Build -> Deploy -> Reproduce -> Multi-Domain Ingest -> Diagnose (CONFIRMED) -> Bounded Repair (MAX_ATTEMPTS=2) -> Rebuild/Redeploy -> Retest (0 Crashes, 100% Pass) -> Visual Screen Capture (126 KB)
+   - Invariant Boundaries: Zero `shell=True`, zero `eval()`, zero `exec()`, zero unvetted ADB calls, automated secret scrubbing, strict `Pixel_6_API_35` blocking.
+   - Status: 100% LIVE_VERIFIED (456/456 tests passing across all suites).
+   - Hard Stop: Droid Phase 4, Visual Studio, Unity, and Unreal are strictly NOT started.

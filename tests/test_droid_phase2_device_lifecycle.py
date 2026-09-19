@@ -84,6 +84,8 @@ class TestDroidPhase2DeviceLifecycle(unittest.TestCase):
         )
 
         ctrl = DeviceLifecycleController(readiness_checker=mock_readiness)
+        ctrl.adb = MagicMock()
+        ctrl.adb.get_process_pid.return_value = None
         rep = ctrl.boot(BootConfiguration(avd_name="Pixel_6_API_34"))
         self.assertEqual(rep.state, DeviceLifecycleState.READY)
         self.assertEqual(rep.serial, "emulator-5554")
