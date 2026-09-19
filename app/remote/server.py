@@ -959,6 +959,22 @@ class SecureDashboardServer:
                     else:
                         res = {"success": False, "error": "Unified Android Agent not available"}
                     self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+                elif parsed.path in ("/api/droid/knowledge-graph", "/api/droid/knowledge-graph/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        kg = u_agent.build_gradle_knowledge_graph()
+                        res = {"success": True, "knowledge_graph": kg.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+                elif parsed.path in ("/api/droid/performance", "/api/droid/performance/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        perf = u_agent.measure_startup_performance()
+                        res = {"success": True, "performance": perf}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
 
                 # SkyShield Security Dashboard API
                 elif parsed.path in ("/api/skyshield/dashboard", "/api/skyshield/dashboard/", "/api/security/dashboard", "/api/security/dashboard/"):
@@ -2081,6 +2097,35 @@ class SecureDashboardServer:
                         files = b_data.get("files", [])
                         comp_rep = u_agent.run_regression_check(files)
                         res = {"success": comp_rep.passed_cleanly, "report": comp_rep.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/impact", "/api/droid/impact/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        files = b_data.get("files", [])
+                        impact = u_agent.calculate_blast_radius(files)
+                        res = {"success": True, "impact": impact}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/engineering-loop", "/api/droid/engineering-loop/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        goal = b_data.get("goal", "Engineering loop task")
+                        mock = b_data.get("mock_mode", True)
+                        loop_res = u_agent.run_advanced_engineering_loop(goal, mock_mode=mock)
+                        res = {"success": loop_res.verification_status.value == "VERIFIED", "report": loop_res.to_dict()}
                     else:
                         res = {"success": False, "error": "Unified Android Agent not available"}
                     self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))

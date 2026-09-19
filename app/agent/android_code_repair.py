@@ -270,16 +270,17 @@ def redact_sensitive_content(text: str) -> str:
     if not text:
         return text
 
-    # Redact Google / Gemini API keys
-    text = re.sub(r"AIzaSy[A-Za-z0-9_-]{33}", "[REDACTED_GEMINI_KEY]", text)
+    # Redact Google / Gemini API keys (AIza...)
+    text = re.sub(r"AIza[A-Za-z0-9_-]{20,}", "[REDACTED_GEMINI_KEY]", text)
     # Redact OpenAI API keys
-    text = re.sub(r"sk-proj-[A-Za-z0-9_-]+", "[REDACTED_OPENAI_KEY]", text)
+    text = re.sub(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}", "[REDACTED_OPENAI_KEY]", text)
     # Redact GitHub tokens
-    text = re.sub(r"ghp_[A-Za-z0-9_]{36,}", "[REDACTED_GITHUB_TOKEN]", text)
+    text = re.sub(r"ghp_[A-Za-z0-9_]{20,}", "[REDACTED_GITHUB_TOKEN]", text)
 
-    # Redact passwords, secrets, tokens in key=val or JSON-like forms
+    # Redact passwords, secrets, tokens in key=val, unquoted, or JSON-like forms
     patterns = [
         (r'''(?i)(["']?(?:password|passwd|secret|api[_-]?key|token|keystorepassword|keypassword|storepassword)["']?\s*[:=]\s*["'])([^"']+)(["'])''', r'\g<1>[REDACTED]\g<3>'),
+        (r'''(?i)((?:password|passwd|secret|api[_-]?key|token)\s*[:=]\s*)([^\s,;"\'}]+)''', r'\g<1>[REDACTED]'),
         (r'''(?i)(storePassword\s+["'])([^"']+)(["'])''', r'\g<1>[REDACTED]\g<3>'),
         (r'''(?i)(keyPassword\s+["'])([^"']+)(["'])''', r'\g<1>[REDACTED]\g<3>'),
     ]

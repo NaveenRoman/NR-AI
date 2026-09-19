@@ -58,6 +58,32 @@ class ResourceReference:
         return asdict(self)
 
 
+from enum import Enum
+
+class ResourceAnomalyKind(str, Enum):
+    MISSING_RESOURCE = "MISSING_RESOURCE"
+    DUPLICATE_RESOURCE = "DUPLICATE_RESOURCE"
+    UNUSED_RESOURCE = "UNUSED_RESOURCE"
+    BROKEN_REFERENCE = "BROKEN_REFERENCE"
+    TYPE_MISMATCH = "TYPE_MISMATCH"
+    POSSIBLE_REFERENCE = "POSSIBLE_REFERENCE"
+
+
+@dataclass
+class ResourceAnomaly:
+    kind: ResourceAnomalyKind
+    key: str
+    source_file: str
+    line: int
+    description: str
+    runtime_error_correlation: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        d["kind"] = self.kind.value
+        return d
+
+
 @dataclass
 class ResourceGraphReport:
     project_path: str
@@ -69,11 +95,15 @@ class ResourceGraphReport:
     unused_resources: List[str]  # keys: "type/name"
     duplicates: List[Dict[str, Any]]
     scanned_files_count: int
-    timestamp: float = field(default_factory=time.time)
+    anomalies: List[ResourceAnomaly] = field(default_factory=list)
+    @property
+    def total_resources(self) -> int:
+        return self.total_definitions
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "project_path": self.project_path,
+            "total_resources": self.total_resources,
             "total_definitions": self.total_definitions,
             "total_references": self.total_references,
             "definitions": {k: [d.to_dict() for d in v] for k, v in self.definitions.items()},
@@ -81,6 +111,7 @@ class ResourceGraphReport:
             "missing_resources": [m.to_dict() for m in self.missing_resources],
             "unused_resources": self.unused_resources,
             "duplicates": self.duplicates,
+            "anomalies": [a.to_dict() for a in self.anomalies],
             "scanned_files_count": self.scanned_files_count,
             "timestamp": self.timestamp,
         }
@@ -172,6 +203,27 @@ class AndroidResourceGraphEngine:
                             if d_file.suffix == ".xml":
                                 self._parse_xml_references(d_file, references, definitions)
 
+                # Menu / Navigation / Anim / Color directories
+                elif dir_name.startswith(("menu", "navigation", "anim", "color", "font")):
+                    r_type = dir_name.split("-")[0]
+                    for r_file in item.iterdir():
+                        if r_file.is_file() and not r_file.name.startswith("."):
+                            scanned_count += 1
+                            res_name = r_file.stem
+                            key = f"{r_type}/{res_name}"
+                            definitions.setdefault(key, []).append(
+                                ResourceDefinition(
+                                    res_type=r_type,
+                                    name=res_name,
+                                    value=str(r_file),
+                                    file_path=str(r_file),
+                                    line=1,
+                                    config=config,
+                                )
+                            )
+                            if r_file.suffix == ".xml":
+                                self._parse_xml_references(r_file, references, definitions)
+
         # 2. Index AndroidManifest.xml
         for manifest_path in root.glob("**/AndroidManifest.xml"):
             if "build" in manifest_path.parts:
@@ -187,18 +239,45 @@ class AndroidResourceGraphEngine:
             scanned_count += 1
             self._scan_code_references(code_file, references)
 
-        # 4. Diagnose Missing and Unused Resources
+        # 4. Diagnose Missing, Unused, Duplicate, and Broken Resources
         missing_resources: List[ResourceReference] = []
+        anomalies: List[ResourceAnomaly] = []
+
         for key, ref_list in references.items():
             if key not in definitions:
-                # Exclude system android references
                 missing_resources.extend(ref_list)
+                for ref in ref_list:
+                    anomalies.append(ResourceAnomaly(
+                        kind=ResourceAnomalyKind.MISSING_RESOURCE,
+                        key=key,
+                        source_file=ref.source_file,
+                        line=ref.line,
+                        description=f"Resource '{ref.reference_syntax}' is referenced but not defined in any res/ directory.",
+                    ))
 
         unused_resources: List[str] = []
-        for key in definitions.keys():
+        for key, def_list in definitions.items():
             # Exclude standard entrypoints like main launcher activity layout or styles often used by OS
             if key not in references:
                 unused_resources.append(key)
+                if def_list:
+                    d = def_list[0]
+                    anomalies.append(ResourceAnomaly(
+                        kind=ResourceAnomalyKind.UNUSED_RESOURCE,
+                        key=key,
+                        source_file=d.file_path,
+                        line=d.line,
+                        description=f"Resource '{key}' is defined in {Path(d.file_path).name} but never referenced in code or layouts.",
+                    ))
+
+        for dup in duplicates:
+            anomalies.append(ResourceAnomaly(
+                kind=ResourceAnomalyKind.DUPLICATE_RESOURCE,
+                key=dup.get("resource", "UNKNOWN"),
+                source_file=dup.get("file", "UNKNOWN"),
+                line=1,
+                description=f"Duplicate resource '{dup.get('resource')}' declared in configuration '{dup.get('config')}'.",
+            ))
 
         total_defs = sum(len(v) for v in definitions.values())
         total_refs = sum(len(v) for v in references.values())
@@ -213,7 +292,71 @@ class AndroidResourceGraphEngine:
             unused_resources=unused_resources,
             duplicates=duplicates,
             scanned_files_count=scanned_count,
+            anomalies=anomalies,
         )
+
+    def find_definitions_for_reference(self, ref_syntax: str, report: ResourceGraphReport) -> List[ResourceDefinition]:
+        """Bidirectionally locates definitions for a code or XML reference syntax (e.g. 'R.id.btn' or '@id/btn')."""
+        # Parse syntax into type and name
+        m_code = re.search(r'\bR\.(id|string|color|dimen|drawable|style|layout|mipmap|menu|anim)\.([a-zA-Z0-9_]+)\b', ref_syntax)
+        m_xml = re.search(r'@(?:\+id|id|string|color|dimen|drawable|style|layout|mipmap|menu|anim)/([a-zA-Z0-9_.]+)', ref_syntax)
+
+        res_type = ""
+        res_name = ""
+        if m_code:
+            res_type = m_code.group(1)
+            res_name = m_code.group(2)
+        elif m_xml:
+            parts = ref_syntax.lstrip("@").lstrip("+").split("/", 1)
+            if len(parts) == 2:
+                res_type = parts[0]
+                res_name = parts[1]
+
+        if not res_type or not res_name:
+            return []
+
+        key = f"{res_type}/{res_name}"
+        return report.definitions.get(key, [])
+
+    def find_code_references_for_resource(self, res_key: str, report: ResourceGraphReport) -> List[ResourceReference]:
+        """Finds all code/XML locations that reference a given resource key (e.g. 'string/app_name')."""
+        return report.references.get(res_key, [])
+
+    def correlate_runtime_error(
+        self,
+        error_trace: str,
+        report: Optional[ResourceGraphReport] = None,
+    ) -> Dict[str, Any]:
+        """Correlates a runtime Logcat crash trace with missing or broken resource definitions."""
+        correlated: List[ResourceAnomaly] = []
+        category = "UNKNOWN"
+        m_res_not_found = re.search(r"Resources\$NotFoundException:\s*(?:Resource\s*(?:ID\s*)?#?(?:0x[0-9a-fA-F]+|[a-zA-Z0-9_\.]+)|String resource ID.*)", error_trace)
+        m_inflate = re.search(r"InflateException:.*?(?:layout/|id/)([a-zA-Z0-9_]+)", error_trace)
+        m_no_such_field = re.search(r"NoSuchFieldError:\s*([a-zA-Z0-9_]+)", error_trace)
+
+        if m_res_not_found:
+            category = "RESOURCE_NOT_FOUND"
+        elif m_inflate:
+            category = "INFLATE_EXCEPTION"
+        elif m_no_such_field:
+            category = "NO_SUCH_FIELD"
+
+        if (m_res_not_found or m_inflate or m_no_such_field) and report:
+            for miss in report.missing_resources:
+                if miss.name in error_trace:
+                    correlated.append(ResourceAnomaly(
+                        kind=ResourceAnomalyKind.BROKEN_REFERENCE,
+                        key=f"{miss.res_type}/{miss.name}",
+                        source_file=miss.source_file,
+                        line=miss.line,
+                        description=f"Runtime crash matches missing resource '{miss.reference_syntax}'.",
+                        runtime_error_correlation=error_trace.strip()[:300],
+                    ))
+        return {
+            "category": category,
+            "error_trace": error_trace,
+            "anomalies": correlated,
+        }
 
     def _extract_config(self, dir_name: str) -> str:
         parts = dir_name.split("-", 1)
@@ -366,3 +509,7 @@ class AndroidResourceGraphEngine:
                         reference_syntax=m.group(0),
                     )
                 )
+
+
+AndroidResourceGraph = AndroidResourceGraphEngine
+

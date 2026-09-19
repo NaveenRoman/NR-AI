@@ -222,6 +222,15 @@ class ModelRouter:
         if any(kw in text for kw in reasoning_keywords):
             caps.add(ModelCapability.REASONING)
 
+        # Android Engineering
+        android_keywords = [
+            "android", "droid", "compose", "gradle", "kotlin", "apk", "logcat",
+            "avd", "emulator", "jetpack", "manifest", "android studio",
+        ]
+        if any(kw in text for kw in android_keywords):
+            caps.add(ModelCapability.CODING)
+            caps.add(ModelCapability.REASONING)
+
         return caps
 
     def find_models_for_capabilities(

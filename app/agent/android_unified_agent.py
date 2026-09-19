@@ -108,7 +108,7 @@ from app.agent.android_failure_evidence import FailureEvidenceCollector, Evidenc
 from app.agent.android_root_cause import RootCauseAnalysisEngine, RootCauseReport, RootCauseClassification
 from app.agent.android_repair_orchestrator import AutonomousRepairOrchestrator, RepairProposal, RepairExecutionResult, RepairOperation
 from app.agent.android_regression import AndroidRegressionEngine, TestComparisonReport
-from app.agent.android_e2e_engine import AndroidE2EEngine, E2EExecutionReport, E2EWorkflowStage
+from app.agent.android_e2e_engine import AndroidE2EEngine, E2EExecutionReport, E2EWorkflowStage, Phase4ExecutionReport
 
 from app.agent.android_visual_verifier import (
     VisualVerificationEngine,
@@ -118,6 +118,17 @@ from app.agent.android_visual_verifier import (
     AssertionType,
     SafeScreenshotManager,
 )
+from app.agent.android_studio_intelligence import AndroidStudioIntelligence, AndroidStudioProjectSnapshot
+from app.agent.android_project_graph import AndroidProjectGraphEngine, AndroidKnowledgeGraph
+from app.agent.android_semantic_engine import AndroidSemanticEngine
+from app.agent.android_resource_graph import AndroidResourceGraph
+from app.agent.android_compose_intelligence import AndroidComposeIntelligence
+from app.agent.android_test_intelligence import AndroidTestIntelligenceEngine
+from app.agent.android_ui_debugger import AndroidUIDebugger
+from app.agent.android_performance import AndroidPerformanceDiagnostics
+from app.agent.android_project_memory import AndroidProjectMemoryStore
+from app.agent.android_impact import AndroidImpactAnalyzer
+from app.agent.android_model_reasoning import AndroidModelReasoningEngine
 
 logger = logging.getLogger("NRAI.UnifiedAndroidAgent")
 
@@ -143,6 +154,15 @@ class UnifiedAndroidState(str, Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     STOPPED = "STOPPED"
+    # Phase 4 States
+    INSPECTING_PROJECT = "INSPECTING_PROJECT"
+    BUILDING_GRAPH = "BUILDING_GRAPH"
+    ANALYZING_SOURCE = "ANALYZING_SOURCE"
+    ANALYZING_RESOURCES = "ANALYZING_RESOURCES"
+    ANALYZING_COMPOSE = "ANALYZING_COMPOSE"
+    ANALYZING_TESTS = "ANALYZING_TESTS"
+    CORRELATING_EVIDENCE = "CORRELATING_EVIDENCE"
+    IMPACT_ANALYSIS = "IMPACT_ANALYSIS"
 
 
 class UnifiedErrorDomain(str, Enum):
@@ -268,6 +288,14 @@ class UnifiedStateMachine:
             UnifiedAndroidState.EXECUTING,
             UnifiedAndroidState.OBSERVING,
             UnifiedAndroidState.DIAGNOSING,
+            UnifiedAndroidState.INSPECTING_PROJECT,
+            UnifiedAndroidState.BUILDING_GRAPH,
+            UnifiedAndroidState.ANALYZING_SOURCE,
+            UnifiedAndroidState.ANALYZING_RESOURCES,
+            UnifiedAndroidState.ANALYZING_COMPOSE,
+            UnifiedAndroidState.ANALYZING_TESTS,
+            UnifiedAndroidState.CORRELATING_EVIDENCE,
+            UnifiedAndroidState.IMPACT_ANALYSIS,
             UnifiedAndroidState.FAILED,
             UnifiedAndroidState.STOPPED,
         },
@@ -331,6 +359,14 @@ class UnifiedStateMachine:
             UnifiedAndroidState.FAILED,
             UnifiedAndroidState.STOPPED,
         },
+        UnifiedAndroidState.INSPECTING_PROJECT: {UnifiedAndroidState.COMPLETED, UnifiedAndroidState.FAILED, UnifiedAndroidState.STOPPED, UnifiedAndroidState.IDLE},
+        UnifiedAndroidState.BUILDING_GRAPH: {UnifiedAndroidState.COMPLETED, UnifiedAndroidState.FAILED, UnifiedAndroidState.STOPPED, UnifiedAndroidState.IDLE},
+        UnifiedAndroidState.ANALYZING_SOURCE: {UnifiedAndroidState.COMPLETED, UnifiedAndroidState.FAILED, UnifiedAndroidState.STOPPED, UnifiedAndroidState.IDLE},
+        UnifiedAndroidState.ANALYZING_RESOURCES: {UnifiedAndroidState.COMPLETED, UnifiedAndroidState.FAILED, UnifiedAndroidState.STOPPED, UnifiedAndroidState.IDLE},
+        UnifiedAndroidState.ANALYZING_COMPOSE: {UnifiedAndroidState.COMPLETED, UnifiedAndroidState.FAILED, UnifiedAndroidState.STOPPED, UnifiedAndroidState.IDLE},
+        UnifiedAndroidState.ANALYZING_TESTS: {UnifiedAndroidState.COMPLETED, UnifiedAndroidState.FAILED, UnifiedAndroidState.STOPPED, UnifiedAndroidState.IDLE},
+        UnifiedAndroidState.CORRELATING_EVIDENCE: {UnifiedAndroidState.COMPLETED, UnifiedAndroidState.FAILED, UnifiedAndroidState.STOPPED, UnifiedAndroidState.IDLE},
+        UnifiedAndroidState.IMPACT_ANALYSIS: {UnifiedAndroidState.COMPLETED, UnifiedAndroidState.FAILED, UnifiedAndroidState.STOPPED, UnifiedAndroidState.IDLE},
         UnifiedAndroidState.COMPLETED: set(),
         UnifiedAndroidState.FAILED: set(),
         UnifiedAndroidState.STOPPED: set(),
@@ -723,6 +759,19 @@ class UnifiedAndroidAgent:
             safety_gate=self.safety,
             audit_logger=self.audit,
         )
+
+        # Phase 4 Intelligence Subsystems
+        self.studio_intelligence = AndroidStudioIntelligence()
+        self.project_graph_engine = AndroidProjectGraphEngine()
+        self.semantic_engine = AndroidSemanticEngine()
+        self.resource_graph_phase4 = AndroidResourceGraph()
+        self.compose_intelligence_phase4 = AndroidComposeIntelligence()
+        self.test_intelligence = AndroidTestIntelligenceEngine()
+        self.ui_debugger = AndroidUIDebugger()
+        self.performance_diagnostics = AndroidPerformanceDiagnostics(adb_client=self.tools.adb)
+        self.project_memory = AndroidProjectMemoryStore()
+        self.impact_analyzer = AndroidImpactAnalyzer()
+        self.model_reasoning = AndroidModelReasoningEngine()
 
         self.planner = UnifiedAndroidPlanner(model_router=self.router)
 
@@ -1657,3 +1706,127 @@ class UnifiedAndroidAgent:
             auto_repair=auto_repair,
             mock_mode=mock_mode,
         )
+
+    # -------------------------------------------------------------------------
+    # Phase 4 Advanced Android Engineering Intelligence Operations
+    # -------------------------------------------------------------------------
+
+    def inspect_android_studio_project(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> AndroidStudioProjectSnapshot:
+        """Inspects project structure, AGP, Gradle, JBR, and Android Studio environment."""
+        p = project_path or self.safety.authorized_project
+        return self.studio_intelligence.inspect_project(p)
+
+    def build_gradle_knowledge_graph(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> AndroidKnowledgeGraph:
+        """Constructs an authoritative multi-module Android Knowledge Graph."""
+        p = project_path or self.safety.authorized_project
+        return self.project_graph_engine.build_knowledge_graph(p)
+
+    def analyze_kotlin_semantics(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+        file_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Indexes Kotlin/Java AST structural facts and semantic inferences."""
+        p = Path(project_path or self.safety.authorized_project).resolve()
+        if file_path:
+            facts = self.semantic_engine.analyze_file(file_path)
+            return {"file": str(file_path), "facts": [f.to_dict() for f in facts], "symbols": len(self.semantic_engine.symbols)}
+        facts_count = 0
+        for kfile in list(p.glob("**/src/**/*.kt"))[:10]:
+            facts_count += len(self.semantic_engine.analyze_file(kfile))
+        return {"project_path": str(p), "total_facts": facts_count, "total_symbols": len(self.semantic_engine.symbols)}
+
+    def check_compose_state_flow(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Analyzes Jetpack Compose composables, state holders, and interaction flows."""
+        p = project_path or self.safety.authorized_project
+        report = self.compose_intelligence_phase4.analyze_project(p)
+        return report.to_dict()
+
+    def audit_android_xml_resources(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Audits Android XML resources, layout references, and configuration qualifiers."""
+        p = project_path or self.safety.authorized_project
+        report = self.resource_graph_phase4.build_graph(p)
+        return report.to_dict()
+
+    def diagnose_test_failure(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Scans test reports and diagnoses root causes with source correlation."""
+        p = project_path or self.safety.authorized_project
+        report = self.test_intelligence.analyze_project_tests(p)
+        return report.to_dict()
+
+    def debug_android_ui_behavior(
+        self,
+        action: str = "tap",
+        target: str = "button",
+        pre_elements: Optional[List[str]] = None,
+        post_elements: Optional[List[str]] = None,
+        logcat_snippet: str = "",
+    ) -> Dict[str, Any]:
+        """Diagnoses UI behavior anomalies, state divergence, and disconnected callbacks."""
+        pre = pre_elements or ["Item 0", "Counter: 0"]
+        post = post_elements or ["Item 0", "Counter: 0"]
+        diag = self.ui_debugger.diagnose_interaction(
+            pre_elements=pre,
+            post_elements=post,
+            action=action,
+            target_text=target,
+            logcat_snippet=logcat_snippet,
+        )
+        return diag.to_dict()
+
+    def measure_startup_performance(
+        self,
+        serial: Optional[str] = None,
+        component: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Measures bounded startup, memory, CPU, and ANR metrics on authorized device."""
+        s = serial or "emulator-5554"
+        comp = component or f"{AUTHORIZED_PACKAGE_NAME}/.MainActivity"
+        report = self.performance_diagnostics.generate_report(
+            serial=s,
+            package_name=AUTHORIZED_PACKAGE_NAME,
+            component=comp,
+        )
+        return report.to_dict()
+
+    def calculate_blast_radius(
+        self,
+        changed_files: Optional[List[str]] = None,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Calculates impact radius across modules, files, resources, and test sets."""
+        p = Path(project_path or self.safety.authorized_project).resolve()
+        kg = self.project_graph_engine.build_knowledge_graph(p)
+        files = changed_files or [str(f) for f in list(p.glob("**/MainActivity.kt"))[:1]]
+        report = self.impact_analyzer.analyze_impact(files, kg=kg)
+        return report.to_dict()
+
+    def run_advanced_engineering_loop(
+        self,
+        engineering_goal: str,
+        project_path: Optional[Union[str, Path]] = None,
+        mock_mode: bool = False,
+    ) -> Phase4ExecutionReport:
+        """Runs the 19-stage Advanced Android Engineering Intelligence Loop."""
+        p = project_path or self.safety.authorized_project
+        return self.e2e_engine.run_phase4_engineering_loop(
+            engineering_goal=engineering_goal,
+            project_path=p,
+            mock_mode=mock_mode,
+        )
+

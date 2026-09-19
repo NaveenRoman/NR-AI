@@ -422,7 +422,7 @@ class NRCompanion:
         if any(c_candidate.lower().startswith(pfx) for pfx in explicit_android_prefixes):
             return CommandCategory.ANDROID_STUDIO
 
-        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run", "inspect code", "fix build", "repair build", "explain build error", "explain error", "code repair", "inspect android code", "inspect android build", "check android build", "why is android build failing", "why is the android build failing", "fix android build", "repair android compilation error", "show android repair result", "android build error", "repair android", "inspect the android screen", "what is on the android screen", "inspect android screen", "android screen", "find the login button on android", "tap the login button on android", "tap on android", "scroll down on android", "scroll on android", "android ui", "verify the android screen", "verify android screen", "verify android ui", "android device state", "android device ui", "show android logs", "check android logs", "why did the android app crash", "inspect android runtime", "diagnose android error", "what happened in android", "android logs", "android logcat", "android runtime", "android crash", "unified android", "unified android workflow", "run unified android", "android e2e", "android end to end", "boot pixel 6", "boot emulator", "boot avd", "boot device", "stop emulator", "stop device", "preview compose", "compose preview", "analyze preview", "correlate semantics", "runtime semantics", "compose runtime", "verify ui", "verify screen", "take screenshot", "capture screen", "capture screenshot", "run full e2e", "e2e verification")):
+        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run", "inspect code", "fix build", "repair build", "explain build error", "explain error", "code repair", "inspect android code", "inspect android build", "check android build", "why is android build failing", "why is the android build failing", "fix android build", "repair android compilation error", "show android repair result", "android build error", "repair android", "inspect the android screen", "what is on the android screen", "inspect android screen", "android screen", "find the login button on android", "tap the login button on android", "tap on android", "scroll down on android", "scroll on android", "android ui", "verify the android screen", "verify android screen", "verify android ui", "android device state", "android device ui", "show android logs", "check android logs", "why did the android app crash", "inspect android runtime", "diagnose android error", "what happened in android", "android logs", "android logcat", "android runtime", "android crash", "unified android", "unified android workflow", "run unified android", "android e2e", "android end to end", "boot pixel 6", "boot emulator", "boot avd", "boot device", "stop emulator", "stop device", "preview compose", "compose preview", "analyze preview", "correlate semantics", "runtime semantics", "compose runtime", "verify ui", "verify screen", "take screenshot", "capture screen", "capture screenshot", "run full e2e", "e2e verification", "inspect android studio project", "build gradle knowledge graph", "gradle knowledge graph", "knowledge graph", "analyze kotlin semantics", "kotlin semantics", "check jetpack compose state flow", "compose state flow", "audit android xml resources", "xml resources", "diagnose test failure", "test failure", "debug android ui behavior", "ui behavior", "measure android startup performance", "startup performance", "calculate android blast radius", "blast radius", "run advanced android engineering loop", "advanced android engineering", "engineering loop")):
             return CommandCategory.ANDROID_STUDIO
 
         # 0B.35. Visual Studio Agent Workflows (Safe MSBuild, .NET, Solution & Code Repair)
@@ -2453,6 +2453,236 @@ class NRCompanion:
 
         c_low = clean_goal.lower()
 
+
+        # Phase 4 Command 1: Inspect Android Studio Project
+        if "inspect android studio project" in c_low or "inspect studio project" in c_low:
+            try:
+                snap = self.unified_android_agent.inspect_android_studio_project()
+                self.avatar.set_idle("Inspection completed.")
+                return CompanionResponse(
+                    text=f"Droid Project Inspection: AGP {snap.agp_version}, Gradle {snap.gradle_version}, Modules: {snap.modules}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=snap.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Inspection failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 4 Command 2: Build Gradle Knowledge Graph
+        if any(k in c_low for k in ("build gradle knowledge graph", "gradle knowledge graph", "project knowledge graph")):
+            try:
+                kg = self.unified_android_agent.build_gradle_knowledge_graph()
+                self.avatar.set_idle("Knowledge graph built.")
+                return CompanionResponse(
+                    text=f"Droid Knowledge Graph: Built graph with {len(kg.nodes)} nodes, {len(kg.edges)} edges across {len(kg.modules)} modules.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=kg.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Knowledge graph construction failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 4 Command 3: Analyze Kotlin Semantics
+        if any(k in c_low for k in ("analyze kotlin semantics", "kotlin semantics")):
+            try:
+                sem = self.unified_android_agent.analyze_kotlin_semantics()
+                self.avatar.set_idle("Semantic analysis completed.")
+                return CompanionResponse(
+                    text=f"Droid Kotlin Semantics: Indexed {sem.get('total_facts', 0)} facts and {sem.get('total_symbols', 0)} symbols.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=sem,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Semantic analysis failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 4 Command 4: Check Jetpack Compose State Flow
+        if any(k in c_low for k in ("check jetpack compose state flow", "compose state flow", "check compose state")):
+            try:
+                comp = self.unified_android_agent.check_compose_state_flow()
+                self.avatar.set_idle("Compose analysis completed.")
+                return CompanionResponse(
+                    text=f"Droid Compose State Flow: Scanned {comp.get('total_composables', 0)} composables, found {len(comp.get('anomalies', []))} anomalies.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=comp,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Compose analysis failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 4 Command 5: Audit Android XML Resources
+        if any(k in c_low for k in ("audit android xml resources", "xml resources", "audit android resources")):
+            try:
+                res = self.unified_android_agent.audit_android_xml_resources()
+                self.avatar.set_idle("Resource audit completed.")
+                return CompanionResponse(
+                    text=f"Droid Resource Audit: Scanned {res.get('total_resources', 0)} definitions and {res.get('total_references', 0)} references.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=res,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Resource audit failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 4 Command 6: Diagnose Test Failure
+        if any(k in c_low for k in ("diagnose test failure", "diagnose test", "test failure")):
+            try:
+                diag = self.unified_android_agent.diagnose_test_failure()
+                self.avatar.set_idle("Test diagnostics completed.")
+                return CompanionResponse(
+                    text=f"Droid Test Diagnostics: {diag.get('primary_cause_summary', 'Test analysis finished.')}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=diag,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Test diagnostics failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 4 Command 7: Debug Android UI Behavior
+        if any(k in c_low for k in ("debug android ui behavior", "ui behavior", "debug ui")):
+            try:
+                ui_diag = self.unified_android_agent.debug_android_ui_behavior()
+                self.avatar.set_idle("UI debugging completed.")
+                return CompanionResponse(
+                    text=f"Droid UI Debug: [{ui_diag.get('status')}] {ui_diag.get('explanation')}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=ui_diag,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: UI debug failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 4 Command 8: Measure Android Startup Performance
+        if any(k in c_low for k in ("measure android startup performance", "startup performance", "android startup")):
+            try:
+                perf = self.unified_android_agent.measure_startup_performance()
+                self.avatar.set_idle("Performance measurement completed.")
+                return CompanionResponse(
+                    text=f"Droid Performance: Package {perf.get('package_name')}, ANR: {perf.get('anr_detected')}, Crashes: {perf.get('crash_count')}.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=perf,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Performance measurement failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 4 Command 9: Calculate Android Blast Radius
+        if any(k in c_low for k in ("calculate android blast radius", "blast radius")):
+            try:
+                radius = self.unified_android_agent.calculate_blast_radius()
+                self.avatar.set_idle("Blast radius calculation completed.")
+                return CompanionResponse(
+                    text=f"Droid Blast Radius: Level [{radius.get('blast_radius_level')}] score {radius.get('blast_radius_score')} ({len(radius.get('affected_modules', []))} modules, {len(radius.get('minimum_sufficient_tests', []))} tests).",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=radius,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Blast radius calculation failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 4 Command 10: Run Advanced Android Engineering Loop
+        if any(k in c_low for k in ("run advanced android engineering loop", "advanced android engineering loop", "advanced android engineering")):
+            try:
+                e2e_res = self.unified_android_agent.run_advanced_engineering_loop(clean_goal, mock_mode=True)
+                self.avatar.set_idle("Advanced engineering loop completed.")
+                return CompanionResponse(
+                    text=f"Droid Advanced Engineering: {e2e_res.message} (Status: {e2e_res.verification_status.value})",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY if e2e_res.verification_status.value == "VERIFIED" else AvatarEmotion.NEUTRAL,
+                    data=e2e_res.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Advanced engineering loop failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
 
         # Phase 3 Command: Failure Reproduction
         if any(k in c_low for k in ("reproduce crash", "reproduce bug", "reproduce failure", "reproduce")):

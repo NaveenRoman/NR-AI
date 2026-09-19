@@ -58,6 +58,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
             {"id": "android.debug_app", "label": "Debug App", "icon": "play-circle"},
             {"id": "android.build_run", "label": "Build & Run", "icon": "cpu"},
             {"id": "android.find_issues", "label": "Find Issues", "icon": "info"},
+            {"id": "android.knowledge_graph", "label": "Knowledge Graph", "icon": "share-2"},
+            {"id": "android.engineering_loop", "label": "Engineering Loop", "icon": "zap"},
         ],
     },
     "vs_unified_agent": {

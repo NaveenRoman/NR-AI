@@ -39,6 +39,8 @@ class EvidenceType(str, Enum):
     SCREENSHOT = "SCREENSHOT"
     RUNTIME_STATE = "RUNTIME_STATE"
     DEVICE_STATE = "DEVICE_STATE"
+    STATIC_ANALYSIS = "STATIC_ANALYSIS"
+    COMPOSE = "COMPOSE"
 
 
 class EvidenceSeverity(str, Enum):

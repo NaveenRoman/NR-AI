@@ -416,15 +416,25 @@ class DeviceLifecycleController:
         self._current_state = DeviceLifecycleState.BOOTING
         logger.info(f"Launching emulator for '{validated_avd}' with timeout {cfg.timeout_seconds}s...")
 
+        log_path = Path(r"C:\NR-AI\scratch\emulator_boot.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_handle = open(log_path, "w", encoding="utf-8", errors="ignore")
+
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+
         try:
             proc = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=log_handle,
+                stderr=log_handle,
+                creationflags=creationflags,
                 shell=False,
             )
             self._active_processes[validated_avd] = proc
         except Exception as e:
+            log_handle.close()
             self._current_state = DeviceLifecycleState.FAILED
             logger.error(f"Failed to spawn emulator process: {e}")
             return DeviceLifecycleReport(
@@ -446,12 +456,12 @@ class DeviceLifecycleController:
             poll_ret = proc.poll()
             if poll_ret is not None and poll_ret != 0:
                 self._current_state = DeviceLifecycleState.FAILED
+                log_handle.flush()
                 err_out = ""
-                if proc.stderr:
-                    try:
-                        err_out = proc.stderr.read().decode("utf-8", errors="replace")
-                    except Exception:
-                        pass
+                try:
+                    err_out = log_path.read_text(encoding="utf-8", errors="replace")[-1000:]
+                except Exception:
+                    pass
                 logger.error(f"Emulator exited prematurely with return code {poll_ret}: {err_out}")
                 return DeviceLifecycleReport(
                     avd_name=validated_avd,
