@@ -1,46 +1,75 @@
 {
-  "project_id": "MyApp",
-  "project_name": "MyApp",
+  "project_id": "LiveTest",
+  "project_name": "LiveTest",
   "domain": "ANDROID",
-  "canonical_path": "C:\\NR-AI\\dev_projects\\MyApp",
-  "active_feature": "splash screen",
-  "last_action": "VERIFY",
-  "last_action_timestamp": 1789831689.0347438,
+  "canonical_path": "C:\\NR-AI\\dev_projects\\LiveTest",
+  "active_feature": "XYZ_VERSION_999",
+  "last_action": "INSTALL",
+  "last_action_timestamp": 1789835056.6434848,
   "affected_files": [
-    "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\layout\\activity_splash.xml"
+    "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_main.xml"
   ],
   "parameters": {
     "language": "Kotlin",
     "template": "empty_activity",
-    "pid": 5895,
-    "path": "C:\\NR-AI\\dev_projects\\MyApp",
-    "clean": true,
+    "build_exit_code": 0,
+    "apk_size": 798272,
+    "text": "Hello from NR-AI",
+    "clean": false,
     "exit_code": 0,
     "serial": "emulator-5554",
-    "pkg": "com.nrai.myapp",
+    "pkg": "com.nrai.livetest",
+    "pid": 8993,
     "activity": ".MainActivity",
-    "instruction": "Make the logo smaller and center it."
+    "fixed_file": "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\java\\com\\nrai\\livetest\\MainActivity.kt",
+    "rebuild_exit_code": 0,
+    "instruction": "Move it to the center.",
+    "path": "C:\\NR-AI\\dev_projects\\LiveTest",
+    "window": null,
+    "issues": 0,
+    "defect_found": false,
+    "background": "dark",
+    "size": "bigger",
+    "duration_s": 2.46,
+    "count": 8,
+    "status": "UNAVAILABLE",
+    "reason": "Unresolvable dependency"
   },
   "history": [
     {
       "action": "ACTIVATE_PROJECT",
-      "timestamp": 1789831637.2093737,
-      "project": "MyApp"
+      "timestamp": 1789834942.3850284,
+      "project": "LiveTest"
     },
     {
-      "action": "OPEN",
-      "target": "Android Studio",
-      "timestamp": 1789831661.9839187,
-      "affected_files": [],
+      "action": "MODIFY",
+      "target": "welcome screen",
+      "timestamp": 1789834977.9892764,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\java\\com\\nrai\\livetest\\MainActivity.kt",
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_main.xml",
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\AndroidManifest.xml"
+      ],
       "parameters": {
-        "pid": 2520,
-        "path": "C:\\NR-AI\\dev_projects\\MyApp"
+        "build_exit_code": 0,
+        "apk_size": 798970
+      }
+    },
+    {
+      "action": "CONTINUE_PROJECT",
+      "target": "welcome screen",
+      "timestamp": 1789834981.08301,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_main.xml"
+      ],
+      "parameters": {
+        "text": "Hello from NR-AI"
       }
     },
     {
       "action": "BUILD",
       "target": "build",
-      "timestamp": 1789831666.8469043,
+      "timestamp": 1789834983.6751747,
       "affected_files": [],
       "parameters": {
         "clean": false,
@@ -49,54 +78,222 @@
     },
     {
       "action": "RUN",
-      "target": "MyApp",
-      "timestamp": 1789831671.036854,
+      "target": "LiveTest",
+      "timestamp": 1789834987.4238675,
       "affected_files": [],
       "parameters": {
         "serial": "emulator-5554",
-        "pkg": "com.nrai.myapp",
-        "pid": 5895,
+        "pkg": "com.nrai.livetest",
+        "pid": 8604,
+        "activity": ".MainActivity"
+      }
+    },
+    {
+      "action": "CONTINUE_PROJECT",
+      "target": "welcome screen",
+      "timestamp": 1789834990.2097778,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_main.xml"
+      ],
+      "parameters": {
+        "text": "Hello from NR-AI"
+      }
+    },
+    {
+      "action": "FIX",
+      "target": "LiveTest",
+      "timestamp": 1789835009.924049,
+      "affected_files": [],
+      "parameters": {
+        "fixed_file": "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\java\\com\\nrai\\livetest\\MainActivity.kt",
+        "rebuild_exit_code": 0
+      }
+    },
+    {
+      "action": "RUN",
+      "target": "LiveTest",
+      "timestamp": 1789835013.1252508,
+      "affected_files": [],
+      "parameters": {
+        "serial": "emulator-5554",
+        "pkg": "com.nrai.livetest",
+        "pid": 8783,
         "activity": ".MainActivity"
       }
     },
     {
       "action": "MODIFY",
       "target": "splash screen",
-      "timestamp": 1789831671.0434408,
+      "timestamp": 1789835016.2879388,
       "affected_files": [
-        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\java\\com\\nrai\\myapp\\SplashActivity.kt",
-        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\layout\\activity_splash.xml",
-        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\AndroidManifest.xml"
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\java\\com\\nrai\\livetest\\SplashActivity.kt",
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_splash.xml",
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\AndroidManifest.xml"
       ],
-      "parameters": {}
+      "parameters": {
+        "build_exit_code": 0,
+        "apk_size": 798272
+      }
     },
     {
       "action": "CONTINUE_PROJECT",
       "target": "splash screen",
-      "timestamp": 1789831671.0489902,
+      "timestamp": 1789835019.1430936,
       "affected_files": [
-        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\layout\\activity_splash.xml"
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_splash.xml"
       ],
       "parameters": {
-        "instruction": "Make the logo smaller and center it."
+        "instruction": "Make the logo smaller."
       }
     },
     {
-      "action": "REBUILD",
-      "target": "build",
-      "timestamp": 1789831688.9061835,
+      "action": "CONTINUE_PROJECT",
+      "target": "splash screen",
+      "timestamp": 1789835021.5182867,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_splash.xml"
+      ],
+      "parameters": {
+        "instruction": "Move it to the center."
+      }
+    },
+    {
+      "action": "RUN",
+      "target": "LiveTest",
+      "timestamp": 1789835027.1127956,
       "affected_files": [],
       "parameters": {
-        "clean": true,
+        "serial": "emulator-5554",
+        "pkg": "com.nrai.livetest",
+        "pid": 8879,
+        "activity": ".MainActivity"
+      }
+    },
+    {
+      "action": "OPEN",
+      "target": "Android Studio",
+      "timestamp": 1789835028.624192,
+      "affected_files": [],
+      "parameters": {
+        "pid": 15032,
+        "path": "C:\\NR-AI\\dev_projects\\LiveTest",
+        "window": null
+      }
+    },
+    {
+      "action": "BUILD",
+      "target": "build",
+      "timestamp": 1789835031.550061,
+      "affected_files": [],
+      "parameters": {
+        "clean": false,
         "exit_code": 0
       }
     },
     {
-      "action": "VERIFY",
-      "target": "MyApp",
-      "timestamp": 1789831689.0347438,
+      "action": "RUN",
+      "target": "LiveTest",
+      "timestamp": 1789835037.4779387,
       "affected_files": [],
-      "parameters": {}
+      "parameters": {
+        "serial": "emulator-5554",
+        "pkg": "com.nrai.livetest",
+        "pid": 8993,
+        "activity": ".MainActivity"
+      }
+    },
+    {
+      "action": "DEBUG",
+      "target": "LiveTest",
+      "timestamp": 1789835040.1727688,
+      "affected_files": [],
+      "parameters": {
+        "exit_code": 0,
+        "issues": 0
+      }
+    },
+    {
+      "action": "FIX",
+      "target": "LiveTest",
+      "timestamp": 1789835042.5355864,
+      "affected_files": [],
+      "parameters": {
+        "defect_found": false
+      }
+    },
+    {
+      "action": "MODIFY",
+      "target": "new activity",
+      "timestamp": 1789835045.4073458,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\java\\com\\nrai\\livetest\\SettingsActivity.kt",
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_settings.xml",
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\AndroidManifest.xml"
+      ],
+      "parameters": {
+        "build_exit_code": 0
+      }
+    },
+    {
+      "action": "CONTINUE_PROJECT",
+      "target": "theme",
+      "timestamp": 1789835048.3078475,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_main.xml"
+      ],
+      "parameters": {
+        "background": "dark"
+      }
+    },
+    {
+      "action": "CONTINUE_PROJECT",
+      "target": "button",
+      "timestamp": 1789835051.6511724,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\LiveTest\\app\\src\\main\\res\\layout\\activity_main.xml"
+      ],
+      "parameters": {
+        "size": "bigger"
+      }
+    },
+    {
+      "action": "TEST",
+      "target": "LiveTest",
+      "timestamp": 1789835054.117646,
+      "affected_files": [],
+      "parameters": {
+        "exit_code": 0,
+        "duration_s": 2.46
+      }
+    },
+    {
+      "action": "DEBUG",
+      "target": "LiveTest",
+      "timestamp": 1789835056.6359594,
+      "affected_files": [],
+      "parameters": {
+        "exit_code": 0,
+        "issues": 0
+      }
+    },
+    {
+      "action": "INSPECT",
+      "target": "changes",
+      "timestamp": 1789835056.640971,
+      "affected_files": [],
+      "parameters": {
+        "count": 8
+      }
+    },
+    {
+      "action": "INSTALL",
+      "target": "XYZ_VERSION_999",
+      "timestamp": 1789835056.6434848,
+      "affected_files": [],
+      "parameters": {
+        "status": "UNAVAILABLE",
+        "reason": "Unresolvable dependency"
+      }
     }
   ]
 }

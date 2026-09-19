@@ -443,7 +443,7 @@ class NRCompanion:
                 if _eng.domain == EngineeringDomain.UNITY:
                     return CommandCategory.UNITY
                 if _eng.domain == EngineeringDomain.ANDROID:
-                    if _eng.action == EngineeringAction.OPEN and _eng.target in ("Android Studio", "studio", "Studio"):
+                    if _eng.action == EngineeringAction.OPEN:
                         return CommandCategory.ANDROID_STUDIO
                     if _eng.action in (
                         EngineeringAction.CREATE_PROJECT,

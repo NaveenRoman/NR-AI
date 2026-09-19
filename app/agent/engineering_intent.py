@@ -263,22 +263,26 @@ class EngineeringIntentParser:
 
         # -------------------------------------------------------------
         # 1. OPEN (IDE / Workspace Open)
-        # Crucial disambiguation: "open android studio", "launch studio", etc.
+        # Crucial disambiguation: "open android studio", "launch studio", "open the project", etc.
         # -------------------------------------------------------------
+        cmd_clean = cmd_lower.strip(".?! ")
         ide_open_patterns = (
             "open android studio", "launch android studio", "start android studio",
             "open studio", "launch studio", "start studio",
             "open unreal", "open unreal engine", "launch unreal",
             "open visual studio", "launch visual studio",
-            "open unity", "launch unity"
+            "open unity", "launch unity",
+            "open the project", "open project", "open workspace", "open"
         )
-        if any(cmd_lower == p or cmd_lower.startswith(p + " ") or cmd_lower.endswith(" " + p) for p in ide_open_patterns):
+        if any(cmd_clean == p or cmd_clean.startswith(p + " ") or cmd_clean.endswith(" " + p) or cmd_lower == p or cmd_lower.startswith(p + " ") or cmd_lower.endswith(" " + p) for p in ide_open_patterns):
             if "unreal" in cmd_lower:
                 return EngineeringAction.OPEN, "Unreal Engine", extracted_project, params, verif_level
             elif "visual studio" in cmd_lower:
                 return EngineeringAction.OPEN, "Visual Studio", extracted_project, params, verif_level
             elif "unity" in cmd_lower:
                 return EngineeringAction.OPEN, "Unity", extracted_project, params, verif_level
+            elif any(k in cmd_clean for k in ("project", "workspace")):
+                return EngineeringAction.OPEN, "project", extracted_project, params, verif_level
             else:
                 return EngineeringAction.OPEN, "Android Studio", extracted_project, params, verif_level
 
@@ -304,91 +308,125 @@ class EngineeringIntentParser:
             return EngineeringAction.CONFIGURE_PROJECT, None, extracted_project, params, verif_level
 
         # -------------------------------------------------------------
-        # 4. REBUILD
+        # 4. DEBUG / FIX (Must evaluate before BUILD to avoid "build fail" match)
+        # -------------------------------------------------------------
+        if any(k in cmd_lower for k in (
+            "find the problem and fix it", "fix the issue", "fix issue", "fix error",
+            "repair", "fix build", "fix crash", "diagnose crash", "root cause", "fix the problem", "fix problem"
+        )) or cmd_lower == "fix" or cmd_lower.startswith("fix "):
+            verif_level = VerificationLevel.SYNTAX
+            return EngineeringAction.FIX, None, extracted_project, params, verif_level
+
+        if any(k in cmd_lower for k in (
+            "why did the build fail", "why did build fail", "why did it fail",
+            "find any issues", "find issues", "find problem", "find the problem",
+            "debug", "diagnose", "why is", "what went wrong", "logcat crash", "check errors", "what is the error"
+        )):
+            verif_level = VerificationLevel.SYNTAX
+            return EngineeringAction.DEBUG, None, extracted_project, params, verif_level
+
+        # -------------------------------------------------------------
+        # 5. REBUILD
         # -------------------------------------------------------------
         if any(k in cmd_lower for k in ("rebuild", "clean build", "re-build", "clean and build")):
             verif_level = VerificationLevel.BUILD
             return EngineeringAction.REBUILD, None, extracted_project, params, verif_level
 
         # -------------------------------------------------------------
-        # 5. BUILD
+        # 6. BUILD
         # -------------------------------------------------------------
-        if any(k in cmd_lower for k in ("build it", "build project", "assemble", "assembledebug", "compile", "gradle build", "build")):
+        if any(k in cmd_lower for k in ("build it", "build project", "assemble", "assembledebug", "compile", "gradle build", "build the project", "build")):
             verif_level = VerificationLevel.BUILD
             return EngineeringAction.BUILD, None, extracted_project, params, verif_level
 
         # -------------------------------------------------------------
-        # 6. RUN
+        # 7. RUN
         # -------------------------------------------------------------
         if any(cmd_lower == p or cmd_lower.startswith(p + " ") or cmd_lower.endswith(" " + p) for p in (
-            "run it", "run", "run app", "run the app", "launch app", "launch the app", "start app", "deploy and run"
+            "run it", "run it again", "run again", "run", "run app", "run the app", "launch app", "launch the app", "start app", "deploy and run", "test run"
         )):
             verif_level = VerificationLevel.RUNTIME
             return EngineeringAction.RUN, None, extracted_project, params, verif_level
 
         # -------------------------------------------------------------
-        # 7. INSTALL
+        # 8. INSTALL
         # -------------------------------------------------------------
-        if any(k in cmd_lower for k in ("install apk", "install", "deploy apk", "push apk")):
+        if any(k in cmd_lower for k in ("install apk", "install", "deploy apk", "push apk", "install dependency", "install an unavailable dependency")):
             verif_level = VerificationLevel.RUNTIME
-            return EngineeringAction.INSTALL, None, extracted_project, params, verif_level
+            m_dep = re.search(r"(?:dependency|package|lib)\s+(?:called\s+)?([A-Za-z0-9_.-]+)", cmd, re.IGNORECASE)
+            dep_name = m_dep.group(1).strip().rstrip(".?! ") if m_dep else None
+            if dep_name:
+                params["dependency"] = dep_name
+            return EngineeringAction.INSTALL, dep_name, extracted_project, params, verif_level
 
         # -------------------------------------------------------------
-        # 8. TEST
+        # 9. TEST
         # -------------------------------------------------------------
-        if any(cmd_lower == "test" or cmd_lower == "test it" or cmd_lower.startswith("test ") or f" {k} " in f" {cmd_lower} " or cmd_lower.endswith(k) for k in (
+        if any(cmd_lower == "test" or cmd_lower == "test it" or cmd_lower == "test it again" or cmd_lower.startswith("test ") or f" {k} " in f" {cmd_lower} " or cmd_lower.endswith(k) for k in (
             "run tests", "run test", "test project", "unit test", "unit tests", "instrumentation test",
-            "diagnose test", "run the tests", "test the app", "test the project", "execute tests"
+            "diagnose test", "run the tests", "test the app", "test the project", "execute tests", "test it again", "retest"
         )):
             verif_level = VerificationLevel.SYNTAX
             return EngineeringAction.TEST, None, extracted_project, params, verif_level
 
         # -------------------------------------------------------------
-        # 9. DEBUG / FIX
-        # -------------------------------------------------------------
-        if any(k in cmd_lower for k in ("fix error", "repair", "fix build", "fix crash", "diagnose crash", "root cause", "fix")):
-            verif_level = VerificationLevel.SYNTAX
-            return EngineeringAction.FIX, None, extracted_project, params, verif_level
-        if any(k in cmd_lower for k in ("debug", "diagnose", "why is", "what went wrong", "logcat crash")):
-            return EngineeringAction.DEBUG, None, extracted_project, params, verif_level
-
-        # -------------------------------------------------------------
         # 10. VERIFY
         # -------------------------------------------------------------
-        if any(k in cmd_lower for k in ("verify all", "verify screen", "verify ui", "readiness audit", "audit readiness", "verify")):
+        if any(k in cmd_lower for k in ("verify all", "verify screen", "verify ui", "readiness audit", "audit readiness", "verify project", "verify")):
             verif_level = VerificationLevel.E2E
             return EngineeringAction.VERIFY, None, extracted_project, params, verif_level
 
         # -------------------------------------------------------------
         # 11. INSPECT
         # -------------------------------------------------------------
-        if any(k in cmd_lower for k in ("inspect project", "inspect workspace", "inspect code", "project structure", "inspect")):
-            return EngineeringAction.INSPECT, None, extracted_project, params, verif_level
+        if any(k in cmd_lower for k in ("show me what changed", "what changed", "show changes", "show diff", "git diff", "inspect project", "inspect workspace", "inspect code", "project structure", "inspect")):
+            target = "changes" if any(w in cmd_lower for w in ("changed", "diff", "changes")) else None
+            return EngineeringAction.INSPECT, target, extracted_project, params, verif_level
 
         # -------------------------------------------------------------
         # 12. CONTINUE_PROJECT / REFACTOR / MODIFY (Feature Refinement & Multi-turn Continuity)
-        # e.g.:
-        # - "Add a splash screen"
-        # - "I don't like the splash screen. Make the logo smaller and center it."
-        # - "Refactor MainActivity"
         # -------------------------------------------------------------
         active_feature = active_ctx.get("active_feature")
 
         # Check for feature refinement on active feature:
-        # e.g. "I don't like...", "Change...", "Make the logo smaller...", "Center it"
         refinement_signals = (
             "don't like", "dont like", "smaller", "larger", "bigger", "center", "center it",
-            "move", "change the", "update the", "adjust the", "make the"
+            "move", "move it", "change the", "update the", "adjust the", "make the", "style the",
+            "to the center"
         )
-        if any(s in cmd_lower for s in refinement_signals) and (active_feature or "splash" in cmd_lower or "logo" in cmd_lower or "screen" in cmd_lower):
-            target = active_feature or "splash screen"
+        element_signals = (
+            "splash", "logo", "screen", "button", "text", "welcome", "background",
+            "color", "layout", "view", "activity", "header", "title"
+        )
+        has_refinement = any(s in cmd_lower for s in refinement_signals)
+        has_element = any(e in cmd_lower for e in element_signals) or " it" in cmd_lower or cmd_lower.endswith(" it")
+        if has_refinement and (active_feature or has_element):
+            target = active_feature
+            if "logo" in cmd_lower:
+                target = "logo" if not active_feature else active_feature
+            elif "button" in cmd_lower:
+                target = "button"
+            elif "welcome" in cmd_lower:
+                target = "welcome screen"
+            elif "splash" in cmd_lower:
+                target = "splash screen"
+            elif not target:
+                target = "layout"
             params["instruction"] = cmd
             return EngineeringAction.CONTINUE_PROJECT, target, extracted_project, params, VerificationLevel.SYNTAX
 
+        # Specific activity / screen creation:
+        m_act = re.search(r"(?:create|add)\s+(?:a\s+|an\s+)?([A-Za-z0-9_]+Activity|[A-Za-z0-9_]+\s+activity|new activity)", cmd, re.IGNORECASE)
+        if m_act or "activity" in cmd_lower:
+            act_name = "MainActivity" if "mainactivity" in cmd_lower or "main activity" in cmd_lower else (m_act.group(1).strip() if m_act else "NewActivity")
+            params["instruction"] = cmd
+            params["activity_name"] = act_name
+            target = "welcome screen" if "welcome" in cmd_lower else act_name
+            return EngineeringAction.MODIFY, target, extracted_project, params, VerificationLevel.SYNTAX
+
         # Feature addition / modification:
-        # e.g. "Add a splash screen", "Add login", "Design settings screen"
         m_add = re.search(r"(?:add|create|implement|design|put)\s+(?:a\s+|an\s+)?([a-zA-Z0-9\s_-]+?)(?:\s+screen|\s+page|\s+feature|\s+view|\s+button|\s+flow|$)", cmd, re.IGNORECASE)
-        if m_add and any(w in cmd_lower for w in ("splash", "login", "screen", "button", "logo", "activity", "theme")):
+        if m_add and any(w in cmd_lower for w in ("splash", "login", "screen", "button", "logo", "activity", "theme", "welcome")):
             raw_feature = m_add.group(1).strip()
             feature_name = f"{raw_feature} screen" if "screen" not in raw_feature.lower() and "button" not in raw_feature.lower() else raw_feature
             params["instruction"] = cmd
@@ -399,6 +437,7 @@ class EngineeringIntentParser:
 
         # Fallback to MODIFY if active context has project and command expresses change
         if any(w in cmd_lower for w in ("add", "update", "modify", "edit", "change", "set", "style")):
+            params["instruction"] = cmd
             return EngineeringAction.MODIFY, active_feature or "project", extracted_project, params, VerificationLevel.SYNTAX
 
         # No engineering action recognized

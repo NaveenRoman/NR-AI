@@ -51,9 +51,10 @@ class ActiveProjectContextManager:
     Persists state to disk across agent interactions.
     """
 
-    def __init__(self, context_file: Optional[Union[str, Path]] = None):
-        self.is_memory = str(context_file) == ":memory:"
-        self.context_file = Path(DEFAULT_CONTEXT_FILE).resolve() if self.is_memory else Path(context_file or DEFAULT_CONTEXT_FILE).resolve()
+    def __init__(self, context_file: Optional[Union[str, Path]] = None, storage_path: Optional[Union[str, Path]] = None):
+        target_file = storage_path or context_file
+        self.is_memory = str(target_file) == ":memory:"
+        self.context_file = Path(DEFAULT_CONTEXT_FILE).resolve() if self.is_memory else Path(target_file or DEFAULT_CONTEXT_FILE).resolve()
         self._active_context: Optional[ActiveProjectContext] = None
 
         if not self.is_memory:
@@ -256,3 +257,7 @@ class ActiveProjectContextManager:
                 self._active_context = ActiveProjectContext.from_dict(data)
         except Exception as e:
             logger.warning(f"Failed to load active engineering context: {e}")
+
+
+# Alias for backward compatibility across acceptance test suites
+EngineeringContextManager = ActiveProjectContextManager

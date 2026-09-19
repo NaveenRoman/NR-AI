@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "updated_at": 1789831984.3807507,
+  "updated_at": 1789835947.48281,
   "projects": {
     "nr_android_test": {
       "project_id": "nr_android_test",
@@ -55,6 +55,21 @@
       "project_type": "APPLICATION",
       "package_id": null,
       "gradle_root": "C:\\NR-AI\\dev_projects\\FlowApp",
+      "modules": [
+        "app"
+      ],
+      "status": "ACTIVE",
+      "authorized_by_user": true,
+      "metadata": {}
+    },
+    "proj_568ec6bd": {
+      "project_id": "proj_568ec6bd",
+      "project_name": "LiveTest",
+      "canonical_path": "C:\\NR-AI\\dev_projects\\LiveTest",
+      "registration_time": 1789834266.6525815,
+      "project_type": "APPLICATION",
+      "package_id": null,
+      "gradle_root": "C:\\NR-AI\\dev_projects\\LiveTest",
       "modules": [
         "app"
       ],
