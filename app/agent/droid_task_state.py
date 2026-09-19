@@ -42,12 +42,25 @@ class TaskStatus(str, Enum):
 
 
 class TaskState(str, Enum):
+    IDLE = "IDLE"
     INITIALIZED = "INITIALIZED"
     INSPECTING = "INSPECTING"
-    BUILDING = "BUILDING"
-    TESTING = "TESTING"
-    DEPLOYING = "DEPLOYING"
+    REPRODUCING = "REPRODUCING"
+    COLLECTING_EVIDENCE = "COLLECTING_EVIDENCE"
+    DIAGNOSING = "DIAGNOSING"
+    PLANNING_REPAIR = "PLANNING_REPAIR"
+    VALIDATING_REPAIR = "VALIDATING_REPAIR"
     REPAIRING = "REPAIRING"
+    BUILDING = "BUILDING"
+    DEPLOYING = "DEPLOYING"
+    LAUNCHING = "LAUNCHING"
+    VERIFYING = "VERIFYING"
+    TESTING = "TESTING"
+    REGRESSION_CHECK = "REGRESSION_CHECK"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    STOPPED = "STOPPED"
+    BLOCKED = "BLOCKED"
     ROLLING_BACK = "ROLLING_BACK"
     INTERRUPTED = "INTERRUPTED"
     HALTED = "HALTED"
@@ -199,11 +212,12 @@ class DroidTaskStateStore:
     def create_task(
         self,
         project_id: str,
-        workflow: str,
+        workflow: str = "DEFAULT",
         initial_steps: Optional[List[Union[str, Dict[str, Any]]]] = None,
         agent: str = "Droid",
         initial_state: str = TaskState.INITIALIZED.value,
         metadata: Optional[Dict[str, Any]] = None,
+        description: Optional[str] = None,
     ) -> DroidTaskRecord:
         """Create and persist a new task record."""
         task_id = f"droid_task_{uuid.uuid4().hex[:12]}"
@@ -232,7 +246,10 @@ class DroidTaskStateStore:
         current_step_name = normalized_pending[0]["name"] if normalized_pending else "none"
 
         # Sanitize metadata
-        clean_checkpoint = sanitize_value(metadata) if metadata else None
+        meta = dict(metadata or {})
+        if description:
+            meta["description"] = description
+        clean_checkpoint = sanitize_value(meta) if meta else None
         clean_pending = sanitize_value(normalized_pending)
 
         record = DroidTaskRecord(

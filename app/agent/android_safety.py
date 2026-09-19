@@ -337,6 +337,13 @@ class AndroidSafetyGate:
     def clear_emergency_stop(self) -> None:
         self.deactivate_emergency_stop()
 
+    def reset_emergency_stop(self) -> None:
+        self.clear_emergency_stop()
+
+    def verify_project_path(self, project_path: Optional[Union[str, Path]]) -> Path:
+        return self.validate_project_path(project_path)
+
+
     def check_emergency_stop(self) -> None:
         if self.is_emergency_stop_active():
             raise EmergencyStopActiveError()
@@ -401,6 +408,9 @@ class AndroidSafetyGate:
             )
 
         return resolved
+
+    def verify_device_serial(self, serial: str) -> str:
+        return self.validate_device_serial(serial)
 
     def validate_device_serial(self, serial: str) -> str:
         """Ensures device serial is in the authorized test device allowlist."""

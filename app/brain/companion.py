@@ -2453,6 +2453,78 @@ class NRCompanion:
 
         c_low = clean_goal.lower()
 
+
+        # Phase 3 Command: Failure Reproduction
+        if any(k in c_low for k in ("reproduce crash", "reproduce bug", "reproduce failure", "reproduce")):
+            try:
+                res = self.unified_android_agent.reproduce_failure(clean_goal)
+                self.avatar.set_idle("Reproduction completed.")
+                return CompanionResponse(
+                    text=f"Droid: {res.message}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY if res.state.value == "REPRODUCED" else AvatarEmotion.NEUTRAL,
+                    data=res.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Reproduction failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 3 Command: Root Cause Diagnosis
+        if any(k in c_low for k in ("diagnose crash", "diagnose root cause", "root cause", "diagnose error")):
+            try:
+                task = self.unified_android_agent.task_state_store.get_active_task()
+                task_id = task.task_id if task else "T-DEFAULT"
+                res = self.unified_android_agent.diagnose_root_cause(task_id=task_id)
+                self.avatar.set_idle("Diagnosis completed.")
+                return CompanionResponse(
+                    text=f"Droid Root Cause: [{res.classification.value}] {res.issue_summary}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=res.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Diagnosis failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 3 Command: Autonomous E2E Debug & Repair Loop
+        if any(k in c_low for k in ("autonomous debug", "engineering loop", "fix and verify", "repair and verify", "find why")):
+            try:
+                res = self.unified_android_agent.run_autonomous_engineering_loop(clean_goal, mock_mode=True)
+                self.avatar.set_idle("Engineering loop completed.")
+                return CompanionResponse(
+                    text=f"Droid E2E Engineering: {res.message} (Status: {res.verification_status.value})",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY if res.verification_status.value == "VERIFIED" else AvatarEmotion.NEUTRAL,
+                    data=res.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Engineering loop failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
         # Phase 2 Command: Boot Device
         if any(k in c_low for k in ("boot pixel 6", "boot device", "boot emulator", "boot avd", "start emulator")):
             try:

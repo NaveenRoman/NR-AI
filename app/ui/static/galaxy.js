@@ -936,6 +936,9 @@ async function loadAgentWorkspace(agentId) {
           { id: "droid_preview_compose", label: "Inspect Compose Previews" },
           { id: "droid_verify_ui", label: "Verify UI Assertions" },
           { id: "droid_capture_screen", label: "Capture Screen" },
+          { id: "droid_reproduce_bug", label: "Reproduce Failure" },
+          { id: "droid_diagnose_root_cause", label: "Diagnose Root Cause" },
+          { id: "droid_e2e_engineering", label: "Run E2E Engineering Loop" },
           ...actions
         ];
       }

@@ -153,13 +153,16 @@ class CompanionDashboard:
 
         droid_st = {}
         u_agent = getattr(self.companion, "unified_android_agent", None)
-        if u_agent and hasattr(u_agent, "get_device_lifecycle_status"):
+        if u_agent:
             try:
                 rep = u_agent.get_device_lifecycle_status("Pixel_6_API_34")
                 if hasattr(rep, "to_dict"):
                     droid_st = rep.to_dict()
                 elif isinstance(rep, dict):
                     droid_st = rep
+                active_task = u_agent.task_state_store.get_active_task()
+                if active_task:
+                    droid_st["active_task"] = active_task.to_dict()
             except Exception:
                 pass
 

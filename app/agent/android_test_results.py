@@ -88,6 +88,25 @@ class JUnitReport:
     is_success: bool
     timestamp: float = field(default_factory=time.time)
 
+    @property
+    def passed(self) -> int:
+        return self.total_tests - self.total_failures - self.total_errors - self.total_skipped
+
+    @property
+    def failed(self) -> int:
+        return self.total_failures
+
+    @property
+    def errors(self) -> int:
+        return self.total_errors
+
+    @property
+    def skipped(self) -> int:
+        return self.total_skipped
+
+    def get_failed_tests(self) -> List[TestCaseResult]:
+        return self.failures
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "total_tests": self.total_tests,

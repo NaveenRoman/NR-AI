@@ -99,10 +99,10 @@ class AndroidUISnapshot:
     """Immutable state snapshot capturing UI state and actionable targets at a moment in time."""
     snapshot_id: str
     device_serial: str
-    foreground_app: Dict[str, str]
-    screen_dimensions: Tuple[int, int]
-    timestamp: float
-    targets: List[AndroidTarget]
+    foreground_app: Dict[str, str] = field(default_factory=dict)
+    screen_dimensions: Tuple[int, int] = (1080, 2400)
+    timestamp: float = field(default_factory=time.time)
+    targets: List[AndroidTarget] = field(default_factory=list)
     target_map: Dict[str, AndroidTarget] = field(default_factory=dict)
     visible_text_items: List[str] = field(default_factory=list)
     raw_xml_length: int = 0
@@ -764,3 +764,6 @@ def parse_model_ui_action(raw_text: str) -> Dict[str, Any]:
             )
 
     return data
+
+# Phase 3 compatibility alias
+AndroidUIIntelligence = AndroidUIController

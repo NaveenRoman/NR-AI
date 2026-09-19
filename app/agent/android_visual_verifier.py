@@ -464,3 +464,6 @@ class VisualVerificationEngine:
             return res_matches[0]
 
         return None
+
+# Phase 3 compatibility alias
+AndroidVisualVerifier = VisualVerificationEngine

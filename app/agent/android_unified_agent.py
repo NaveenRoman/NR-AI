@@ -101,6 +101,15 @@ from app.agent.android_runtime_semantics import (
     CorrelatedSemanticsNode,
     CorrelationEvidence,
 )
+
+from app.agent.android_reproduction import FailureReproductionEngine, ReproductionPlan, ReproductionResult, ReproductionState
+from app.agent.android_ui_actions import ApprovedUIActionEngine, ApprovedUIActionType, UIActionResult
+from app.agent.android_failure_evidence import FailureEvidenceCollector, EvidenceType, EvidenceRecord
+from app.agent.android_root_cause import RootCauseAnalysisEngine, RootCauseReport, RootCauseClassification
+from app.agent.android_repair_orchestrator import AutonomousRepairOrchestrator, RepairProposal, RepairExecutionResult, RepairOperation
+from app.agent.android_regression import AndroidRegressionEngine, TestComparisonReport
+from app.agent.android_e2e_engine import AndroidE2EEngine, E2EExecutionReport, E2EWorkflowStage
+
 from app.agent.android_visual_verifier import (
     VisualVerificationEngine,
     VisualVerificationReport,
@@ -608,6 +617,13 @@ class UnifiedAndroidAgent:
         semantics_correlator: Optional[RuntimeComposeSemanticsCorrelator] = None,
         visual_verifier: Optional[VisualVerificationEngine] = None,
         screenshot_manager: Optional[SafeScreenshotManager] = None,
+        reproduction_engine: Optional[FailureReproductionEngine] = None,
+        ui_action_engine: Optional[ApprovedUIActionEngine] = None,
+        evidence_collector: Optional[FailureEvidenceCollector] = None,
+        root_cause_engine: Optional[RootCauseAnalysisEngine] = None,
+        repair_orchestrator: Optional[AutonomousRepairOrchestrator] = None,
+        regression_engine: Optional[AndroidRegressionEngine] = None,
+        e2e_engine: Optional[AndroidE2EEngine] = None,
     ):
         self.project_registry = project_registry or AndroidProjectRegistry()
         self.safety = safety_gate or AndroidSafetyGate(project_registry=self.project_registry)
@@ -661,6 +677,30 @@ class UnifiedAndroidAgent:
         self.semantics_correlator = semantics_correlator or RuntimeComposeSemanticsCorrelator(
             compose_intelligence=self.compose_intelligence,
         )
+        self.reproduction_engine = reproduction_engine or FailureReproductionEngine(safety_gate=self.safety, audit_logger=self.audit)
+        self.ui_action_engine = ui_action_engine or ApprovedUIActionEngine(safety_gate=self.safety, audit_logger=self.audit)
+        self.evidence_collector = evidence_collector or FailureEvidenceCollector(safety_gate=self.safety, audit_logger=self.audit)
+        self.root_cause_engine = root_cause_engine or RootCauseAnalysisEngine(
+            ast_engine=self.ast_engine,
+            resource_graph=self.resource_graph,
+            gradle_intelligence=self.gradle_intelligence,
+            compose_intelligence=self.compose_intelligence,
+            safety_gate=self.safety,
+            audit_logger=self.audit,
+        )
+        self.repair_orchestrator = repair_orchestrator or AutonomousRepairOrchestrator(
+            code_repair_engine=self.code_repair,
+            ast_engine=self.ast_engine,
+            gradle_runner=self.tools.gradle,
+            safety_gate=self.safety,
+            audit_logger=self.audit,
+        )
+        self.regression_engine = regression_engine or AndroidRegressionEngine(
+            gradle_runner=self.tools.gradle,
+            test_parser=self.test_parser,
+            safety_gate=self.safety,
+            audit_logger=self.audit,
+        )
         self.screenshot_manager = screenshot_manager or SafeScreenshotManager(
             adb_client=self.tools.adb,
             safety_gate=self.safety,
@@ -669,6 +709,19 @@ class UnifiedAndroidAgent:
             screenshot_manager=self.screenshot_manager,
             audit_logger=self.audit,
             safety_gate=self.safety,
+        )
+        self.e2e_engine = e2e_engine or AndroidE2EEngine(
+            reproduction_engine=self.reproduction_engine,
+            ui_actions=self.ui_action_engine,
+            evidence_collector=self.evidence_collector,
+            root_cause_engine=self.root_cause_engine,
+            repair_orchestrator=self.repair_orchestrator,
+            regression_engine=self.regression_engine,
+            lifecycle_controller=self.lifecycle_controller,
+            visual_verifier=self.visual_verifier,
+            task_state_store=self.task_state_store,
+            safety_gate=self.safety,
+            audit_logger=self.audit,
         )
 
         self.planner = UnifiedAndroidPlanner(model_router=self.router)
@@ -1465,3 +1518,142 @@ class UnifiedAndroidAgent:
             self.audit.log_event("UNIFIED_ANDROID_WORKFLOW_RESULT", sanitized, status="success" if res.success else "failure")
         except Exception as e:
             logger.warning(f"Failed to audit workflow result: {e}")
+
+    # -------------------------------------------------------------------------
+    # Droid Phase 3: Autonomous Debugging, Repair & E2E Engineering
+    # -------------------------------------------------------------------------
+
+    def reproduce_failure(
+        self,
+        bug_description: str,
+        project_id: str = "nr_android_test",
+        package_name: str = AUTHORIZED_PACKAGE_NAME,
+        target_screen: Optional[str] = "MainActivity",
+        serial: Optional[str] = None,
+    ) -> ReproductionResult:
+        self.safety.check_emergency_stop()
+        plan = self.reproduction_engine.create_plan_from_description(
+            bug_description=bug_description,
+            project_id=project_id,
+            package_name=package_name,
+            target_screen=target_screen,
+        )
+        res = self.reproduction_engine.execute_plan(
+            plan=plan,
+            ui_action_engine=self.ui_action_engine,
+            diagnostics_controller=self.diagnostics_controller,
+            serial=serial,
+        )
+        if res.state == ReproductionState.REPRODUCED:
+            task = self.task_state_store.get_active_task()
+            if task:
+                self.task_state_store.save_checkpoint(
+                    task_id=task.task_id,
+                    checkpoint_name="FAILURE_REPRODUCED",
+                    data=res.to_dict(),
+                )
+        return res
+
+    def execute_ui_action(
+        self,
+        action_type: str,
+        identifier_type: str = "resource_id",
+        identifier_value: str = "",
+        text: Optional[str] = None,
+        serial: Optional[str] = None,
+    ) -> UIActionResult:
+        self.safety.check_emergency_stop()
+        atype = action_type.upper()
+        if atype == "TAP":
+            return self.ui_action_engine.tap_by_identifier(
+                identifier_type=identifier_type,
+                identifier_value=identifier_value,
+                serial=serial,
+            )
+        elif atype == "TYPE_TEXT":
+            return self.ui_action_engine.type_text_into_target(
+                identifier_type=identifier_type,
+                identifier_value=identifier_value,
+                text=text or "",
+                serial=serial,
+            )
+        elif atype == "PRESS_BACK":
+            return self.ui_action_engine.press_back(serial=serial)
+        elif atype == "SCROLL":
+            return self.ui_action_engine.scroll(direction=text or "DOWN", serial=serial)
+        else:
+            return UIActionResult(
+                success=False,
+                action_type=ApprovedUIActionType.TAP,
+                message=f"Unsupported UI action: {action_type}",
+                error="ACTION_NOT_ALLOWED",
+            )
+
+    def collect_failure_evidence(
+        self,
+        task_id: str,
+        project_id: str = "nr_android_test",
+        logcat_text: Optional[str] = None,
+        error_message: Optional[str] = None,
+        test_case_name: Optional[str] = None,
+    ) -> List[EvidenceRecord]:
+        records = []
+        if logcat_text:
+            records.extend(self.evidence_collector.collect_from_logcat(logcat_text, task_id=task_id, project_id=project_id))
+        if error_message:
+            records.append(self.evidence_collector.collect_from_build_error(error_message, task_id=task_id, project_id=project_id))
+        return records
+
+    def diagnose_root_cause(
+        self,
+        task_id: str,
+        evidence_records: Optional[List[EvidenceRecord]] = None,
+        project_path: Optional[str] = None,
+    ) -> RootCauseReport:
+        records = evidence_records or self.evidence_collector.get_records_by_task(task_id)
+        return self.root_cause_engine.analyze(records, project_path=project_path)
+
+    def propose_and_apply_repair(
+        self,
+        proposal: RepairProposal,
+        validate_build: bool = True,
+    ) -> RepairExecutionResult:
+        res = self.repair_orchestrator.execute_repair(proposal, validate_build=validate_build)
+        if res.success:
+            task = self.task_state_store.get_active_task()
+            if task:
+                self.task_state_store.save_checkpoint(
+                    task_id=task.task_id,
+                    checkpoint_name="REPAIR_APPLIED",
+                    data=res.to_dict(),
+                )
+        return res
+
+    def run_regression_check(
+        self,
+        changed_files: List[Union[str, Path]],
+        task_id: str = "T-DEFAULT",
+    ) -> TestComparisonReport:
+        affected = self.regression_engine.identify_affected_tests(changed_files)
+        report = self.regression_engine.run_tests(task_id=task_id)
+        return self.regression_engine.compare_test_runs(report, report, affected_classes=affected)
+
+    def run_autonomous_engineering_loop(
+        self,
+        bug_description: str,
+        project_id: str = "nr_android_test",
+        package_name: str = AUTHORIZED_PACKAGE_NAME,
+        target_screen: Optional[str] = "MainActivity",
+        serial: Optional[str] = None,
+        auto_repair: bool = True,
+        mock_mode: bool = False,
+    ) -> E2EExecutionReport:
+        return self.e2e_engine.run_engineering_loop(
+            bug_description=bug_description,
+            project_id=project_id,
+            package_name=package_name,
+            target_screen=target_screen,
+            serial=serial,
+            auto_repair=auto_repair,
+            mock_mode=mock_mode,
+        )
