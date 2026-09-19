@@ -58,7 +58,13 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
    - `ActiveProjectContextManager`: Manages active context lifecycle, persistence to JSON, memory isolation, and high-level concept resolution.
    - High-Level Concept-to-File Resolution: Automatically maps abstract feature concepts ("splash screen", "login", "auth", "logo", "main activity") to concrete source and resource files.
 
-3. **Droid Production Stack (Phases 1–5)**:
+3. **Real Engineering Execution & Deterministic Toolchain Control (`app/agent/android_unified_agent.py`)**:
+   - Studio Process Lifecycle: `_resolve_studio_executable()`, `_find_running_studio_process()`, `_launch_android_studio(project_path)` with live PID tracking via `psutil`.
+   - Bounded Gradle Execution: Real `gradlew.bat assembleDebug` runs, exit code verification, physical APK size/hash verification.
+   - Grounded Code/Resource Manipulation: Concrete disk modification for high-level features (`SplashActivity.kt`, `activity_splash.xml`, `AndroidManifest.xml`).
+   - ADB Deployment Pipeline: Validates device connectivity, boots authorized `Pixel_6_API_34` if needed, installs APK via `SafeAdbClient`, launches package and monitors PID.
+
+4. **Droid Production Stack (Phases 1–5)**:
    - Phase 1: Dynamic Project Registry, Gradle TOML Catalog, Kotlin/Java AST, XML Resource Graph, Compose Intelligence, JUnit/Lint Parser, SQLite Task Store.
    - Phase 2: 16-State Device Lifecycle Controller, 6-Stage Verified Deployment Pipeline, Compose Preview Analysis, Runtime Compose Semantics, Visual Verifier.
    - Phase 3: Failure Reproduction Engine, Approved UI Actions, Multi-Domain Evidence Collection, Root Cause Analysis, Bounded Repair Orchestrator (max 2 attempts).

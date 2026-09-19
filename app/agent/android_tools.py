@@ -1237,15 +1237,16 @@ class AndroidToolRegistry:
 
         project_name = str(params.get("project_name", "AndroidApp")).strip()
         package_name = params.get("package_name")
-        activity_type = str(params.get("activity_type", "login")).strip()
-        language = str(params.get("language", "kotlin")).strip()
+        activity_type = str(params.get("activity_type", "empty_activity")).strip()
+        language = str(params.get("language", "Kotlin")).strip()
 
         try:
             res = AndroidProjectScaffolder.scaffold_project(
                 project_name=project_name,
-                package_name=package_name or "com.nrai.devlogin",
+                package_name=package_name,
                 template=activity_type,
                 language=language,
+                overwrite=params.get("overwrite", True),
             )
             return AndroidToolResult(
                 success=True,

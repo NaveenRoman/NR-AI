@@ -1750,7 +1750,7 @@ async function executeAgentAction(agentId, actionId) {
       result = await res.json();
     }
     thinkingMsg.classList.remove("thinking");
-    thinkingMsg.textContent = result.message || `Action '${actionId}' executed successfully.`;
+    thinkingMsg.textContent = result.message || (typeof result.result === 'string' ? result.result : (result.result && result.result.message)) || (result.success ? `Action '${actionId}' completed.` : `Action '${actionId}' failed.`);
 
     if (state.ttsEnabled && !state.introMode) {
       speakText(thinkingMsg.textContent);

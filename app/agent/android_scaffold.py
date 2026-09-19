@@ -26,7 +26,7 @@ logger = logging.getLogger("NRAI.AndroidScaffold")
 
 DEV_PROJECTS_ROOT = Path(r"C:\NR-AI\dev_projects").resolve()
 PROTECTED_PROJECT_NAMES: Set[str] = {"nr_android_test", "app", "tests", ".git", "git", ".venv", "venv", "scratch"}
-PROHIBITED_FILENAMES: Set[str] = {".env", "local.properties", "google-services.json", "keystore.jks", "debug.keystore"}
+PROHIBITED_FILENAMES: Set[str] = {".env", "google-services.json", "keystore.jks", "debug.keystore"}
 PROHIBITED_EXTENSIONS: Set[str] = {".jks", ".keystore", ".pem", ".p12", ".key"}
 
 
@@ -40,9 +40,9 @@ class AndroidProjectScaffolder:
     def scaffold_project(
         cls,
         project_name: str,
-        template: str = "login_activity",
+        template: str = "empty_activity",
         language: str = "Kotlin",
-        package_name: str = "com.nrai.devlogin",
+        package_name: Optional[str] = None,
         overwrite: bool = False,
     ) -> Dict[str, Any]:
         r"""Scaffolds a complete sandboxed Android project under C:\NR-AI\dev_projects."""
@@ -74,8 +74,21 @@ class AndroidProjectScaffolder:
                     f"Project directory '{clean_name}' already exists. Overwrite denied.",
                 )
 
+        is_login = template in ("login_activity", "login")
+
+        # Resolve package name
+        if package_name and package_name != "com.nrai.devlogin":
+            pkg_name = package_name
+        elif is_login and package_name == "com.nrai.devlogin":
+            pkg_name = "com.nrai.devlogin"
+        elif is_login and clean_name.lower() in ("devlogin", "devloginapp"):
+            pkg_name = "com.nrai.devlogin"
+        else:
+            clean_pkg = re.sub(r"[^a-zA-Z0-9]", "", clean_name).lower()
+            pkg_name = f"com.nrai.{clean_pkg or 'devapp'}"
+
         # Create project tree
-        pkg_path = package_name.replace(".", "/")
+        pkg_path = pkg_name.replace(".", "/")
         src_dir = target_dir / "app" / "src" / "main" / "java" / pkg_path
         res_layout_dir = target_dir / "app" / "src" / "main" / "res" / "layout"
         res_values_dir = target_dir / "app" / "src" / "main" / "res" / "values"
@@ -91,7 +104,13 @@ class AndroidProjectScaffolder:
         # 1. settings.gradle.kts
         settings_content = """pluginManagement {
     repositories {
-        google()
+        google {
+            content {
+                includeGroupByRegex("com\\\\.android.*")
+                includeGroupByRegex("com\\\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -112,8 +131,8 @@ include(":app")
 
         # 2. build.gradle.kts (root)
         root_build_content = """plugins {
-    id("com.android.application") version "8.2.2" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+    id("com.android.application") version "8.7.0" apply false
+    id("org.jetbrains.kotlin.android") version "1.9.24" apply false
 }
 """
         p_root_build = target_dir / "build.gradle.kts"
@@ -132,7 +151,7 @@ android {
 
     defaultConfig {
         applicationId = "__PKG__"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -146,27 +165,24 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     testImplementation("junit:junit:4.13.2")
 }
-""".replace("__PKG__", package_name)
+""".replace("__PKG__", pkg_name)
         p_app_build = target_dir / "app" / "build.gradle.kts"
         cls._safe_write(p_app_build, app_build_content)
         created_files.append(str(p_app_build))
 
         # 4. AndroidManifest.xml
+        activity_class = ".LoginActivity" if is_login else ".MainActivity"
         manifest_content = """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
@@ -175,9 +191,9 @@ dependencies {
         android:label="__NAME__"
         android:roundIcon="@android:drawable/sym_def_app_icon"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+        android:theme="@android:style/Theme.DeviceDefault.Light">
         <activity
-            android:name=".LoginActivity"
+            android:name="__ACTIVITY__"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -186,13 +202,14 @@ dependencies {
         </activity>
     </application>
 </manifest>
-""".replace("__NAME__", clean_name)
+""".replace("__NAME__", clean_name).replace("__ACTIVITY__", activity_class)
         p_manifest = target_dir / "app" / "src" / "main" / "AndroidManifest.xml"
         cls._safe_write(p_manifest, manifest_content)
         created_files.append(str(p_manifest))
 
         # 5. strings.xml
-        strings_content = """<resources>
+        if is_login:
+            strings_content = """<resources>
     <string name="app_name">__NAME__</string>
     <string name="prompt_email">Username or Email</string>
     <string name="prompt_password">Password</string>
@@ -202,12 +219,19 @@ dependencies {
     <string name="login_success">Login Successful!</string>
 </resources>
 """.replace("__NAME__", clean_name)
+        else:
+            strings_content = """<resources>
+    <string name="app_name">__NAME__</string>
+    <string name="welcome_message">Welcome to __NAME__</string>
+</resources>
+""".replace("__NAME__", clean_name)
         p_strings = res_values_dir / "strings.xml"
         cls._safe_write(p_strings, strings_content)
         created_files.append(str(p_strings))
 
-        # 6. activity_login.xml
-        layout_content = """<?xml version="1.0" encoding="utf-8"?>
+        # 6. Layout
+        if is_login:
+            layout_content = """<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -258,12 +282,29 @@ dependencies {
 
 </LinearLayout>
 """
-        p_layout = res_layout_dir / "activity_login.xml"
+            p_layout = res_layout_dir / "activity_login.xml"
+        else:
+            layout_content = """<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center">
+    <TextView
+        android:id="@+id/welcome_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/welcome_message"
+        android:textSize="20sp" />
+</LinearLayout>
+"""
+            p_layout = res_layout_dir / "activity_main.xml"
         cls._safe_write(p_layout, layout_content)
         created_files.append(str(p_layout))
 
-        # 7. LoginActivity.kt
-        kt_content = """package __PKG__
+        # 7. Kotlin Activity
+        if is_login:
+            kt_content = """package __PKG__
 
 import android.graphics.Color
 import android.os.Bundle
@@ -308,8 +349,22 @@ class LoginActivity : AppCompatActivity() {
         return null
     }
 }
-""".replace("__PKG__", package_name)
-        p_kt = src_dir / "LoginActivity.kt"
+""".replace("__PKG__", pkg_name)
+            p_kt = src_dir / "LoginActivity.kt"
+        else:
+            kt_content = """package __PKG__
+
+import android.app.Activity
+import android.os.Bundle
+
+class MainActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+    }
+}
+""".replace("__PKG__", pkg_name)
+            p_kt = src_dir / "MainActivity.kt"
         cls._safe_write(p_kt, kt_content)
         created_files.append(str(p_kt))
 
@@ -328,17 +383,25 @@ class LoginActivity : AppCompatActivity() {
                 shutil.copy2(src_w, dest_w)
                 created_files.append(str(dest_w))
 
-        # 9. Copy gradle.properties
+        # 9. gradle.properties
         p_props = target_dir / "gradle.properties"
-        cls._safe_write(p_props, "android.useAndroidX=true\norg.gradle.jvmargs=-Xmx2048m\n")
+        cls._safe_write(p_props, "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\n")
         created_files.append(str(p_props))
+
+        # 10. local.properties
+        sdk_path = r"C:\Users\navee\AppData\Local\Android\Sdk".replace("\\", "\\\\")
+        p_local = target_dir / "local.properties"
+        cls._safe_write(p_local, f"sdk.dir={sdk_path}\n")
+        created_files.append(str(p_local))
 
         logger.info(f"[AndroidScaffold] Successfully scaffolded project '{clean_name}' with {len(created_files)} files.")
         return {
             "success": True,
             "project_name": clean_name,
             "project_path": str(target_dir),
-            "package_name": package_name,
+            "project_dir": str(target_dir),
+            "canonical_path": str(target_dir),
+            "package_name": pkg_name,
             "template": template,
             "language": language,
             "files_created": created_files,

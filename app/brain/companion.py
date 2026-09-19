@@ -1140,6 +1140,7 @@ class NRCompanion:
                     },
                 )
 
+            res: Dict[str, Any] = {}
             # Specialist follow-up 1: Error inquiry
             if any(k in c_low for k in ("what is the error", "show error", "what went wrong", "any error", "check error")):
                 err = self.active_development_context.get("current_error", "NONE")
@@ -1181,11 +1182,6 @@ class NRCompanion:
                     "Gradle builds, code inspection, clean architecture scaffolds, and verification."
                 )
 
-            # Specialist creation / engineering workflow resolution
-            elif any(k in c_low for k in ("email", "password", "credentials")) and not any(k in c_low for k in ("create", "make", "add")):
-                resp_text = "Droid: Got it. I'll configure email and password input fields with form validation."
-            elif any(k in c_low for k in ("button", "blue", "color", "style")) and not any(k in c_low for k in ("create", "make", "add")):
-                resp_text = "Droid: Sure, I'll update the button style to primary blue in colors.xml and the layout."
             else:
                 # Universal Engineering Intent Execution
                 act_ctx = self.engineering_context_manager.get_active_project()
@@ -1220,13 +1216,16 @@ class NRCompanion:
                     resp_text = f"Droid: Standing by in {proj_name} workspace. Ready to build, run, inspect, or modify."
 
             self.add_agent_chat_message(agent_id, role="agent", text=resp_text)
+            resp_data = {"active_conversation_agent": "android_unified_agent", "agent_name": "Droid"}
+            if isinstance(res, dict):
+                resp_data.update(res)
             return CompanionResponse(
                 text=resp_text,
                 category=CommandCategory.ANDROID_STUDIO,
                 routed_to="Droid",
                 avatar_mode=AvatarMode.SPEAKING,
                 avatar_emotion=AvatarEmotion.ATTENTIVE,
-                data={"active_conversation_agent": "android_unified_agent", "agent_name": "Droid"},
+                data=resp_data,
             )
 
         elif agent_id == "vs_unified_agent":
@@ -1899,6 +1898,26 @@ class NRCompanion:
             if c_target.startswith(prefix):
                 app_query = c_target[len(prefix):].strip().rstrip(".?!").strip()
                 break
+
+        if app_query in ("android studio", "android"):
+            act_ctx = self.engineering_context_manager.get_active_project()
+            eng_intent = EngineeringIntentParser.parse(
+                command,
+                active_context=act_ctx.to_dict() if act_ctx else None,
+                default_domain=EngineeringDomain.ANDROID,
+            )
+            res = self.unified_android_agent.execute_engineering_intent(eng_intent)
+            self.active_conversation_agent = "android_unified_agent"
+            self.active_conversation_agent_name = "Droid"
+            self.avatar.set_idle("Android Studio workspace open.")
+            return CompanionResponse(
+                text=res.get("message", "Android Studio opened."),
+                category=CommandCategory.ANDROID_STUDIO,
+                routed_to="Droid",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.HAPPY,
+                data=res,
+            )
 
         t0 = time.time()
         launch_res = self.app_launcher.launch_detailed(app_query)

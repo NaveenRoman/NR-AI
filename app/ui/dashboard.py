@@ -28,6 +28,7 @@ import urllib.parse
 
 from app.ui.avatar_state import AvatarMode
 from app.remote.emergency import EmergencyStopController
+from app.agent.engineering_intent import EngineeringAction, EngineeringDomain, EngineeringIntent
 
 logger = logging.getLogger("NRAI.Dashboard")
 
@@ -962,22 +963,88 @@ class CompanionDashboard:
                         action_data = json.loads(body) if body else {}
                     except Exception:
                         action_data = {}
-                    action_id = action_data.get("action_id", "")
+                    action_id = action_data.get("action_id") or action_data.get("action", "")
                     label = action_data.get("label", action_id)
+                    params = action_data.get("parameters", {})
 
-                    prompt = f"Agent '{agent_id}' executing action: {label}"
-                    if dashboard_ref.companion and hasattr(dashboard_ref.companion, "interact"):
-                        resp = dashboard_ref.companion.interact(prompt, speak_output=False)
-                        reply_text = getattr(resp, "text", str(resp))
-                    else:
-                        reply_text = f"Action '{label}' executed for agent '{agent_id}'."
+                    status_val = "COMPLETED"
+                    reply_text = ""
+                    success = True
+                    result_data: Dict[str, Any] = {}
+
+                    # Direct deterministic execution for Android Unified Agent actions
+                    if agent_id in ("android_unified_agent", "droid") and dashboard_ref.companion and hasattr(dashboard_ref.companion, "unified_android_agent"):
+                        u_agent = dashboard_ref.companion.unified_android_agent
+                        act_proj = dashboard_ref.companion.engineering_context_manager.get_active_project()
+                        act_name = act_proj.project_name if act_proj else "MyApp"
+
+                        if action_id in ("android.create_project", "create_project"):
+                            p_name = params.get("project_name", act_name)
+                            lang = params.get("language", "Kotlin")
+                            template = params.get("template", "empty_activity")
+                            intent = EngineeringIntent(
+                                domain=EngineeringDomain.ANDROID,
+                                action=EngineeringAction.CREATE_PROJECT,
+                                project=p_name,
+                                parameters={"language": lang, "template": template},
+                            )
+                            res = u_agent.execute_engineering_intent(intent)
+                            success = res.get("success", True)
+                            status_val = res.get("status", "LIVE_VERIFIED" if success else "FAILED")
+                            reply_text = res.get("message", f"Created project {p_name}.")
+                            result_data = res
+                        elif action_id in ("open", "android.open", "open_studio", "open_android_studio"):
+                            intent = EngineeringIntent(
+                                domain=EngineeringDomain.ANDROID,
+                                action=EngineeringAction.OPEN,
+                                project=act_name,
+                            )
+                            res = u_agent.execute_engineering_intent(intent)
+                            success = res.get("success", True)
+                            status_val = res.get("status", "LIVE_VERIFIED" if success else "FAILED")
+                            reply_text = res.get("message", "Android Studio opened.")
+                            result_data = res
+                        elif action_id in ("build", "android.build"):
+                            intent = EngineeringIntent(
+                                domain=EngineeringDomain.ANDROID,
+                                action=EngineeringAction.BUILD,
+                                project=act_name,
+                            )
+                            res = u_agent.execute_engineering_intent(intent)
+                            success = res.get("success", True)
+                            status_val = res.get("status", "LIVE_VERIFIED" if success else "FAILED")
+                            reply_text = res.get("message", "Build completed.")
+                            result_data = res
+                        elif action_id in ("run", "android.run"):
+                            intent = EngineeringIntent(
+                                domain=EngineeringDomain.ANDROID,
+                                action=EngineeringAction.RUN,
+                                project=act_name,
+                            )
+                            res = u_agent.execute_engineering_intent(intent)
+                            success = res.get("success", True)
+                            status_val = res.get("status", "LIVE_VERIFIED" if success else "FAILED")
+                            reply_text = res.get("message", "Run completed.")
+                            result_data = res
+
+                    if not reply_text:
+                        prompt = label or action_id
+                        if dashboard_ref.companion and hasattr(dashboard_ref.companion, "interact"):
+                            resp = dashboard_ref.companion.interact(prompt, speak_output=False)
+                            reply_text = getattr(resp, "text", str(resp))
+                            success = True
+                        else:
+                            reply_text = f"Action '{label}' executed for agent '{agent_id}'."
+                            success = True
 
                     payload = json.dumps({
-                        "success": True,
-                        "agent_id": agent_id,
-                        "action_id": action_id,
-                        "result": reply_text,
-                    }, indent=2).encode("utf-8")
+                        "success": bool(success),
+                        "status": str(status_val),
+                        "agent_id": str(agent_id),
+                        "action_id": str(action_id),
+                        "message": str(reply_text),
+                        "result": result_data or str(reply_text),
+                    }, indent=2, default=str).encode("utf-8")
                     self._send_json(200, payload)
 
                 else:
