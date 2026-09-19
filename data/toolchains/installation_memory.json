@@ -13,7 +13,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "node.js": {
     "name": "Node.js",
@@ -29,7 +29,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "npm": {
     "name": "npm",
@@ -43,7 +43,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "java runtime": {
     "name": "Java Runtime",
@@ -57,7 +57,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "java compiler (javac)": {
     "name": "Java Compiler (javac)",
@@ -70,7 +70,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "maven": {
     "name": "Maven",
@@ -84,7 +84,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "gradle": {
     "name": "Gradle",
@@ -99,7 +99,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "android sdk": {
     "name": "Android SDK",
@@ -113,7 +113,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "adb (android debug bridge)": {
     "name": "ADB (Android Debug Bridge)",
@@ -127,7 +127,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "flutter": {
     "name": "Flutter",
@@ -142,7 +142,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "dart sdk": {
     "name": "Dart SDK",
@@ -157,7 +157,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "unity editor": {
     "name": "Unity Editor",
@@ -172,7 +172,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "unreal editor": {
     "name": "Unreal Editor",
@@ -185,7 +185,7 @@
       "Epic Games UE5 Installation"
     ],
     "human_action_required": "Install Unreal Engine 5.3 via Epic Games Launcher and accept license",
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "unrealbuildtool (ubt)": {
     "name": "UnrealBuildTool (UBT)",
@@ -198,7 +198,7 @@
       "DotNET UBT binary"
     ],
     "human_action_required": "Install Unreal Engine 5.3 via Epic Games Launcher",
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "msvc (cl.exe)": {
     "name": "MSVC (cl.exe)",
@@ -212,7 +212,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "windows sdk": {
     "name": "Windows SDK",
@@ -226,7 +226,7 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "docker": {
     "name": "Docker",
@@ -239,7 +239,7 @@
       "Docker Desktop daemon"
     ],
     "human_action_required": "Run C:\\NR-AI\\tools\\DockerDesktopInstaller.exe with Windows Administrator UAC approval and accept the WSL2 prompt",
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   },
   "git": {
     "name": "Git",
@@ -254,6 +254,6 @@
     ],
     "missing_components": [],
     "human_action_required": null,
-    "last_validated": "2026-09-10 13:33:54"
+    "last_validated": "2026-09-19 19:03:13"
   }
 }

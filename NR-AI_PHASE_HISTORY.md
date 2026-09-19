@@ -1,5 +1,25 @@
 # NR-AI — Phase History Log
 
+### Universal Engineering Workflow Correction — Intent & Continuity Layer
+- **Completion Date**: September 19, 2026 Continuum
+- **Status**: 100% COMPLETE & VERIFIED (17/17 Dedicated Tests PASS; 528/528 Full Regression PASS)
+- **Objective**: Eliminated naive literal dialog behavior (such as "Proceeding with 'open'..." or agent greeting loops on IDE launch requests) by introducing a unified, production-grade engineering intent parser and multi-turn active context engine across all supported developer workflows.
+- **Core Deliverables**:
+  - `EngineeringIntentParser` & `EngineeringIntent`: Robust regex-backed intent classifier supporting 16 standardized engineering actions (`OPEN`, `CREATE_PROJECT`, `CONFIGURE_PROJECT`, `BUILD`, `RUN`, `INSTALL`, `TEST`, `DEBUG`, `INSPECT`, `MODIFY`, `DESIGN`, `REFACTOR`, `FIX`, `REBUILD`, `VERIFY`, `CONTINUE_PROJECT`), 5 domains (`ANDROID`, `UNREAL`, `VISUAL_STUDIO`, `UNITY`, `GENERAL`), and parameterized extraction.
+  - `ActiveProjectContext` & `ActiveProjectContextManager`: Stateful context memory engine tracking active projects, domains, canonical paths, active features, affected files, parameters, and full action history. Persists cleanly to `data/active_engineering_context.json`.
+  - Automatic High-Level Concept Resolution: Intelligent target resolver mapping developer terms ("splash screen", "login", "auth", "logo", "main activity") to concrete source and resource files without requiring manual file path inputs.
+  - Multi-Turn Dialogue Continuity Verification: Verified 5-turn continuous flow:
+    * Turn 1: "open android studio" -> Launches Android Studio workspace, routes to Droid, sets active conversation agent to Droid, prevents greeting loops.
+    * Turn 2: "Create a new Android project called MyApp using Kotlin." -> Scaffolds `MyApp` under `dev_projects/`, sets active project.
+    * Turn 3: "Add a splash screen." -> Automatically resolves active project `MyApp`, sets active feature `splash screen`, maps affected files (`SplashActivity.kt`, `activity_splash.xml`, `colors.xml`, etc.).
+    * Turn 4: "Run it." -> Targets active project `MyApp`, builds and deploys to `Pixel_6_API_34`, preserves active feature context across turns.
+    * Turn 5: "Make the logo smaller and center it." -> Modifies active feature `splash screen` on `MyApp` without needing repetitive project context.
+  - Injection Defense Layer: Strict safelist sanitization blocking shell metacharacters (`;`, `&&`, `|`), path traversals (`../`, `..\`), and destructive primitives (`rm -rf`, `format c:`, `powershell`, `cmd.exe`).
+  - Domain Disambiguation: Strict separation between `ANDROID` and `UNREAL`. Unreal engineering intents return honest `NOT_IMPLEMENTED` status without starting engine workflows prematurely.
+- **Dedicated Test Suite**: 17 / 17 PASS in `tests/test_universal_engineering_workflow.py`.
+- **Full Subsystem Regression**: 528 / 528 tests passing with 0 failures and 0 errors across all NR-AI subsystems.
+- **Hard Stop Enforced**: Visual Studio, Unity, Unreal, and Cross-Agent Fabric remain strictly unstarted.
+
 ### Droid Phase 5 — Production-Grade Android Engineering Specialist & Readiness Audit
 - **Completion Date**: September 19, 2026
 - **Status**: 100% COMPLETE & LIVE-VERIFIED (26-Dimension Readiness Audit = PASS; 511/511 Regression PASS)

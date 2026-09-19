@@ -337,7 +337,8 @@ class VoiceListener:
         for pat in wake_prefixes:
             m = re.match(pat, normalized, flags=re.IGNORECASE)
             if m:
-                remainder = m.group(1) if m.lastindex and m.lastindex >= 1 else ""
+                m_orig = re.match(pat, cleaned, flags=re.IGNORECASE)
+                remainder = m_orig.group(1) if m_orig and m_orig.lastindex and m_orig.lastindex >= 1 else (m.group(1) if m.lastindex and m.lastindex >= 1 else "")
                 cmd = self.normalize_command(remainder) if remainder else ""
                 self.last_recognized_phrase = "Hey NR" if "hey" in cleaned.lower() else "Hello NR"
                 safe_print(f"⚡ Wake Word Recognized: '{cleaned}' (Normalized: '{normalized}')")

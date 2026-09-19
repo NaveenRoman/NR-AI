@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "updated_at": 1789817832.932338,
+  "updated_at": 1789826002.8940306,
   "projects": {
     "nr_android_test": {
       "project_id": "nr_android_test",
@@ -10,6 +10,51 @@
       "project_type": "APPLICATION",
       "package_id": "com.nrai.test",
       "gradle_root": "C:\\NR-AI\\nr_android_test",
+      "modules": [
+        "app"
+      ],
+      "status": "ACTIVE",
+      "authorized_by_user": true,
+      "metadata": {}
+    },
+    "proj_faa8f5ea": {
+      "project_id": "proj_faa8f5ea",
+      "project_name": "MyApp",
+      "canonical_path": "C:\\NR-AI\\dev_projects\\MyApp",
+      "registration_time": 1789822673.2525299,
+      "project_type": "APPLICATION",
+      "package_id": null,
+      "gradle_root": "C:\\NR-AI\\dev_projects\\MyApp",
+      "modules": [
+        "app"
+      ],
+      "status": "ACTIVE",
+      "authorized_by_user": true,
+      "metadata": {}
+    },
+    "proj_472db94e": {
+      "project_id": "proj_472db94e",
+      "project_name": "TestApp",
+      "canonical_path": "C:\\NR-AI\\dev_projects\\TestApp",
+      "registration_time": 1789823615.049931,
+      "project_type": "APPLICATION",
+      "package_id": null,
+      "gradle_root": "C:\\NR-AI\\dev_projects\\TestApp",
+      "modules": [
+        "app"
+      ],
+      "status": "ACTIVE",
+      "authorized_by_user": true,
+      "metadata": {}
+    },
+    "proj_e0f27846": {
+      "project_id": "proj_e0f27846",
+      "project_name": "FlowApp",
+      "canonical_path": "C:\\NR-AI\\dev_projects\\FlowApp",
+      "registration_time": 1789823615.3501587,
+      "project_type": "APPLICATION",
+      "package_id": null,
+      "gradle_root": "C:\\NR-AI\\dev_projects\\FlowApp",
       "modules": [
         "app"
       ],

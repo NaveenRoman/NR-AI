@@ -1,3 +1,15 @@
+from app.agent.engineering_intent import (
+    EngineeringAction,
+    EngineeringDomain,
+    EngineeringIntent,
+    EngineeringIntentParser,
+    VerificationLevel,
+)
+from app.agent.engineering_context import (
+    ActiveProjectContext,
+    ActiveProjectContextManager,
+)
+
 from app.agent.credential_diagnostics import CredentialDiagnosticEngine
 """
 NR AI Companion Interaction & Command Routing Engine.
@@ -21,6 +33,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -180,6 +193,7 @@ class NRCompanion:
             audit_logger=self.audit,
             memory=self.memory,
         )
+        self.engineering_context_manager = getattr(self.unified_android_agent, "context_manager", None) or ActiveProjectContextManager()
         self.vs_agent = UnifiedVisualStudioAgent(
             model_router=self.router,
             audit_logger=self.audit,
@@ -410,9 +424,49 @@ class NRCompanion:
                     continue
                 return CommandCategory.COMMAND_EXECUTION
 
-        # 0B.3. Android Studio Agent Workflows (Safe Android toolchain & verification)
         c_candidate = re.sub(r"^(?:please\s+|can you\s+|could you\s+)", "", c).strip()
         c_candidate = re.sub(r"[.?!]+$", "", c_candidate).strip()
+
+        # 0B.29. Universal Engineering Intent Check (Android & Unreal Workflows)
+        try:
+            act_ctx = self.engineering_context_manager.get_active_project()
+            _eng = EngineeringIntentParser.parse(
+                c_candidate,
+                active_context=act_ctx.to_dict() if act_ctx else None,
+                default_domain=None,
+            )
+            if _eng.is_valid:
+                if _eng.domain == EngineeringDomain.UNREAL:
+                    return CommandCategory.UNREAL
+                if _eng.domain == EngineeringDomain.VISUAL_STUDIO:
+                    return CommandCategory.VISUAL_STUDIO
+                if _eng.domain == EngineeringDomain.UNITY:
+                    return CommandCategory.UNITY
+                if _eng.domain == EngineeringDomain.ANDROID:
+                    if _eng.action == EngineeringAction.OPEN and _eng.target in ("Android Studio", "studio", "Studio"):
+                        return CommandCategory.ANDROID_STUDIO
+                    if _eng.action in (
+                        EngineeringAction.CREATE_PROJECT,
+                        EngineeringAction.CONTINUE_PROJECT,
+                        EngineeringAction.BUILD,
+                        EngineeringAction.REBUILD,
+                        EngineeringAction.RUN,
+                        EngineeringAction.INSTALL,
+                        EngineeringAction.TEST,
+                        EngineeringAction.MODIFY,
+                        EngineeringAction.DESIGN,
+                        EngineeringAction.REFACTOR,
+                        EngineeringAction.DEBUG,
+                        EngineeringAction.INSPECT,
+                        EngineeringAction.FIX,
+                        EngineeringAction.VERIFY,
+                        EngineeringAction.CONFIGURE_PROJECT,
+                    ):
+                        return CommandCategory.ANDROID_STUDIO
+        except Exception as _e:
+            logger.warning(f"Engineering intent classification failed: {_e}")
+
+        # 0B.3. Android Studio Agent Workflows (Safe Android toolchain & verification)
 
         explicit_android_prefixes = (
             "android:", "studio:", "android workflow:", "android agent:", "run android workflow:",
@@ -578,6 +632,14 @@ class NRCompanion:
         )
         if any(p in c_low_intro for p in intro_phrases):
             return CommandCategory.AGENTS
+
+        # 1c. Agents / Orchestrator Status & Inquiries (Preempts generic knowledge "what are the agents doing")
+        if any(phrase in c for phrase in ["agents", "what are the agents doing", "orchestrator", "agent status", "slots", "10-agent", "system status", "show status"]):
+            return CommandCategory.AGENTS
+
+        # 1d. Android Informational Queries (e.g. "what is the status of the android development environment")
+        if "android" in c and any(w in c for w in ("status", "environment", "sdk", "avd", "setup", "state")):
+            return CommandCategory.ANDROID
 
         # 2. Universal Knowledge & Research Inquiries (Takes precedence over generic news keywords)
         knowledge_prefixes = (
@@ -948,6 +1010,11 @@ class NRCompanion:
         c = text.strip()
         c_low = c.lower()
 
+        # Explicit toolchain / IDE commands (e.g. "open android studio", "open visual studio")
+        # are engineering actions, NOT agent addressing or session greetings.
+        if any(c_low.startswith(f"open {ide}") for ide in ("android studio", "androidstudio", "visual studio", "vs", "unity", "unreal")):
+            return None, None, c
+
         # Built-in agent alias mappings
         aliases: Dict[str, Tuple[str, str]] = {
             "droid": ("android_unified_agent", "Droid"),
@@ -1005,14 +1072,19 @@ class NRCompanion:
                 pass
 
         # Match exact address and activation triggers:
-        # e.g. "Droid", "Hey Droid", "Activate Droid", "Switch to Droid", "Open Droid", "Select Droid", "Talk to Droid"
-        activation_prefixes = ("hey", "hi", "hello", "activate", "switch to", "open", "select", "talk to", "go to")
+        # e.g. "Droid", "Hey Droid", "Activate Droid", "Switch to Droid", "Select Droid", "Talk to Droid"
+        # Note: "open <IDE>" (e.g. "open android studio") is an engineering/launch action, NOT an agent session activation greeting.
+        ide_aliases = {"android studio", "androidstudio", "visual studio", "vs", "unity", "unreal"}
+        activation_prefixes = ("hey", "hi", "hello", "activate", "switch to", "select", "talk to", "go to")
         for alias, (aid, fname) in aliases.items():
             if c_low == alias:
                 return aid, fname, ""
             for pfx in activation_prefixes:
                 if c_low == f"{pfx} {alias}":
                     return aid, fname, ""
+            # Allow "open droid" but NOT "open android studio"
+            if alias not in ide_aliases and c_low == f"open {alias}":
+                return aid, fname, ""
 
         # Match prefix address with remaining command:
         # e.g. "Droid, create a login screen", "Hey Droid, build the app", "Activate Droid and build the app"
@@ -1109,19 +1181,43 @@ class NRCompanion:
                     "Gradle builds, code inspection, clean architecture scaffolds, and verification."
                 )
 
-            # Specialist creation inquiry
-            elif any(k in c_low for k in ("create", "login screen", "login", "app", "activity")):
-                self.active_development_context["current_task"] = "Configuring Android login screen"
-                resp_text = (
-                    "Droid: Absolutely, Boss. I'll configure the Android login screen with clean architecture, "
-                    "email/password form validation, and Material 3 design."
-                )
-            elif any(k in c_low for k in ("email", "password", "credentials")):
+            # Specialist creation / engineering workflow resolution
+            elif any(k in c_low for k in ("email", "password", "credentials")) and not any(k in c_low for k in ("create", "make", "add")):
                 resp_text = "Droid: Got it. I'll configure email and password input fields with form validation."
-            elif any(k in c_low for k in ("button", "blue", "color", "style")):
+            elif any(k in c_low for k in ("button", "blue", "color", "style")) and not any(k in c_low for k in ("create", "make", "add")):
                 resp_text = "Droid: Sure, I'll update the button style to primary blue in colors.xml and the layout."
             else:
-                resp_text = f"Droid: Understood, Boss. Proceeding with '{command}' for the Android project."
+                # Universal Engineering Intent Execution
+                act_ctx = self.engineering_context_manager.get_active_project()
+                eng_intent = EngineeringIntentParser.parse(
+                    command,
+                    active_context=act_ctx.to_dict() if act_ctx else None,
+                    default_domain=EngineeringDomain.ANDROID,
+                )
+                if eng_intent.is_valid:
+                    # Let existing Phase 1-5 diagnostic/audit commands pass to _handle_android_studio if matched
+                    phase1_5_phrases = (
+                        "inspect android studio project", "build gradle knowledge graph",
+                        "analyze kotlin semantics", "check jetpack compose state flow",
+                        "audit android xml resources", "diagnose test failure",
+                        "debug android ui behavior", "measure android startup performance",
+                        "calculate android blast radius", "run advanced android engineering loop",
+                        "audit android readiness", "inspect studio workspace",
+                        "audit manifest merge", "audit android accessibility",
+                        "diagnose android jank", "list android projects",
+                        "reproduce crash", "boot pixel 6", "stop emulator",
+                        "preview compose", "run full e2e",
+                    )
+                    if any(p in c_low for p in phase1_5_phrases):
+                        resp = self._handle_android_studio(command)
+                        self.add_agent_chat_message(agent_id, role="agent", text=resp.text, data=resp.data)
+                        return resp
+
+                    res = self.unified_android_agent.execute_engineering_intent(eng_intent)
+                    resp_text = f"Droid: {res.get('message', 'Engineering workflow executed.')}"
+                else:
+                    proj_name = act_ctx.project_name if act_ctx else "nr_android_test"
+                    resp_text = f"Droid: Standing by in {proj_name} workspace. Ready to build, run, inspect, or modify."
 
             self.add_agent_chat_message(agent_id, role="agent", text=resp_text)
             return CompanionResponse(
@@ -1132,6 +1228,9 @@ class NRCompanion:
                 avatar_emotion=AvatarEmotion.ATTENTIVE,
                 data={"active_conversation_agent": "android_unified_agent", "agent_name": "Droid"},
             )
+
+        elif agent_id == "vs_unified_agent":
+            return self._handle_visual_studio(command)
 
         elif agent_id == "unity_autonomous_agent":
             if any(k in c_low for k in ("player controller", "controller", "script")):
@@ -1748,6 +1847,22 @@ class NRCompanion:
         projects = []
         if unreal_workspace.exists():
             projects = [p.name for p in unreal_workspace.iterdir() if p.is_dir()]
+
+        eng_intent = EngineeringIntentParser.parse(command, default_domain=EngineeringDomain.UNREAL)
+        if eng_intent.is_valid and eng_intent.domain == EngineeringDomain.UNREAL:
+            resp_text = (
+                f"Unreal Engine engineering intent recognized ({eng_intent.action.value} targeting '{eng_intent.target or eng_intent.project}'). "
+                "Unreal Phase 1 is not yet started. Foundation and intent routing contracts are verified. "
+                "Status: NOT_IMPLEMENTED."
+            )
+            return CompanionResponse(
+                text=resp_text,
+                category=CommandCategory.UNREAL,
+                routed_to="UnrealToolchain",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.ATTENTIVE,
+                data={"projects": projects, "intent": eng_intent.to_dict(), "status": "NOT_IMPLEMENTED"},
+            )
 
         resp_text = (
             f"Unreal Engine workspace verified at {unreal_workspace}. "
@@ -2457,6 +2572,43 @@ class NRCompanion:
 
         c_low = clean_goal.lower()
 
+
+        # Universal Engineering Intent
+        try:
+            act_ctx = self.engineering_context_manager.get_active_project()
+            eng_intent = EngineeringIntentParser.parse(
+                clean_goal,
+                active_context=act_ctx.to_dict() if act_ctx else None,
+                default_domain=EngineeringDomain.ANDROID,
+            )
+            if eng_intent.is_valid:
+                phase1_5_phrases = (
+                    "inspect project", "inspect android studio project", "build gradle knowledge graph",
+                    "analyze kotlin semantics", "check jetpack compose state flow",
+                    "audit android xml resources", "diagnose test failure",
+                    "debug android ui behavior", "measure android startup performance",
+                    "calculate android blast radius", "run advanced android engineering loop",
+                    "audit android readiness", "inspect studio workspace",
+                    "audit manifest merge", "audit android accessibility",
+                    "diagnose android jank", "list android projects",
+                    "reproduce crash", "boot pixel 6", "stop emulator",
+                    "preview compose", "run full e2e",
+                )
+                if not any(p in c_low for p in phase1_5_phrases):
+                    res = self.unified_android_agent.execute_engineering_intent(eng_intent)
+                    self.active_conversation_agent = "android_unified_agent"
+                    self.active_conversation_agent_name = "Droid"
+                    self.avatar.set_idle("Android workflow completed.")
+                    return CompanionResponse(
+                        text=res.get("message", f"Droid: {eng_intent.action.value} completed for '{eng_intent.project}'."),
+                        category=CommandCategory.ANDROID_STUDIO,
+                        routed_to="Droid",
+                        avatar_mode=AvatarMode.SPEAKING,
+                        avatar_emotion=AvatarEmotion.HAPPY,
+                        data=res,
+                    )
+        except Exception as e:
+            logger.warning(f"Engineering intent handling bypassed: {e}")
 
         # Phase 4 Command 1: Inspect Android Studio Project
         if "inspect android studio project" in c_low or "inspect studio project" in c_low:
@@ -3246,6 +3398,12 @@ class NRCompanion:
                     exec_cmd = cmd.split()
             else:
                 exec_cmd = list(cmd)
+
+            # Resolve executable path using augmented PATH environment if not absolute
+            if exec_cmd and not os.path.isabs(exec_cmd[0]):
+                resolved_bin = shutil.which(exec_cmd[0], path=exec_env.get("PATH"))
+                if resolved_bin:
+                    exec_cmd[0] = resolved_bin
 
             try:
                 proc = subprocess.run(

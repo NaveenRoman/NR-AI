@@ -489,7 +489,7 @@ class CompanionDashboard:
                 # 5. Legacy/Standard Companion Status API
                 elif parsed.path in ("/api/status", "/status"):
                     data = dashboard_ref.get_status_snapshot()
-                    payload = json.dumps(data, indent=2).encode("utf-8")
+                    payload = json.dumps(data, indent=2, default=str).encode("utf-8")
                     self._send_json(200, payload)
 
                 # 6. Companion Command GET

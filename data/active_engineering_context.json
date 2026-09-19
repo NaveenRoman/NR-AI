@@ -1,0 +1,263 @@
+{
+  "project_id": "MyApp",
+  "project_name": "MyApp",
+  "domain": "ANDROID",
+  "canonical_path": "C:\\NR-AI\\dev_projects\\MyApp",
+  "active_feature": "login screen",
+  "last_action": "INSPECT",
+  "last_action_timestamp": 1789825404.0947711,
+  "affected_files": [
+    "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\java\\com\\nrai\\test\\LoginActivity.kt",
+    "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\layout\\activity_login.xml",
+    "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\values\\strings.xml"
+  ],
+  "parameters": {
+    "language": "Kotlin",
+    "template": "empty_activity",
+    "instruction": "Make the button blue"
+  },
+  "history": [
+    {
+      "action": "ACTIVATE_PROJECT",
+      "timestamp": 1789823489.5327628,
+      "project": "MyApp"
+    },
+    {
+      "action": "MODIFY",
+      "target": "splash screen",
+      "timestamp": 1789823489.5337636,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\java\\com\\nrai\\test\\SplashActivity.kt",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\layout\\activity_splash.xml",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\values\\colors.xml",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\values\\strings.xml",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\AndroidManifest.xml"
+      ],
+      "parameters": {
+        "instruction": "Add a splash screen."
+      }
+    },
+    {
+      "action": "RUN",
+      "target": "MyApp",
+      "timestamp": 1789823489.5349028,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "CONTINUE_PROJECT",
+      "target": "splash screen",
+      "timestamp": 1789823489.5378218,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\java\\com\\nrai\\test\\SplashActivity.kt",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\layout\\activity_splash.xml",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\values\\colors.xml",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\values\\strings.xml",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\AndroidManifest.xml"
+      ],
+      "parameters": {
+        "instruction": "Make the logo smaller and center it."
+      }
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824034.4109979,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824034.7163007,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824034.9972107,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824035.2818737,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824035.5798187,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824035.8672945,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824036.1522448,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824036.438973,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824036.7170558,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824036.9974732,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824064.282004,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824068.814269,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824078.0972807,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824143.151054,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824150.2405107,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824264.786945,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "MODIFY",
+      "target": "login screen",
+      "timestamp": 1789824363.5060956,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\java\\com\\nrai\\test\\LoginActivity.kt",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\layout\\activity_login.xml",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\values\\strings.xml"
+      ],
+      "parameters": {
+        "instruction": "Create a login screen"
+      }
+    },
+    {
+      "action": "MODIFY",
+      "target": "login screen",
+      "timestamp": 1789824369.2325118,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\java\\com\\nrai\\test\\LoginActivity.kt",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\layout\\activity_login.xml",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\values\\strings.xml"
+      ],
+      "parameters": {
+        "instruction": "Create a login screen"
+      }
+    },
+    {
+      "action": "CONTINUE_PROJECT",
+      "target": "login screen",
+      "timestamp": 1789824369.2344723,
+      "affected_files": [
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\java\\com\\nrai\\test\\LoginActivity.kt",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\layout\\activity_login.xml",
+        "C:\\NR-AI\\dev_projects\\MyApp\\app\\src\\main\\res\\values\\strings.xml"
+      ],
+      "parameters": {
+        "instruction": "Make the button blue"
+      }
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824564.9872143,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789824753.3958552,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789825150.9371753,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789825292.9196188,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789825333.675973,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789825389.5695448,
+      "affected_files": [],
+      "parameters": {}
+    },
+    {
+      "action": "INSPECT",
+      "target": "MyApp",
+      "timestamp": 1789825404.0947711,
+      "affected_files": [],
+      "parameters": {}
+    }
+  ]
+}
