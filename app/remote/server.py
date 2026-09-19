@@ -976,6 +976,61 @@ class SecureDashboardServer:
                         res = {"success": False, "error": "Unified Android Agent not available"}
                     self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
 
+                # Droid Phase 5: Android Studio Specialist & Readiness APIs
+                elif parsed.path in ("/api/droid/workspace", "/api/droid/workspace/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        snap = u_agent.inspect_studio_workspace()
+                        res = {"success": True, "workspace": snap.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/manifest-audit", "/api/droid/manifest-audit/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        issues = u_agent.audit_manifest_merge()
+                        res = {"success": True, "issues": [i.to_dict() for i in issues]}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/accessibility", "/api/droid/accessibility/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        issues = u_agent.audit_accessibility()
+                        res = {"success": True, "issues": [i.to_dict() for i in issues]}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/jank", "/api/droid/jank/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        diag = u_agent.diagnose_jank()
+                        res = {"success": True, "diagnostics": diag}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/projects", "/api/droid/projects/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        matrix = u_agent.multi_project.generate_workspace_matrix()
+                        res = {"success": True, "projects": [p.to_dict() for p in matrix]}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/readiness", "/api/droid/readiness/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        scorecard = u_agent.audit_readiness()
+                        res = {"success": True, "scorecard": scorecard.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
                 # SkyShield Security Dashboard API
                 elif parsed.path in ("/api/skyshield/dashboard", "/api/skyshield/dashboard/", "/api/security/dashboard", "/api/security/dashboard/"):
                     coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
@@ -2126,6 +2181,20 @@ class SecureDashboardServer:
                         mock = b_data.get("mock_mode", True)
                         loop_res = u_agent.run_advanced_engineering_loop(goal, mock_mode=mock)
                         res = {"success": loop_res.verification_status.value == "VERIFIED", "report": loop_res.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/switch-project", "/api/droid/switch-project/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        project_id = b_data.get("project_id", "nr_android_test")
+                        ok = u_agent.switch_active_project(project_id)
+                        res = {"success": ok, "active_project_id": u_agent.multi_project.active_project_id}
                     else:
                         res = {"success": False, "error": "Unified Android Agent not available"}
                     self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))

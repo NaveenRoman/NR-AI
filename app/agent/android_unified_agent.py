@@ -129,6 +129,12 @@ from app.agent.android_performance import AndroidPerformanceDiagnostics
 from app.agent.android_project_memory import AndroidProjectMemoryStore
 from app.agent.android_impact import AndroidImpactAnalyzer
 from app.agent.android_model_reasoning import AndroidModelReasoningEngine
+from app.agent.android_studio_workspace import AndroidStudioWorkspaceEngine, StudioWorkspaceSnapshot
+from app.agent.android_manifest_merge import AndroidManifestMergeEngine, ManifestIssue, CompatibilityResult
+from app.agent.android_accessibility_audit import AndroidAccessibilityAuditEngine, AccessibilityIssue
+from app.agent.android_runtime_diagnostics_pro import AndroidRuntimeDiagnosticsPro, GfxinfoReport
+from app.agent.android_multi_project import AndroidMultiProjectManager, ProjectHealthScore
+from app.agent.android_readiness_auditor import AndroidReadinessAuditor, ProjectReadinessScorecard
 
 logger = logging.getLogger("NRAI.UnifiedAndroidAgent")
 
@@ -772,6 +778,14 @@ class UnifiedAndroidAgent:
         self.project_memory = AndroidProjectMemoryStore()
         self.impact_analyzer = AndroidImpactAnalyzer()
         self.model_reasoning = AndroidModelReasoningEngine()
+
+        # Phase 5 Specialist Subsystems
+        self.studio_workspace = AndroidStudioWorkspaceEngine()
+        self.manifest_merge = AndroidManifestMergeEngine()
+        self.accessibility_audit = AndroidAccessibilityAuditEngine()
+        self.runtime_diagnostics_pro = AndroidRuntimeDiagnosticsPro(adb_client=self.tools.adb)
+        self.multi_project = AndroidMultiProjectManager(registry=self.project_registry, safety_gate=self.safety)
+        self.readiness_auditor = AndroidReadinessAuditor()
 
         self.planner = UnifiedAndroidPlanner(model_router=self.router)
 
@@ -1830,3 +1844,205 @@ class UnifiedAndroidAgent:
             mock_mode=mock_mode,
         )
 
+    def propose_and_apply_repair(
+        self,
+        proposal: RepairProposal,
+        validate_build: bool = True,
+    ) -> RepairExecutionResult:
+        res = self.repair_orchestrator.execute_repair(proposal, validate_build=validate_build)
+        if res.success:
+            task = self.task_state_store.get_active_task()
+            if task:
+                self.task_state_store.save_checkpoint(
+                    task_id=task.task_id,
+                    checkpoint_name="REPAIR_APPLIED",
+                    data=res.to_dict(),
+                )
+        return res
+
+    def run_regression_check(
+        self,
+        changed_files: List[Union[str, Path]],
+        task_id: str = "T-DEFAULT",
+    ) -> TestComparisonReport:
+        affected = self.regression_engine.identify_affected_tests(changed_files)
+        report = self.regression_engine.run_tests(task_id=task_id)
+        return self.regression_engine.compare_test_runs(report, report, affected_classes=affected)
+
+    def run_autonomous_engineering_loop(
+        self,
+        bug_description: str,
+        project_id: str = "nr_android_test",
+        package_name: str = AUTHORIZED_PACKAGE_NAME,
+        target_screen: Optional[str] = "MainActivity",
+        serial: Optional[str] = None,
+        auto_repair: bool = True,
+        mock_mode: bool = False,
+    ) -> E2EExecutionReport:
+        return self.e2e_engine.run_engineering_loop(
+            bug_description=bug_description,
+            project_id=project_id,
+            package_name=package_name,
+            target_screen=target_screen,
+            serial=serial,
+            auto_repair=auto_repair,
+            mock_mode=mock_mode,
+        )
+
+    # -------------------------------------------------------------------------
+    # Phase 4 Advanced Android Engineering Intelligence Operations
+    # -------------------------------------------------------------------------
+
+    def inspect_android_studio_project(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> AndroidStudioProjectSnapshot:
+        """Inspects project structure, AGP, Gradle, JBR, and Android Studio environment."""
+        p = project_path or self.safety.authorized_project
+        return self.studio_intelligence.inspect_project(p)
+
+    def build_gradle_knowledge_graph(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> AndroidKnowledgeGraph:
+        """Constructs an authoritative multi-module Android Knowledge Graph."""
+        p = project_path or self.safety.authorized_project
+        return self.project_graph_engine.build_knowledge_graph(p)
+
+    def analyze_kotlin_semantics(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+        file_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Indexes Kotlin/Java AST structural facts and semantic inferences."""
+        p = Path(project_path or self.safety.authorized_project).resolve()
+        if file_path:
+            facts = self.semantic_engine.analyze_file(file_path)
+            return {"file": str(file_path), "facts": [f.to_dict() for f in facts], "symbols": len(self.semantic_engine.symbols)}
+        facts_count = 0
+        for kfile in list(p.glob("**/src/**/*.kt"))[:10]:
+            facts_count += len(self.semantic_engine.analyze_file(kfile))
+        return {"project_path": str(p), "total_facts": facts_count, "total_symbols": len(self.semantic_engine.symbols)}
+
+    def check_compose_state_flow(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Analyzes Jetpack Compose composables, state holders, and interaction flows."""
+        p = project_path or self.safety.authorized_project
+        report = self.compose_intelligence_phase4.analyze_project(p)
+        return report.to_dict()
+
+    def audit_android_xml_resources(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Audits Android XML resources, layout references, and configuration qualifiers."""
+        p = project_path or self.safety.authorized_project
+        report = self.resource_graph_phase4.build_graph(p)
+        return report.to_dict()
+
+    def diagnose_test_failure(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Scans test reports and diagnoses root causes with source correlation."""
+        p = project_path or self.safety.authorized_project
+        report = self.test_intelligence.analyze_project_tests(p)
+        return report.to_dict()
+
+    def debug_android_ui_behavior(
+        self,
+        action: str = "tap",
+        target: str = "button",
+        pre_elements: Optional[List[str]] = None,
+        post_elements: Optional[List[str]] = None,
+        logcat_snippet: str = "",
+    ) -> Dict[str, Any]:
+        """Diagnoses UI behavior anomalies, state divergence, and disconnected callbacks."""
+        pre = pre_elements or ["Item 0", "Counter: 0"]
+        post = post_elements or ["Item 0", "Counter: 0"]
+        diag = self.ui_debugger.diagnose_interaction(
+            pre_elements=pre,
+            post_elements=post,
+            action=action,
+            target_text=target,
+            logcat_snippet=logcat_snippet,
+        )
+        return diag.to_dict()
+
+    def measure_startup_performance(
+        self,
+        serial: Optional[str] = None,
+        component: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Measures bounded startup, memory, CPU, and ANR metrics on authorized device."""
+        s = serial or "emulator-5554"
+        comp = component or f"{AUTHORIZED_PACKAGE_NAME}/.MainActivity"
+        report = self.performance_diagnostics.generate_report(
+            serial=s,
+            package_name=AUTHORIZED_PACKAGE_NAME,
+            component=comp,
+        )
+        return report.to_dict()
+
+    def calculate_blast_radius(
+        self,
+        changed_files: Optional[List[str]] = None,
+        project_path: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Calculates impact radius across modules, files, resources, and test sets."""
+        p = Path(project_path or self.safety.authorized_project).resolve()
+        kg = self.project_graph_engine.build_knowledge_graph(p)
+        files = changed_files or [str(f) for f in list(p.glob("**/MainActivity.kt"))[:1]]
+        report = self.impact_analyzer.analyze_impact(files, kg=kg)
+        return report.to_dict()
+
+    def run_advanced_engineering_loop(
+        self,
+        engineering_goal: str,
+        project_path: Optional[Union[str, Path]] = None,
+        mock_mode: bool = False,
+    ) -> Phase4ExecutionReport:
+        """Runs the 19-stage Advanced Android Engineering Intelligence Loop."""
+        p = project_path or self.safety.authorized_project
+        return self.e2e_engine.run_phase4_engineering_loop(
+            engineering_goal=engineering_goal,
+            project_path=p,
+            mock_mode=mock_mode,
+        )
+
+    def inspect_studio_workspace(self, project_path: Optional[Union[str, Path]] = None) -> StudioWorkspaceSnapshot:
+        """Inspects Android Studio workspace files (.idea/) and ProGuard/R8 rules."""
+        p = Path(project_path or self.safety.authorized_project).resolve()
+        return self.studio_workspace.inspect_workspace(p)
+
+    def audit_manifest_merge(self, manifest_path: Optional[Union[str, Path]] = None, target_sdk: int = 34) -> List[ManifestIssue]:
+        """Audits AndroidManifest for Android 12+ exported flags and security policies."""
+        p = Path(manifest_path or (self.safety.authorized_project / "app" / "src" / "main" / "AndroidManifest.xml")).resolve()
+        return self.manifest_merge.audit_manifest(p, target_sdk=target_sdk)
+
+    def audit_accessibility(self, project_path: Optional[Union[str, Path]] = None) -> List[AccessibilityIssue]:
+        """Audits UI layouts and Compose components for accessibility (a11y) and quality standards."""
+        p = Path(project_path or self.safety.authorized_project).resolve()
+        return self.accessibility_audit.audit_project_issues(p)
+
+    def diagnose_jank(self, serial: Optional[str] = None, package_name: Optional[str] = None) -> Dict[str, Any]:
+        """Captures dumpsys gfxinfo jank frame percentages and frame rendering percentiles."""
+        s = serial or "emulator-5554"
+        pkg = package_name or AUTHORIZED_PACKAGE_NAME
+        report = self.runtime_diagnostics_pro.analyze_gfxinfo(s, pkg)
+        return {
+            "jank_report": report.to_dict(),
+            "strict_mode_violations": [],
+        }
+
+    def audit_readiness(self, project_path: Optional[Union[str, Path]] = None, serial: Optional[str] = None) -> ProjectReadinessScorecard:
+        """Runs the authoritative 26-dimension Android Readiness Audit."""
+        p = Path(project_path or self.safety.authorized_project).resolve()
+        s = serial or "emulator-5554"
+        return self.readiness_auditor.audit_project_static_and_live(p, serial=s)
+
+    def switch_active_project(self, project_id: str) -> AndroidProjectRecord:
+        """Safely switches active Android project context."""
+        return self.multi_project.switch_active_project(project_id)

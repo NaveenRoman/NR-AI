@@ -422,7 +422,7 @@ class NRCompanion:
         if any(c_candidate.lower().startswith(pfx) for pfx in explicit_android_prefixes):
             return CommandCategory.ANDROID_STUDIO
 
-        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run", "inspect code", "fix build", "repair build", "explain build error", "explain error", "code repair", "inspect android code", "inspect android build", "check android build", "why is android build failing", "why is the android build failing", "fix android build", "repair android compilation error", "show android repair result", "android build error", "repair android", "inspect the android screen", "what is on the android screen", "inspect android screen", "android screen", "find the login button on android", "tap the login button on android", "tap on android", "scroll down on android", "scroll on android", "android ui", "verify the android screen", "verify android screen", "verify android ui", "android device state", "android device ui", "show android logs", "check android logs", "why did the android app crash", "inspect android runtime", "diagnose android error", "what happened in android", "android logs", "android logcat", "android runtime", "android crash", "unified android", "unified android workflow", "run unified android", "android e2e", "android end to end", "boot pixel 6", "boot emulator", "boot avd", "boot device", "stop emulator", "stop device", "preview compose", "compose preview", "analyze preview", "correlate semantics", "runtime semantics", "compose runtime", "verify ui", "verify screen", "take screenshot", "capture screen", "capture screenshot", "run full e2e", "e2e verification", "inspect android studio project", "build gradle knowledge graph", "gradle knowledge graph", "knowledge graph", "analyze kotlin semantics", "kotlin semantics", "check jetpack compose state flow", "compose state flow", "audit android xml resources", "xml resources", "diagnose test failure", "test failure", "debug android ui behavior", "ui behavior", "measure android startup performance", "startup performance", "calculate android blast radius", "blast radius", "run advanced android engineering loop", "advanced android engineering", "engineering loop")):
+        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run", "inspect code", "fix build", "repair build", "explain build error", "explain error", "code repair", "inspect android code", "inspect android build", "check android build", "why is android build failing", "why is the android build failing", "fix android build", "repair android compilation error", "show android repair result", "android build error", "repair android", "inspect the android screen", "what is on the android screen", "inspect android screen", "android screen", "find the login button on android", "tap the login button on android", "tap on android", "scroll down on android", "scroll on android", "android ui", "verify the android screen", "verify android screen", "verify android ui", "android device state", "android device ui", "show android logs", "check android logs", "why did the android app crash", "inspect android runtime", "diagnose android error", "what happened in android", "android logs", "android logcat", "android runtime", "android crash", "unified android", "unified android workflow", "run unified android", "android e2e", "android end to end", "boot pixel 6", "boot emulator", "boot avd", "boot device", "stop emulator", "stop device", "preview compose", "compose preview", "analyze preview", "correlate semantics", "runtime semantics", "compose runtime", "verify ui", "verify screen", "take screenshot", "capture screen", "capture screenshot", "run full e2e", "e2e verification", "inspect android studio project", "build gradle knowledge graph", "gradle knowledge graph", "knowledge graph", "analyze kotlin semantics", "kotlin semantics", "check jetpack compose state flow", "compose state flow", "audit android xml resources", "xml resources", "diagnose test failure", "test failure", "debug android ui behavior", "ui behavior", "measure android startup performance", "startup performance", "calculate android blast radius", "blast radius", "run advanced android engineering loop", "advanced android engineering", "engineering loop", "audit android readiness", "android readiness", "readiness audit", "inspect studio workspace", "studio workspace", "audit manifest merge", "manifest merge", "audit android accessibility", "android accessibility", "diagnose android jank", "android jank", "list android projects", "android projects")):
             return CommandCategory.ANDROID_STUDIO
 
         # 0B.35. Visual Studio Agent Workflows (Safe MSBuild, .NET, Solution & Code Repair)
@@ -713,6 +713,10 @@ class NRCompanion:
     def route_command(self, command: str) -> CompanionResponse:
         """Routes a command directly through the companion pipeline."""
         return self.interact(command, speak_output=False, wake_phrase_checked=True)
+
+    def handle_command(self, command: str) -> Dict[str, Any]:
+        """Convenience method returning serialized dict for command handling."""
+        return self.route_command(command).to_dict()
 
 
     # -------------------------------------------------------------------------
@@ -2677,6 +2681,144 @@ class NRCompanion:
             except Exception as e:
                 return CompanionResponse(
                     text=f"Droid: Advanced engineering loop failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 5 Command 1: Audit Android Readiness
+        if any(k in c_low for k in ("audit android readiness", "android readiness", "readiness audit")):
+            try:
+                scorecard = self.unified_android_agent.audit_readiness()
+                self.avatar.set_idle("Readiness audit completed.")
+                return CompanionResponse(
+                    text=f"Droid Readiness: Rating [{scorecard.overall_rating}] ({scorecard.pass_count}/26 PASS, {scorecard.fail_count} FAIL).",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY if scorecard.overall_rating == "PASS" else AvatarEmotion.CONCERNED,
+                    data=scorecard.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Readiness audit failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 5 Command 2: Inspect Studio Workspace
+        if any(k in c_low for k in ("inspect studio workspace", "studio workspace", "inspect workspace")):
+            try:
+                snap = self.unified_android_agent.inspect_studio_workspace()
+                self.avatar.set_idle("Studio workspace inspection completed.")
+                return CompanionResponse(
+                    text=f"Droid Studio Workspace: JDK [{snap.gradle_jvm_version}], {len(snap.run_configurations)} run configs, {len(snap.proguard_rules)} ProGuard rules.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=snap.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Studio workspace inspection failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 5 Command 3: Audit Manifest Merge
+        if any(k in c_low for k in ("audit manifest merge", "manifest merge", "audit manifest")):
+            try:
+                issues = self.unified_android_agent.audit_manifest_merge()
+                self.avatar.set_idle("Manifest merge audit completed.")
+                return CompanionResponse(
+                    text=f"Droid Manifest Audit: Found {len(issues)} issues across manifests and toolchain compatibility.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY if not issues else AvatarEmotion.NEUTRAL,
+                    data={"issue_count": len(issues), "issues": [i.to_dict() for i in issues]},
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Manifest audit failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 5 Command 4: Audit Android Accessibility
+        if any(k in c_low for k in ("audit android accessibility", "android accessibility", "accessibility audit")):
+            try:
+                issues = self.unified_android_agent.audit_accessibility()
+                self.avatar.set_idle("Accessibility audit completed.")
+                return CompanionResponse(
+                    text=f"Droid Accessibility Audit: Found {len(issues)} accessibility and UI quality issues.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY if not issues else AvatarEmotion.NEUTRAL,
+                    data={"issue_count": len(issues), "issues": [i.to_dict() for i in issues]},
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Accessibility audit failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 5 Command 5: Diagnose Android Jank
+        if any(k in c_low for k in ("diagnose android jank", "android jank", "diagnose jank", "jank diagnostics")):
+            try:
+                diag = self.unified_android_agent.diagnose_jank()
+                self.avatar.set_idle("Jank diagnostics completed.")
+                return CompanionResponse(
+                    text=f"Droid Jank Diagnostics: Rating [{diag.get('jank_report', {}).get('rating', 'UNKNOWN')}], {diag.get('jank_report', {}).get('janky_percent', 0.0)}% janky frames, {len(diag.get('strict_mode_violations', []))} StrictMode violations.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=diag,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Jank diagnostics failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 5 Command 6: List Android Projects
+        if any(k in c_low for k in ("list android projects", "android projects", "workspace matrix", "list projects")):
+            try:
+                matrix = self.unified_android_agent.multi_project.generate_workspace_matrix()
+                self.avatar.set_idle("Project listing completed.")
+                return CompanionResponse(
+                    text=f"Droid Projects: {len(matrix)} registered projects found in workspace.",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data={"projects": [p.to_dict() for p in matrix]},
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Project listing failed: {e}",
                     category=CommandCategory.ANDROID_STUDIO,
                     routed_to="Droid",
                     avatar_mode=AvatarMode.ERROR,
