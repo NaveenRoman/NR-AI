@@ -71,3 +71,38 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
    - Phase 3: Failure Reproduction Engine, Approved UI Actions, Multi-Domain Evidence Collection, Root Cause Analysis, Bounded Repair Orchestrator (max 2 attempts).
    - Phase 4: Android Studio Intel, Unified Knowledge Graph (20 nodes, 36 edges), Kotlin AST (8 symbols), Test Intel, UI Debugger, Performance Diagnostics, Project Memory Store, Impact & Blast Radius Analyzer, Model Reasoning.
    - Phase 5: Android Studio Workspace Engine, AndroidManifest Merge Engine, Deep Accessibility & UI Quality Auditor, Runtime Diagnostics Pro (Jank & StrictMode), Multi-Project Manager, Authoritative 26-Dimension Readiness Auditor.
+
+5. **Real Galaxy UI to Engineering Toolchain Pipeline (`app/ui/static/galaxy.js`, `galaxy.html`)**:
+   - Web-Based 3D Visual Force Graph: Interactive agent topology rendering all active agents.
+   - Node Selection Bridge: `window.selectAgent(droidNode)` directly focuses Droid (`android_unified_agent`).
+   - Direct Agent Dialogue: Natural language interaction via `#panelTextInput` and `#panelSendBtn`.
+   - Real User to Device Flow:
+     ```
+     [REAL USER / BROWSER (http://127.0.0.1:8585/)]
+             |
+             v
+     [GALAXY UI DIRECT AGENT DIALOGUE]
+             |
+             v
+     [NR-AI CORE ROUTER & INTENT ENGINE]
+             |
+             v
+     [DROID (android_unified_agent)]
+             |
+        +----+--------------------------------------------+
+        |                                                 |
+        v                                                 v
+     [LOCAL FILESYSTEM & STUDIO]                    [GRADLE & ADB TOOLCHAIN]
+       - C:\NR-AI\dev_projects\NR-AI                - gradlew.bat assembleDebug
+       - studio64.exe (PID: 2828 / 16932)           - adb.exe -s emulator-5554
+       - Source (.kt) & Layout (.xml) files            - Pixel_6_API_34 (PID: 14912)
+        |                                                 |
+        +--------------------+----------------------------+
+                             |
+                             v
+     [EMPIRICAL VERIFICATION & FEEDBACK LOOP]
+       - Live Process Verification (Get-Process)
+       - Dumpsys Window Focus & Activity Stack
+       - Framebuffer Screencap & Browser UI Screenshot Captures
+       - Structured Response Bubble Rendered in Galaxy UI Chat
+     ```

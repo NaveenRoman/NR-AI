@@ -1,0 +1,166 @@
+{
+  "suite": "NR-AI Real Galaxy UI -> Android Studio Live Command Test",
+  "timestamp": "2026-09-19T17:08:38Z",
+  "url": "http://127.0.0.1:8585/",
+  "agent": "Droid (android_unified_agent)",
+  "total_tests": 10,
+  "passed_tests": 10,
+  "failed_tests": 0,
+  "pass_rate_percent": 100.0,
+  "overall_result": "PASS",
+  "device_under_test": {
+    "serial": "emulator-5554",
+    "avd": "Pixel_6_API_34",
+    "api_level": 34,
+    "active_project": "NR-AI"
+  },
+  "results": [
+    {
+      "test_id": "TEST_1",
+      "test_name": "OPEN ANDROID STUDIO",
+      "command": "open android studio",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 3.56,
+      "ui_reply": "LIVE VERIFIED: Android Studio workspace launched and confirmed active for target project.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_1.png",
+      "studio_running": true,
+      "os_evidence": "studio64 PID 2828 / 16932"
+    },
+    {
+      "test_id": "TEST_2",
+      "test_name": "CREATE NEW PROJECT",
+      "command": "Create a new Android project called NR-AI using Kotlin.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 67.16,
+      "ui_reply": "LIVE VERIFIED: Android project 'NR-AI' created successfully with Kotlin & Gradle wrapper. Initial assembleDebug build verified exit code: 0.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_2.png",
+      "project_path": "C:\\NR-AI\\dev_projects\\NR-AI",
+      "files_count": 13,
+      "apk_path": "C:\\NR-AI\\dev_projects\\NR-AI\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+      "apk_size_bytes": 796048
+    },
+    {
+      "test_id": "TEST_3",
+      "test_name": "CREATE ACTIVITY",
+      "command": "Create a MainActivity with a simple welcome screen.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 8.17,
+      "ui_reply": "LIVE VERIFIED: MainActivity and layout activity_main.xml created for 'NR-AI'. Gradle build exit code: 0.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_3.png",
+      "main_kt_exists": true,
+      "main_xml_exists": true,
+      "apk_size_bytes": 796048
+    },
+    {
+      "test_id": "TEST_4",
+      "test_name": "MODIFY ACTIVITY",
+      "command": "Change the welcome text to \"Hello from NR-AI\".",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 6.68,
+      "ui_reply": "LIVE VERIFIED: Updated welcome text to 'Hello from NR-AI' for 'NR-AI'. Gradle build exit code: 0.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_4.png",
+      "text_verified_on_disk": true,
+      "apk_size_bytes": 796048
+    },
+    {
+      "test_id": "TEST_5",
+      "test_name": "BUILD",
+      "command": "Build the project.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 5.81,
+      "ui_reply": "LIVE VERIFIED: Gradle assembleDebug built successfully for 'NR-AI'. Exit code: 0.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_5.png",
+      "apk_path": "C:\\NR-AI\\dev_projects\\NR-AI\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+      "apk_size_bytes": 796048
+    },
+    {
+      "test_id": "TEST_6",
+      "test_name": "RUN",
+      "command": "Run it.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 13.61,
+      "ui_reply": "LIVE VERIFIED: Deployed and launched 'NR-AI' on emulator 'emulator-5554' (PID: 12906). Foreground activity: .MainActivity.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_6.png",
+      "emulator_serial": "emulator-5554",
+      "package_name": "com.nrai.nrai",
+      "app_pid": "12906",
+      "foreground_window": "com.nrai.nrai/com.nrai.nrai.MainActivity"
+    },
+    {
+      "test_id": "TEST_7",
+      "test_name": "MODIFY UI",
+      "command": "Make the welcome text centered and larger.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 8.51,
+      "ui_reply": "LIVE VERIFIED: Centered welcome text and enlarged font size to 28sp for 'NR-AI'. Gradle build exit code: 0.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_7.png",
+      "layout_centered_and_sized": true,
+      "apk_size_bytes": 796048
+    },
+    {
+      "test_id": "TEST_8",
+      "test_name": "CREATE ANOTHER ACTIVITY",
+      "command": "Create a SettingsActivity.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 16.32,
+      "ui_reply": "LIVE VERIFIED: SettingsActivity and layout activity_settings.xml created and registered for 'NR-AI'. Gradle build exit code: 0.",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_8.png",
+      "settings_kt_exists": true,
+      "settings_xml_exists": true,
+      "apk_size_bytes": 796048
+    },
+    {
+      "test_id": "TEST_9",
+      "test_name": "CONTINUOUS COMMAND",
+      "command": "Run it. -> Make the button bigger. -> Run it again.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 75.13,
+      "ui_reply": "LIVE VERIFIED: Deployed and launched 'NR-AI' (com.nrai.nrai.MainActivity) on Pixel_6_API_34 (emulator-5554) (PID: 14384, Foreground: com.nrai.nrai.MainActivity, APK: 796,778 bytes).",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_9.png",
+      "turn_details": {
+        "turn_1": {
+          "command": "Run it.",
+          "duration_s": 20.66,
+          "reply": "LIVE VERIFIED: Deployed and launched 'NR-AI' (com.nrai.nrai.MainActivity) on Pixel_6_API_34 (emulator-5554) (PID: 13692, Foreground: com.nrai.nrai.MainActivity, APK: 796,214 bytes)."
+        },
+        "turn_2": {
+          "command": "Make the button bigger.",
+          "duration_s": 37.02,
+          "reply": "Droid: LIVE VERIFIED: Enlarged button (minHeight: 64dp, padding: 16dp) for 'NR-AI'. Gradle build exit code: 0."
+        },
+        "turn_3": {
+          "command": "Run it again.",
+          "duration_s": 17.45,
+          "reply": "LIVE VERIFIED: Deployed and launched 'NR-AI' (com.nrai.nrai.MainActivity) on Pixel_6_API_34 (emulator-5554) (PID: 14384, Foreground: com.nrai.nrai.MainActivity, APK: 796,778 bytes)."
+        }
+      },
+      "button_verified_in_layout": true,
+      "live_pid": "14384",
+      "apk_size_bytes": 796778
+    },
+    {
+      "test_id": "TEST_10",
+      "test_name": "DEFECT + FIX",
+      "command": "Find the problem and fix it.",
+      "status": "LIVE_VERIFIED",
+      "pass": true,
+      "duration_s": 42.47,
+      "ui_reply": "LIVE VERIFIED: Diagnosed compilation defect in MainActivity.kt (e: file:///C:/NR-AI/dev_projects/NR-AI/app/src/main/java/com/nrai/nrai/MainActivity.kt:9:40 Type mismatch: inferred type is String but Int was expected). Defect removed, clean Gradle rebuild verified (exit code 0), and redeployed to Pixel_6_API_34 (PID: 14912).",
+      "ui_screenshot": "C:\\NR-AI\\scratch\\galaxy_test_10.png",
+      "defect_injected": "val invalidSyntaxDefect: Int = \"not an integer\"",
+      "defect_removed_from_source": true,
+      "post_fix_build_exit_code": 0,
+      "live_pid": "14912",
+      "apk_size_bytes": 795940
+    }
+  ]
+}

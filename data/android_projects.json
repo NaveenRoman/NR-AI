@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "updated_at": 1789835947.48281,
+  "updated_at": 1789837762.3125398,
   "projects": {
     "nr_android_test": {
       "project_id": "nr_android_test",
@@ -70,6 +70,21 @@
       "project_type": "APPLICATION",
       "package_id": null,
       "gradle_root": "C:\\NR-AI\\dev_projects\\LiveTest",
+      "modules": [
+        "app"
+      ],
+      "status": "ACTIVE",
+      "authorized_by_user": true,
+      "metadata": {}
+    },
+    "proj_3e57b56d": {
+      "project_id": "proj_3e57b56d",
+      "project_name": "NR-AI",
+      "canonical_path": "C:\\NR-AI\\dev_projects\\NR-AI",
+      "registration_time": 1789837201.7861366,
+      "project_type": "APPLICATION",
+      "package_id": null,
+      "gradle_root": "C:\\NR-AI\\dev_projects\\NR-AI",
       "modules": [
         "app"
       ],

@@ -77,6 +77,7 @@ const state = {
   isSpeakingAudio: false,
   introTimer: null,
 };
+window.state = state;
 
 // -----------------------------------------------------------------------------
 // Initialization
@@ -818,6 +819,7 @@ async function selectAgent(node) {
   // Load existing chat history from the ONE Knowledge workspace
   loadAgentChatHistory(targetAgentId);
 }
+window.selectAgent = selectAgent;
 
 // -----------------------------------------------------------------------------
 // Agent Chat Workspace & Interaction Panel Rendering
