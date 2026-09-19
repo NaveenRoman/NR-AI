@@ -81,6 +81,34 @@ from app.agent.android_resource_graph import AndroidResourceGraphEngine, Resourc
 from app.agent.android_compose import JetpackComposeIntelligenceEngine, ComposeIntelligenceReport
 from app.agent.android_test_results import AndroidTestResultParser, JUnitReport, LintReport
 from app.agent.droid_task_state import DroidTaskStateStore
+from app.agent.android_device_lifecycle import (
+    DeviceLifecycleController,
+    DeviceLifecycleReport,
+    DeviceLifecycleState,
+    BootConfiguration,
+    DeploymentConfiguration,
+    DeploymentResult,
+)
+from app.agent.android_compose_preview import (
+    ComposePreviewEngine,
+    ComposePreviewReport,
+    LivePreviewResult,
+    PreviewRenderStatus,
+)
+from app.agent.android_runtime_semantics import (
+    RuntimeComposeSemanticsCorrelator,
+    CorrelatedSemanticsReport,
+    CorrelatedSemanticsNode,
+    CorrelationEvidence,
+)
+from app.agent.android_visual_verifier import (
+    VisualVerificationEngine,
+    VisualVerificationReport,
+    VisualVerificationStatus,
+    VisualAssertion,
+    AssertionType,
+    SafeScreenshotManager,
+)
 
 logger = logging.getLogger("NRAI.UnifiedAndroidAgent")
 
@@ -575,6 +603,11 @@ class UnifiedAndroidAgent:
         compose_intelligence: Optional[JetpackComposeIntelligenceEngine] = None,
         test_parser: Optional[AndroidTestResultParser] = None,
         task_state_store: Optional[DroidTaskStateStore] = None,
+        lifecycle_controller: Optional[DeviceLifecycleController] = None,
+        preview_engine: Optional[ComposePreviewEngine] = None,
+        semantics_correlator: Optional[RuntimeComposeSemanticsCorrelator] = None,
+        visual_verifier: Optional[VisualVerificationEngine] = None,
+        screenshot_manager: Optional[SafeScreenshotManager] = None,
     ):
         self.project_registry = project_registry or AndroidProjectRegistry()
         self.safety = safety_gate or AndroidSafetyGate(project_registry=self.project_registry)
@@ -615,6 +648,29 @@ class UnifiedAndroidAgent:
         self.test_parser = test_parser or AndroidTestResultParser()
         self.task_state_store = task_state_store or DroidTaskStateStore()
 
+        self.lifecycle_controller = lifecycle_controller or DeviceLifecycleController(
+            safety_gate=self.safety,
+            adb_client=self.tools.adb,
+            audit_logger=self.audit,
+            sdk_root=self.safety.sdk_root if hasattr(self.safety, 'sdk_root') else None,
+        )
+        self.preview_engine = preview_engine or ComposePreviewEngine(
+            compose_intelligence=self.compose_intelligence,
+            safety_gate=self.safety,
+        )
+        self.semantics_correlator = semantics_correlator or RuntimeComposeSemanticsCorrelator(
+            compose_intelligence=self.compose_intelligence,
+        )
+        self.screenshot_manager = screenshot_manager or SafeScreenshotManager(
+            adb_client=self.tools.adb,
+            safety_gate=self.safety,
+        )
+        self.visual_verifier = visual_verifier or VisualVerificationEngine(
+            screenshot_manager=self.screenshot_manager,
+            audit_logger=self.audit,
+            safety_gate=self.safety,
+        )
+
         self.planner = UnifiedAndroidPlanner(model_router=self.router)
 
     def inspect_version_catalog(self, toml_path: Optional[Union[str, Path]] = None) -> VersionCatalogReport:
@@ -642,6 +698,253 @@ class UnifiedAndroidAgent:
     def parse_lint_results(self, xml_input: Union[str, Path]) -> LintReport:
         """Parse Android Lint XML quality reports."""
         return self.test_parser.parse_lint_xml(xml_input)
+
+    # -------------------------------------------------------------------------
+    # Droid Phase 2: Live Device, Compose Preview, Runtime Semantics & Verification
+    # -------------------------------------------------------------------------
+
+    def boot_device(
+        self,
+        avd_name: str = "Pixel_6_API_34",
+        timeout_seconds: float = 180.0,
+        no_window: bool = False,
+    ) -> DeviceLifecycleReport:
+        """Boot authorized AVD with bounded empirical polling and checkpoint recording."""
+        self.safety.check_emergency_stop()
+        cfg = BootConfiguration(avd_name=avd_name, timeout_seconds=timeout_seconds, no_window=no_window)
+        rep = self.lifecycle_controller.boot(cfg)
+
+        if rep.state == DeviceLifecycleState.READY:
+            task = self.task_state_store.get_active_task()
+            if task:
+                self.task_state_store.save_checkpoint(
+                    task_id=task.task_id,
+                    checkpoint_name="DEVICE_BOOTED",
+                    data=rep.to_dict(),
+                )
+        return rep
+
+    def get_device_lifecycle_status(self, avd_name: str = "Pixel_6_API_34") -> DeviceLifecycleReport:
+        """Query current empirical lifecycle state of device."""
+        return self.lifecycle_controller.get_status(avd_name)
+
+    def stop_device(self, serial: Optional[str] = None, avd_name: str = "Pixel_6_API_34") -> DeviceLifecycleReport:
+        """Gracefully stop device and clean up processes."""
+        return self.lifecycle_controller.stop(serial=serial, avd_name=avd_name)
+
+    def deploy_and_launch(
+        self,
+        apk_path: Optional[Union[str, Path]] = None,
+        package_name: str = AUTHORIZED_PACKAGE_NAME,
+        activity_name: str = "MainActivity",
+        serial: Optional[str] = None,
+    ) -> DeploymentResult:
+        """Execute 6-step verified deployment pipeline."""
+        self.safety.check_emergency_stop()
+        cfg = DeploymentConfiguration(
+            apk_path=apk_path,
+            package_name=package_name,
+            activity_name=activity_name,
+        )
+        res = self.lifecycle_controller.deploy(serial=serial, config=cfg)
+
+        if res.success:
+            task = self.task_state_store.get_active_task()
+            if task:
+                self.task_state_store.save_checkpoint(
+                    task_id=task.task_id,
+                    checkpoint_name="APP_DEPLOYED",
+                    data=res.to_dict(),
+                )
+        return res
+
+    def analyze_compose_previews(self, file_path_or_source: Union[str, Path]) -> ComposePreviewReport:
+        """Analyze Jetpack Compose @Preview annotations and parameters."""
+        self.safety.check_emergency_stop()
+        path_candidate = Path(str(file_path_or_source))
+        if path_candidate.exists() and path_candidate.is_file():
+            return self.preview_engine.analyze_file(path_candidate)
+        else:
+            return self.preview_engine.analyze_source(str(file_path_or_source))
+
+    def render_compose_preview(
+        self,
+        function_name: str,
+        file_path: Union[str, Path],
+        serial: Optional[str] = None,
+    ) -> LivePreviewResult:
+        """Attempt live preview render; returns PREVIEW_UNAVAILABLE truthfully if unconfigured."""
+        return self.preview_engine.render_preview(function_name, file_path, device_serial=serial)
+
+    def correlate_runtime_semantics(
+        self,
+        source_file_or_code: Union[str, Path],
+        serial: Optional[str] = None,
+    ) -> CorrelatedSemanticsReport:
+        """Correlate source Compose components with runtime UI hierarchy targets."""
+        self.safety.check_emergency_stop()
+        # 1. Capture runtime UI snapshot
+        ui_snapshot = self.ui_controller.inspect_screen(serial=serial)
+
+        # 2. Extract Compose intelligence from file or source
+        p = Path(str(source_file_or_code))
+        if p.exists() and p.is_file():
+            compose_rep = self.compose_intelligence.analyze_file(p)
+        else:
+            compose_rep = self.compose_intelligence.analyze_source(str(source_file_or_code))
+
+        # 3. Correlate
+        report = self.semantics_correlator.correlate(compose_rep, ui_snapshot)
+
+        task = self.task_state_store.get_active_task()
+        if task:
+            self.task_state_store.save_checkpoint(
+                task_id=task.task_id,
+                checkpoint_name="SEMANTICS_CORRELATED",
+                data={"correlation_ratio": report.correlation_ratio, "correlated_count": report.correlated_count},
+            )
+        return report
+
+    def verify_ui_state(
+        self,
+        assertions: List[Union[Dict[str, Any], VisualAssertion]],
+        serial: Optional[str] = None,
+        capture_screenshot: bool = True,
+        semantics_report: Optional[CorrelatedSemanticsReport] = None,
+    ) -> VisualVerificationReport:
+        """Evaluate structured visual and UI assertions against device state."""
+        self.safety.check_emergency_stop()
+
+        # Capture snapshot
+        ui_snapshot = self.ui_controller.inspect_screen(serial=serial)
+
+        screenshot_path = None
+        if capture_screenshot and ui_snapshot.device_serial:
+            try:
+                screenshot_path = self.screenshot_manager.capture_screenshot(
+                    serial=ui_snapshot.device_serial,
+                    label="verify",
+                )
+            except Exception as e:
+                logger.warning(f"Could not capture screenshot during verify_ui_state: {e}")
+
+        # Normalize assertions
+        parsed_assertions: List[VisualAssertion] = []
+        for a in assertions:
+            if isinstance(a, VisualAssertion):
+                parsed_assertions.append(a)
+            elif isinstance(a, dict):
+                atype_str = a.get("assertion_type", "ELEMENT_VISIBLE")
+                atype = AssertionType(atype_str) if atype_str in AssertionType.__members__ else AssertionType.ELEMENT_VISIBLE
+                parsed_assertions.append(VisualAssertion(
+                    assertion_type=atype,
+                    query=a.get("query", ""),
+                    expected_value=a.get("expected_value"),
+                    optional=a.get("optional", False),
+                    description=a.get("description", ""),
+                ))
+
+        report = self.visual_verifier.verify(
+            assertions=parsed_assertions,
+            ui_snapshot=ui_snapshot,
+            semantics_report=semantics_report,
+            screenshot_path=screenshot_path,
+        )
+
+        if report.status == VisualVerificationStatus.PASS:
+            task = self.task_state_store.get_active_task()
+            if task:
+                self.task_state_store.save_checkpoint(
+                    task_id=task.task_id,
+                    checkpoint_name="UI_VERIFIED",
+                    data=report.to_dict(),
+                )
+        return report
+
+    def capture_verified_screenshot(
+        self,
+        serial: Optional[str] = None,
+        label: str = "manual",
+    ) -> Dict[str, Any]:
+        """Capture bounded, sanitized screenshot from authorized device."""
+        target_serial = serial or self.lifecycle_controller._active_serial or "emulator-5554"
+        dest = self.screenshot_manager.capture_screenshot(serial=target_serial, label=label)
+        return {
+            "screenshot_path": str(dest),
+            "filename": dest.name,
+            "serial": target_serial,
+            "timestamp": time.time(),
+        }
+
+    def run_full_e2e_verification(
+        self,
+        project_path: Optional[Union[str, Path]] = None,
+        avd_name: str = "Pixel_6_API_34",
+        assertions: Optional[List[VisualAssertion]] = None,
+    ) -> Dict[str, Any]:
+        """Run full end-to-end verification pipeline."""
+        self.safety.check_emergency_stop()
+        t0 = time.time()
+
+        # Step 1: Boot device if not ready
+        status = self.get_device_lifecycle_status(avd_name)
+        if status.state != DeviceLifecycleState.READY and status.state != DeviceLifecycleState.RUNNING:
+            status = self.boot_device(avd_name=avd_name)
+            if status.state != DeviceLifecycleState.READY:
+                return {
+                    "success": False,
+                    "stage": "BOOT",
+                    "lifecycle_status": status.to_dict(),
+                    "message": f"Could not boot device '{avd_name}'.",
+                }
+
+        serial = status.serial
+
+        # Step 2: Deploy app
+        deploy_res = self.deploy_and_launch(serial=serial)
+        if not deploy_res.success:
+            return {
+                "success": False,
+                "stage": "DEPLOY",
+                "deployment_result": deploy_res.to_dict(),
+                "message": f"Deployment failed: {deploy_res.error}",
+            }
+
+        # Step 3: Run semantics correlation on MainActivity
+        root = Path(project_path or self.safety.authorized_project)
+        main_act = root / "app" / "src" / "main" / "java" / "com" / "nrai" / "test" / "MainActivity.kt"
+        semantics_rep = None
+        if main_act.exists():
+            try:
+                semantics_rep = self.correlate_runtime_semantics(main_act, serial=serial)
+            except Exception as e:
+                logger.warning(f"Semantics correlation failed: {e}")
+
+        # Step 4: Verify UI state
+        default_assertions = assertions or [
+            VisualAssertion(AssertionType.SCREEN_NOT_EMPTY, query="screen", expected_value=1),
+            VisualAssertion(AssertionType.SCREEN_NAVIGATED, query="MainActivity", expected_value="com.nrai.test"),
+        ]
+        verify_rep = self.verify_ui_state(
+            assertions=default_assertions,
+            serial=serial,
+            capture_screenshot=True,
+            semantics_report=semantics_rep,
+        )
+
+        overall_success = verify_rep.status in (VisualVerificationStatus.PASS, VisualVerificationStatus.PARTIAL)
+
+        return {
+            "success": overall_success,
+            "stage": "COMPLETED",
+            "avd_name": avd_name,
+            "serial": serial,
+            "deployment": deploy_res.to_dict(),
+            "semantics": semantics_rep.to_dict() if semantics_rep else None,
+            "verification": verify_rep.to_dict(),
+            "duration_seconds": time.time() - t0,
+        }
+
 
     # -------------------------------------------------------------------------
     # Core Autonomous Execution Loop

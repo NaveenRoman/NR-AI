@@ -200,7 +200,7 @@ class DroidTaskStateStore:
         self,
         project_id: str,
         workflow: str,
-        initial_steps: List[Union[str, Dict[str, Any]]],
+        initial_steps: Optional[List[Union[str, Dict[str, Any]]]] = None,
         agent: str = "Droid",
         initial_state: str = TaskState.INITIALIZED.value,
         metadata: Optional[Dict[str, Any]] = None,
@@ -210,8 +210,9 @@ class DroidTaskStateStore:
         now = time.time()
 
         # Format initial steps into structured dicts
+        steps = initial_steps or ["initialize"]
         normalized_pending: List[Dict[str, Any]] = []
-        for i, s in enumerate(initial_steps):
+        for i, s in enumerate(steps):
             if isinstance(s, str):
                 normalized_pending.append({
                     "step_id": f"step_{i+1:03d}",
@@ -279,6 +280,42 @@ class DroidTaskStateStore:
         finally:
             if str(self.db_path) != ":memory:":
                 conn.close()
+
+    def get_active_task(self) -> Optional[DroidTaskRecord]:
+        """Returns the most recently active or in-progress task, or latest created task."""
+        tasks = self.list_tasks(status=TaskStatus.RUNNING.value, limit=1)
+        if not tasks:
+            tasks = self.list_tasks(status=TaskStatus.PENDING.value, limit=1)
+        if not tasks:
+            tasks = self.list_tasks(limit=1)
+        return tasks[0] if tasks else None
+
+    def save_checkpoint(
+        self,
+        task_id: str,
+        checkpoint_name: str,
+        data: Dict[str, Any],
+    ) -> Optional[DroidTaskRecord]:
+        """Convenience method to save a named checkpoint."""
+        cp_dict = {"name": checkpoint_name, "checkpoint_name": checkpoint_name, "data": data}
+        return self.checkpoint_task(task_id, checkpoint_data=cp_dict, completed_step=checkpoint_name)
+
+    def get_checkpoints(self, task_id: str) -> List[Dict[str, Any]]:
+        """Returns recorded checkpoints for a task."""
+        task = self.get_task(task_id)
+        if not task or not task.checkpoint:
+            return []
+        cp = task.checkpoint
+        results = []
+        if "name" in cp:
+            results.append(cp)
+        for k, v in cp.items():
+            if isinstance(v, dict) and k not in ("last_checkpoint_time", "name", "checkpoint_name", "data"):
+                item = {"name": k}
+                item.update(v)
+                if item not in results:
+                    results.append(item)
+        return results
 
     def get_task(self, task_id: str) -> Optional[DroidTaskRecord]:
         """Fetch a task record by ID."""

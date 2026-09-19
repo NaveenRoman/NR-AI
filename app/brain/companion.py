@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.agent.agent_slot import SlotManager
 from app.agent.android_studio_agent import AndroidStudioAgent, AndroidWorkflowReport
+from app.agent.android_unified_agent import UnifiedAndroidAgent, UnifiedWorkflowType
 from app.agent.browser_agent import BrowserAgent, BrowserWorkflowReport
 from app.agent.computer_agent import UnifiedComputerAgent, WorkflowReport
 from app.agent.input_controller import InputController
@@ -170,6 +171,11 @@ class NRCompanion:
             model_router=self.router,
         )
         self.android_agent = AndroidStudioAgent(
+            model_router=self.router,
+            audit_logger=self.audit,
+            memory=self.memory,
+        )
+        self.unified_android_agent = UnifiedAndroidAgent(
             model_router=self.router,
             audit_logger=self.audit,
             memory=self.memory,
@@ -416,7 +422,7 @@ class NRCompanion:
         if any(c_candidate.lower().startswith(pfx) for pfx in explicit_android_prefixes):
             return CommandCategory.ANDROID_STUDIO
 
-        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run", "inspect code", "fix build", "repair build", "explain build error", "explain error", "code repair", "inspect android code", "inspect android build", "check android build", "why is android build failing", "why is the android build failing", "fix android build", "repair android compilation error", "show android repair result", "android build error", "repair android", "inspect the android screen", "what is on the android screen", "inspect android screen", "android screen", "find the login button on android", "tap the login button on android", "tap on android", "scroll down on android", "scroll on android", "android ui", "verify the android screen", "verify android screen", "verify android ui", "android device state", "android device ui", "show android logs", "check android logs", "why did the android app crash", "inspect android runtime", "diagnose android error", "what happened in android", "android logs", "android logcat", "android runtime", "android crash", "unified android", "unified android workflow", "run unified android", "android e2e", "android end to end")):
+        if any(p in c_candidate.lower() for p in ("build android", "inspect android", "android project", "run android test", "install apk", "launch emulator", "start emulator", "stop emulator", "android studio agent", "verify android", "deploy android", "deploy app", "android pipeline", "build and deploy", "build and run", "inspect code", "fix build", "repair build", "explain build error", "explain error", "code repair", "inspect android code", "inspect android build", "check android build", "why is android build failing", "why is the android build failing", "fix android build", "repair android compilation error", "show android repair result", "android build error", "repair android", "inspect the android screen", "what is on the android screen", "inspect android screen", "android screen", "find the login button on android", "tap the login button on android", "tap on android", "scroll down on android", "scroll on android", "android ui", "verify the android screen", "verify android screen", "verify android ui", "android device state", "android device ui", "show android logs", "check android logs", "why did the android app crash", "inspect android runtime", "diagnose android error", "what happened in android", "android logs", "android logcat", "android runtime", "android crash", "unified android", "unified android workflow", "run unified android", "android e2e", "android end to end", "boot pixel 6", "boot emulator", "boot avd", "boot device", "stop emulator", "stop device", "preview compose", "compose preview", "analyze preview", "correlate semantics", "runtime semantics", "compose runtime", "verify ui", "verify screen", "take screenshot", "capture screen", "capture screenshot", "run full e2e", "e2e verification")):
             return CommandCategory.ANDROID_STUDIO
 
         # 0B.35. Visual Studio Agent Workflows (Safe MSBuild, .NET, Solution & Code Repair)
@@ -2429,7 +2435,8 @@ class NRCompanion:
 
     def _handle_android_studio(self, command: str) -> CompanionResponse:
         """
-        Executes goal-driven safe Android Studio & toolchain workflows using AndroidStudioAgent.
+        Executes goal-driven safe Android Studio & toolchain workflows using AndroidStudioAgent
+        and UnifiedAndroidAgent (Phase 2 live execution & Compose intelligence).
         """
         self.avatar.set_thinking("Executing Android Studio workflow...")
         self.current_route = "AndroidStudioAgent"
@@ -2443,6 +2450,119 @@ class NRCompanion:
             clean_goal,
             flags=re.IGNORECASE,
         ).strip()
+
+        c_low = clean_goal.lower()
+
+        # Phase 2 Command: Boot Device
+        if any(k in c_low for k in ("boot pixel 6", "boot device", "boot emulator", "boot avd", "start emulator")):
+            try:
+                rep = self.unified_android_agent.boot_device(avd_name="Pixel_6_API_34", timeout_seconds=15.0)
+                msg = f"Droid: AVD '{rep.avd_name}' status: {rep.state.value}. {rep.message}"
+                self.avatar.set_idle("Device boot evaluated.")
+                return CompanionResponse(
+                    text=msg,
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING if rep.boot_completed else AvatarMode.ATTENTIVE,
+                    avatar_emotion=AvatarEmotion.HAPPY if rep.boot_completed else AvatarEmotion.NEUTRAL,
+                    data=rep.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Boot failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 2 Command: Stop Device
+        if any(k in c_low for k in ("stop emulator", "stop avd", "stop device")):
+            rep = self.unified_android_agent.stop_device(avd_name="Pixel_6_API_34")
+            self.avatar.set_idle("Device stopped.")
+            return CompanionResponse(
+                text=f"Droid: {rep.message}",
+                category=CommandCategory.ANDROID_STUDIO,
+                routed_to="Droid",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.NEUTRAL,
+                data=rep.to_dict(),
+            )
+
+        # Phase 2 Command: Preview Compose
+        if any(k in c_low for k in ("preview compose", "compose preview", "analyze preview")):
+            try:
+                test_kt = Path(r"C:\NR-AI\nr_android_test\app\src\main\java\com\nrai\test\MainActivity.kt")
+                rep = self.unified_android_agent.analyze_compose_previews(test_kt)
+                msg = f"Droid: Analyzed Jetpack Compose previews in {test_kt.name}: found {rep.total_previews} @Preview declarations."
+                self.avatar.set_idle("Preview analysis complete.")
+                return CompanionResponse(
+                    text=msg,
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=rep.to_dict(),
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Preview analysis failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 2 Command: Screenshot
+        if any(k in c_low for k in ("take screenshot", "capture screen", "capture screenshot")):
+            try:
+                res = self.unified_android_agent.capture_verified_screenshot(label="companion")
+                msg = f"Droid: Screenshot captured successfully: {res.get('filename')}"
+                self.avatar.set_idle("Screenshot captured.")
+                return CompanionResponse(
+                    text=msg,
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data=res,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: Screenshot capture failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
+
+        # Phase 2 Command: Full E2E Verification
+        if any(k in c_low for k in ("run full e2e", "e2e verification", "android e2e", "verify all")):
+            try:
+                e2e_res = self.unified_android_agent.run_full_e2e_verification()
+                success = e2e_res.get("success", False)
+                msg = f"Droid: Full E2E verification completed. Result: {'PASS' if success else 'FAIL'} (Stage: {e2e_res.get('stage')})."
+                self.avatar.set_idle("E2E verification completed.")
+                return CompanionResponse(
+                    text=msg,
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING if success else AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.HAPPY if success else AvatarEmotion.CONCERNED,
+                    data=e2e_res,
+                )
+            except Exception as e:
+                return CompanionResponse(
+                    text=f"Droid: E2E verification failed: {e}",
+                    category=CommandCategory.ANDROID_STUDIO,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.ERROR,
+                    avatar_emotion=AvatarEmotion.CONCERNED,
+                    data={"error": str(e)},
+                )
 
         user_confirmed = False
         if clean_goal.lower().startswith(("confirm ", "yes confirm ", "force ")):

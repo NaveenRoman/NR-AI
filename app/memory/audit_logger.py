@@ -48,6 +48,22 @@ class AuditLogger:
             return redacted
         return obj
 
+    def log(
+        self,
+        event_type: str,
+        details: Optional[Dict[str, Any]] = None,
+        status: str = "success",
+        actor: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Convenience logging alias for structured audit logging."""
+        d = dict(details or {})
+        if actor:
+            d["actor"] = actor
+        if kwargs:
+            d.update(kwargs)
+        return self.log_event(event_type=event_type, details=d, status=status)
+
     def log_event(
         self,
         event_type: str,

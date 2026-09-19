@@ -151,6 +151,18 @@ class CompanionDashboard:
             except Exception:
                 pass
 
+        droid_st = {}
+        u_agent = getattr(self.companion, "unified_android_agent", None)
+        if u_agent and hasattr(u_agent, "get_device_lifecycle_status"):
+            try:
+                rep = u_agent.get_device_lifecycle_status("Pixel_6_API_34")
+                if hasattr(rep, "to_dict"):
+                    droid_st = rep.to_dict()
+                elif isinstance(rep, dict):
+                    droid_st = rep
+            except Exception:
+                pass
+
         return {
             "assistant_name": self.companion.name if isinstance(getattr(self.companion, "name", None), str) else "NR-AI Companion",
             "assistant_status": current_status,
@@ -192,6 +204,7 @@ class CompanionDashboard:
             "latest_news": latest_news,
             "trinity_telemetry": trinity_tel,
             "skyshield_status": skyshield_st,
+            "droid_status": droid_st,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
 

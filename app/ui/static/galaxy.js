@@ -915,9 +915,32 @@ async function loadAgentWorkspace(agentId) {
 
     // Render Suggested Action Buttons
     const actionsGrid = document.getElementById("panelActionsGrid");
-    if (actionsGrid && ctx.suggested_actions) {
+    if (actionsGrid) {
       actionsGrid.innerHTML = "";
-      ctx.suggested_actions.forEach(act => {
+      let actions = ctx.suggested_actions || [];
+
+      // Droid Phase 2 Specialist Actions
+      if (agentId === "android_unified_agent" || agentId === "android_studio_agent") {
+        try {
+          const dRes = await fetch("/api/droid/status");
+          if (dRes.ok) {
+            const dData = await dRes.json();
+            const dStatus = (dData.status && dData.status.state) || "AVAILABLE";
+            if (currTask) currTask.textContent = `AVD Pixel_6_API_34: ${dStatus}`;
+          }
+        } catch (_) {}
+
+        actions = [
+          { id: "droid_boot_pixel6", label: "Boot Pixel 6 (API 34)" },
+          { id: "droid_deploy_app", label: "Deploy & Launch App" },
+          { id: "droid_preview_compose", label: "Inspect Compose Previews" },
+          { id: "droid_verify_ui", label: "Verify UI Assertions" },
+          { id: "droid_capture_screen", label: "Capture Screen" },
+          ...actions
+        ];
+      }
+
+      actions.forEach(act => {
         const btn = document.createElement("button");
         btn.className = "action-card-btn";
         btn.innerHTML = `<span>▶</span> <span>${act.label}</span>`;
@@ -1678,12 +1701,51 @@ async function executeAgentAction(agentId, actionId) {
   chatHistory.scrollTop = chatHistory.scrollHeight;
 
   try {
-    const res = await fetch(`/api/agent/${agentId}/action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: actionId, parameters: {} }),
-    });
-    const result = await res.json();
+    let result = null;
+    if (actionId === "droid_boot_pixel6") {
+      const res = await fetch("/api/droid/boot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avd_name: "Pixel_6_API_34", timeout_seconds: 15.0 }),
+      });
+      result = await res.json();
+      result.message = result.report ? `Droid: AVD state is ${result.report.state}. ${result.report.message}` : "Boot completed.";
+    } else if (actionId === "droid_deploy_app") {
+      const res = await fetch("/api/droid/deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ package_name: "com.nrai.test", activity_name: "MainActivity" }),
+      });
+      result = await res.json();
+      result.message = result.result ? `Droid: Deployment result: ${result.result.message || result.result.state}` : "Deploy evaluated.";
+    } else if (actionId === "droid_preview_compose") {
+      const res = await fetch("/api/droid/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      result = await res.json();
+      result.message = result.report ? `Droid: Found ${result.report.total_previews} @Preview composables.` : "Preview analyzed.";
+    } else if (actionId === "droid_verify_ui") {
+      const res = await fetch("/api/droid/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assertions: [{ assertion_type: "SCREEN_NOT_EMPTY", query: "screen" }] }),
+      });
+      result = await res.json();
+      result.message = result.report ? `Droid: UI Verification ${result.report.status} (${result.report.passed_count}/${result.report.total_assertions} passed).` : "Verification complete.";
+    } else if (actionId === "droid_capture_screen") {
+      const res = await fetch("/api/droid/screenshots");
+      result = await res.json();
+      result.message = `Droid: Screenshot management active (${(result.screenshots || []).length} stored).`;
+    } else {
+      const res = await fetch(`/api/agent/${agentId}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: actionId, parameters: {} }),
+      });
+      result = await res.json();
+    }
     thinkingMsg.classList.remove("thinking");
     thinkingMsg.textContent = result.message || `Action '${actionId}' executed successfully.`;
 

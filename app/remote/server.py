@@ -921,6 +921,34 @@ class SecureDashboardServer:
                     payload = json.dumps({"success": True, "telemetry": telemetry}, indent=2).encode("utf-8")
                     self._send_response(200, "application/json", payload)
 
+                # Droid Phase 2: Live Android Lifecycle & Telemetry APIs
+                elif parsed.path in ("/api/droid/status", "/api/droid/status/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        rep = u_agent.get_device_lifecycle_status("Pixel_6_API_34")
+                        res = {"success": True, "status": rep.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/devices", "/api/droid/devices/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        disc = u_agent.lifecycle_controller.discover_devices()
+                        res = {"success": True, "discovery": disc}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/screenshots", "/api/droid/screenshots/"):
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        items = u_agent.screenshot_manager.list_screenshots()
+                        res = {"success": True, "screenshots": items}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
                 # SkyShield Security Dashboard API
                 elif parsed.path in ("/api/skyshield/dashboard", "/api/skyshield/dashboard/", "/api/security/dashboard", "/api/security/dashboard/"):
                     coord = getattr(gateway_ref.companion, "security_coordinator", None) if gateway_ref.companion else None
@@ -1877,6 +1905,97 @@ class SecureDashboardServer:
                         self._send_response(200 if res.get('success') else 404, 'application/json', json.dumps(res, indent=2).encode("utf-8"))
                     else:
                         self._send_response(404, 'application/json', json.dumps({"success": False, "error": f"Unknown action '{sub_act}'"}).encode("utf-8"))
+
+                # Droid Phase 2: Live Android Execution & Verification APIs
+                elif parsed.path in ("/api/droid/boot", "/api/droid/boot/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        avd = b_data.get("avd_name", "Pixel_6_API_34")
+                        timeout_s = float(b_data.get("timeout_seconds", 15.0))
+                        rep = u_agent.boot_device(avd_name=avd, timeout_seconds=timeout_s)
+                        res = {"success": rep.boot_completed or rep.state.value in ("READY", "BOOTED", "AVAILABLE"), "report": rep.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/stop", "/api/droid/stop/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        serial = b_data.get("serial")
+                        rep = u_agent.stop_device(serial=serial)
+                        res = {"success": True, "report": rep.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/deploy", "/api/droid/deploy/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        apk_p = b_data.get("apk_path")
+                        pkg = b_data.get("package_name", "com.nrai.test")
+                        act = b_data.get("activity_name", "MainActivity")
+                        serial = b_data.get("serial")
+                        d_res = u_agent.deploy_and_launch(apk_path=apk_p, package_name=pkg, activity_name=act, serial=serial)
+                        res = {"success": d_res.success, "result": d_res.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/preview", "/api/droid/preview/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        src = b_data.get("source") or b_data.get("file_path") or "C:\\NR-AI\\nr_android_test\\app\\src\\main\\java\\com\\nrai\\test\\MainActivity.kt"
+                        p_rep = u_agent.analyze_compose_previews(src)
+                        res = {"success": True, "report": p_rep.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/semantics", "/api/droid/semantics/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        src = b_data.get("source") or b_data.get("file_path") or "C:\\NR-AI\\nr_android_test\\app\\src\\main\\java\\com\\nrai\\test\\MainActivity.kt"
+                        serial = b_data.get("serial")
+                        s_rep = u_agent.correlate_runtime_semantics(src, serial=serial)
+                        res = {"success": True, "report": s_rep.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/verify", "/api/droid/verify/"):
+                    try:
+                        b_data = json.loads(body_str) if body_str else {}
+                    except Exception:
+                        b_data = {}
+                    u_agent = getattr(gateway_ref.companion, "unified_android_agent", None) if gateway_ref.companion else None
+                    if u_agent:
+                        assertions = b_data.get("assertions", [])
+                        serial = b_data.get("serial")
+                        v_rep = u_agent.verify_ui_state(assertions, serial=serial)
+                        res = {"success": v_rep.status.value in ("PASS", "PARTIAL"), "report": v_rep.to_dict()}
+                    else:
+                        res = {"success": False, "error": "Unified Android Agent not available"}
+                    self._send_response(200, "application/json", json.dumps(res, indent=2).encode("utf-8"))
 
                 # SkyShield Phase 4 Threat Vulnerability Check
                 elif parsed.path in ("/api/skyshield/threats/check", "/api/skyshield/threats/check/"):
