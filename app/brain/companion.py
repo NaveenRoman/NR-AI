@@ -3,23 +3,20 @@ import datetime
 def get_time_based_greeting(is_resume: bool = False) -> str:
     """
     Returns time-based greeting using actual local system time:
-    - Morning (05:00 - 11:59): 'Good morning, Boss.'
-    - Afternoon (12:00 - 16:59): 'Good afternoon, Boss.'
-    - Evening (17:00 - 21:59): 'Good evening, Boss.'
-    - Late night (22:00 - 04:59): 'Welcome back, Boss.'
-    - Session resume / inactivity: 'Welcome back, Boss.'
+    - 05:00 - 11:59: 'Good morning, Boss.'
+    - 12:00 - 17:59: 'Good afternoon, Boss.'
+    - 18:00 - 04:59: 'Good evening, Boss.'
+    - Session resume: 'Welcome back, Boss.'
     """
     if is_resume:
         return "Welcome back, Boss."
     current_hour = datetime.datetime.now().hour
     if 5 <= current_hour < 12:
         return "Good morning, Boss."
-    elif 12 <= current_hour < 17:
+    elif 12 <= current_hour < 18:
         return "Good afternoon, Boss."
-    elif 17 <= current_hour < 22:
-        return "Good evening, Boss."
     else:
-        return "Welcome back, Boss."
+        return "Good evening, Boss."
 
 from app.agent.engineering_intent import (
     EngineeringAction,
@@ -839,7 +836,9 @@ class NRCompanion:
         self.active_conversation_agent_name = resolved_name
 
         is_first = agent_id not in self.session_introduced_agents
-        if is_first:
+        if resolved_name == "Droid":
+            speech = "Yes Boss, I'm listening."
+        elif is_first:
             self.session_introduced_agents.add(agent_id)
             from app.ui.galaxy_engine import GalaxyEngine
             ge = GalaxyEngine()
@@ -1041,7 +1040,8 @@ class NRCompanion:
         Supports built-in specialists and dynamically registered AgentFactory agents.
         """
         c = text.strip()
-        c_low = c.lower()
+        c_clean = c.rstrip(".!?,")
+        c_low = c_clean.lower()
 
         # Explicit toolchain / IDE commands (e.g. "open android studio", "open visual studio")
         # are engineering actions, NOT agent addressing or session greetings.
@@ -1376,9 +1376,23 @@ class NRCompanion:
             if is_wake:
                 clean_input = extracted or "hello"
 
-        c_lower = clean_input.lower().strip()
+        c_lower = clean_input.lower().strip().rstrip(".!?,")
 
-        # 1. Speech Interruption / Barge-in Cancellation Handling
+        # 1. Stop Communication Triggers (Explicit voice session termination)
+        stop_comm_triggers = ("stop communication", "stop listening", "stop voice session", "end voice session")
+        if any(c_lower == trig for trig in stop_comm_triggers):
+            if hasattr(self.speaker, "stop"):
+                self.speaker.stop()
+            return CompanionResponse(
+                text="Voice communication session stopped, Boss. Standing by.",
+                category=CommandCategory.CONVERSATION,
+                routed_to="VoiceSessionController",
+                avatar_mode=AvatarMode.IDLE,
+                avatar_emotion=AvatarEmotion.NEUTRAL,
+                data={"voice_session_stopped": True, "active_conversation_agent": None},
+            )
+
+        # 2. Speech Interruption / Barge-in Cancellation Handling
         interruption_triggers = ("wait, don't create it", "don't create it", "wait", "hold on", "stop", "cancel")
         if any(c_lower == trig or c_lower.startswith(trig) for trig in interruption_triggers):
             if hasattr(self.speaker, "stop"):
@@ -1394,14 +1408,18 @@ class NRCompanion:
                 data={"interrupted": True, "active_conversation_agent": self.active_conversation_agent},
             )
 
-        # 2. Return to Central NR-AI
-        central_triggers = ("nr-ai", "hey nr-ai", "central", "back to nr-ai", "let nr-ai handle this", "return to nr-ai", "return to central", "reset")
+        # 3. Return to Central NR-AI ("wake up NR-AI")
+        central_triggers = (
+            "wake up nr-ai", "wake nr-ai", "wake up nrai", "wake nrai",
+            "wake up nr ai", "wake nr ai", "nr-ai", "hey nr-ai", "central",
+            "back to nr-ai", "let nr-ai handle this", "return to nr-ai", "return to central", "reset"
+        )
         if c_lower in central_triggers:
             self.active_conversation_agent = None
             self.active_conversation_agent_name = None
             self.last_handoff_path = []
             return CompanionResponse(
-                text="I've resumed central orchestration, Boss. What should we tackle?",
+                text="NR-AI online and listening, Boss. What should we tackle?",
                 category=CommandCategory.CONVERSATION,
                 routed_to="NR-AI-Central",
                 avatar_mode=AvatarMode.SPEAKING,

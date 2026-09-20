@@ -8,6 +8,7 @@ function interruptSpeech() {
       state.speechSynth.cancel();
     }
     state.isSpeakingAudio = false;
+    clearTimeout(state.introTimer);
     const voiceNotice = document.getElementById("introVoiceNotice");
     if (voiceNotice) {
       voiceNotice.textContent = "USER INTERRUPTED • LISTENING";
@@ -16,27 +17,56 @@ function interruptSpeech() {
     fetch("/api/conversation/interrupt", { method: "POST" }).catch(() => {});
   }
 }
+window.interruptSpeech = interruptSpeech;
 
 async function returnToCentral() {
-  state.activeConversationAgent = null;
-  state.activeConversationAgentName = null;
-  const banner = document.getElementById("activeChatBanner");
-  if (banner) banner.style.display = "none";
+  if (typeof window.selectAgent === "function") {
+    await window.selectAgent("nr_ai_central_intelligence");
+  }
+  state.activeConversationAgent = "nr_ai_central_intelligence";
+  state.activeConversationAgentName = "NR-AI";
+  state.activeAgent = "NR-AI";
+  state.focusAgent = "nr_ai_central_intelligence";
+
+  if (state.voiceSession !== "INACTIVE") {
+    setVoiceSessionState("PROCESSING", "NR-AI");
+  } else {
+    updateVoiceUI();
+  }
 
   try {
     const res = await fetch("/api/command", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command: "NR-AI" }),
+      body: JSON.stringify({ command: "wake up NR-AI" }),
     });
     const data = await res.json();
-    const reply = data.text || "Resumed central orchestration.";
-    if (state.ttsEnabled) speakText(reply);
+    const reply = data.text || "NR-AI online and listening, Boss. What should we tackle?";
+    if (typeof appendChatMessage === "function") {
+      appendChatMessage("NR-AI", "agent", reply);
+    }
+    if (state.ttsEnabled && state.voiceSession !== "INACTIVE") {
+      setVoiceSessionState("SPEAKING", "NR-AI");
+      speakText(reply, () => {
+        if (state.voiceSession !== "INACTIVE") {
+          setVoiceSessionState("LISTENING", "NR-AI");
+          startContinuousRecognition();
+        }
+      });
+    } else if (state.voiceSession !== "INACTIVE") {
+      setVoiceSessionState("LISTENING", "NR-AI");
+      startContinuousRecognition();
+    }
   } catch (e) {
-    console.error(e);
+    console.error("returnToCentral error:", e);
+    if (state.voiceSession !== "INACTIVE") {
+      setVoiceSessionState("LISTENING", "NR-AI");
+      startContinuousRecognition();
+    }
   }
   pollGalaxyState();
 }
+window.returnToCentral = returnToCentral;
 /**
  * NR-AI Galaxy UI — Interactive Celestial Canvas & Command Center Engine
  * 60 FPS Canvas rendering, Black Hole Vortex, Dynamic Agent Binding, Real Telemetry Polling.
@@ -66,6 +96,11 @@ const state = {
   speechSynth: window.speechSynthesis,
   recognition: null,
 
+  // Continuous Voice Conversation & Agent Focus State
+  voiceSession: "INACTIVE", // "INACTIVE" | "LISTENING" | "PROCESSING" | "SPEAKING"
+  activeAgent: "NR-AI",
+  sessionGreeted: false,
+
   // Introduction Mode State
   introMode: false,
   introPaused: false,
@@ -80,6 +115,111 @@ const state = {
   clapEnabled: true,
   isListeningClap: false,
 };
+
+// -----------------------------------------------------------------------------
+// Voice Session UI & Core Label Visibility
+// -----------------------------------------------------------------------------
+function updateVoiceUI() {
+  const sessionState = state.voiceSession || "INACTIVE";
+  const agentName = state.activeAgent || (isDroidFocused() ? "Droid" : "NR-AI");
+
+  let statusText = "VOICE SESSION: INACTIVE";
+  let statusClass = "inactive";
+
+  if (sessionState === "LISTENING") {
+    statusText = "VOICE SESSION: ● LISTENING";
+    statusClass = "listening";
+  } else if (sessionState === "SPEAKING") {
+    statusText = "VOICE SESSION: ● SPEAKING";
+    statusClass = "speaking";
+  } else if (sessionState === "PROCESSING") {
+    statusText = "VOICE SESSION: ● THINKING / PROCESSING";
+    statusClass = "processing";
+  }
+
+  // 1. Voice Session Badge
+  const sessionBadge = document.getElementById("voiceSessionBadge");
+  if (sessionBadge) {
+    sessionBadge.textContent = statusText;
+    sessionBadge.className = `voice-session-badge ${statusClass}`;
+  }
+
+  // 2. Voice Clap Pill (Synchronized)
+  const clapPill = document.getElementById("voiceClapIndicator");
+  if (clapPill) {
+    clapPill.textContent = statusText;
+    clapPill.className = `voice-clap-pill ${statusClass}`;
+  }
+
+  // 3. Active Agent Badge
+  const agentBadge = document.getElementById("activeAgentBadge");
+  if (agentBadge) {
+    agentBadge.textContent = `ACTIVE AGENT: ${agentName}`;
+  }
+
+  // 4. Active Chat Banner
+  const banner = document.getElementById("activeChatBanner");
+  const bannerName = document.getElementById("activeChatAgentName");
+  const bannerVoice = document.getElementById("bannerVoiceStatus");
+  if (banner) {
+    banner.style.display = "flex";
+    if (bannerName) bannerName.textContent = agentName;
+    if (bannerVoice) bannerVoice.textContent = statusText;
+  }
+
+  // 5. Mic buttons listening state
+  const micBtn = document.getElementById("micBtn");
+  const dedicatedMicBtn = document.getElementById("dedicatedMicBtn");
+  if (sessionState === "LISTENING") {
+    if (micBtn) micBtn.classList.add("listening");
+    if (dedicatedMicBtn) dedicatedMicBtn.classList.add("listening");
+  } else {
+    if (micBtn) micBtn.classList.remove("listening");
+    if (dedicatedMicBtn) dedicatedMicBtn.classList.remove("listening");
+  }
+
+  updateCoreLabelVisibility();
+}
+window.updateVoiceUI = updateVoiceUI;
+
+function updateCoreLabelVisibility() {
+  const coreLabel = document.querySelector(".central-core-label");
+  if (!coreLabel) return;
+  if (isDroidFocused() || isOtherAgentFocused()) {
+    coreLabel.style.display = "none";
+  } else {
+    coreLabel.style.display = "block";
+    const coreStatus = document.getElementById("coreStatusIndicator");
+    if (coreStatus) {
+      if (state.voiceSession === "LISTENING") {
+        coreStatus.textContent = "● LISTENING • VOICE ACTIVE";
+        coreStatus.style.color = "#10b981";
+      } else if (state.voiceSession === "SPEAKING") {
+        coreStatus.textContent = "● SPEAKING • VOICE ACTIVE";
+        coreStatus.style.color = "#f59e0b";
+      } else if (state.voiceSession === "PROCESSING") {
+        coreStatus.textContent = "● THINKING / PROCESSING";
+        coreStatus.style.color = "#38bdf8";
+      } else {
+        coreStatus.textContent = "● OPTIMAL • MONITORING";
+        coreStatus.style.color = "#38bdf8";
+      }
+    }
+  }
+}
+window.updateCoreLabelVisibility = updateCoreLabelVisibility;
+
+function setVoiceSessionState(newSessionState, newActiveAgent) {
+  if (newSessionState !== undefined && newSessionState !== null) {
+    state.voiceSession = newSessionState;
+  }
+  if (newActiveAgent !== undefined && newActiveAgent !== null) {
+    state.activeAgent = newActiveAgent;
+  }
+  updateVoiceUI();
+}
+window.setVoiceSessionState = setVoiceSessionState;
+
 window.state = state;
 
 // -----------------------------------------------------------------------------
@@ -176,6 +316,8 @@ function renderLoop(now) {
   ctx.translate(canvas.width / 2, canvas.height / 2);
   ctx.scale(1.0, 1.0);
 
+  updateCoreLabelVisibility();
+
   // 1. Draw Static Concentric Orbital Rings
   drawOrbits();
 
@@ -200,18 +342,40 @@ function renderLoop(now) {
 // -----------------------------------------------------------------------------
 // Drawing Helpers
 // -----------------------------------------------------------------------------
-function isDroidFocused() {
+function isNRAIFocused() {
   const cur = (state.activeConversationAgent || "").toLowerCase();
   const foc = (state.focusAgent || "").toLowerCase();
-  return cur.includes("droid") || cur.includes("android") || foc.includes("droid") || foc.includes("android");
+  const act = (state.activeAgent || "").toLowerCase();
+  if (foc === "android_unified_agent" || foc.includes("droid") || cur.includes("droid") || act === "droid") return false;
+  return (cur.includes("nr_ai") || cur.includes("central") || foc.includes("nr_ai") || foc.includes("central") || act === "nr-ai") && Boolean(state.focusAgent);
 }
+window.isNRAIFocused = isNRAIFocused;
+
+function isDroidFocused() {
+  if (isNRAIFocused()) return false;
+  const cur = (state.activeConversationAgent || "").toLowerCase();
+  const foc = (state.focusAgent || "").toLowerCase();
+  const act = (state.activeAgent || "").toLowerCase();
+  return cur.includes("droid") || cur.includes("android") || foc.includes("droid") || foc.includes("android") || act.includes("droid");
+}
+window.isDroidFocused = isDroidFocused;
+
+function isOtherAgentFocused() {
+  if (isDroidFocused() || isNRAIFocused()) return false;
+  return Boolean(state.focusAgent && state.focusAgent !== "nr_ai_central_intelligence");
+}
+window.isOtherAgentFocused = isOtherAgentFocused;
 
 function getNodePosition(node, now) {
   if (!node) return { x: 0, y: 0, hidden: true };
-  const inFocus = isDroidFocused();
 
-  // 1. Droid Focus Mode: Droid moves to center, Scout & Guardian orbit Droid, others hidden!
-  if (inFocus) {
+  // 1. Central NR-AI Focus Mode: NR-AI is central, all other celestial agents disappear!
+  if (isNRAIFocused()) {
+    return { x: 99999, y: 99999, angleRad: 0, hidden: true };
+  }
+
+  // 2. Droid Focus Mode: Droid moves to center, Scout & Guardian orbit Droid, others disappear!
+  if (isDroidFocused()) {
     if (node.agent_id === "android_unified_agent") {
       return { x: 0, y: 0, angleRad: 0, isCenter: true };
     }
@@ -231,7 +395,15 @@ function getNodePosition(node, now) {
     return { x: 99999, y: 99999, angleRad: 0, hidden: true };
   }
 
-  // 2. Normal Galaxy Mode: Droid Scout & Guardian orbit Droid as moons/satellites
+  // 3. Other Specialist Focus Mode: That agent is at center, others disappear
+  if (isOtherAgentFocused()) {
+    if (node.agent_id === state.focusAgent) {
+      return { x: 0, y: 0, angleRad: 0, isCenter: true };
+    }
+    return { x: 99999, y: 99999, angleRad: 0, hidden: true };
+  }
+
+  // 4. Normal Galaxy Mode: Droid Scout & Guardian orbit Droid as moons/satellites
   if (node.parent_department === "android_unified_agent" || node.parent_agent === "android_unified_agent") {
     const droidNode = state.galaxy && state.galaxy.nodes ? state.galaxy.nodes.find(n => n.agent_id === "android_unified_agent") : null;
     let basePos = { x: 180, y: 180 };
@@ -250,7 +422,7 @@ function getNodePosition(node, now) {
     };
   }
 
-  // 3. Standard celestial orbital revolution
+  // 5. Standard celestial orbital revolution
   const ring = node.orbit_ring || 1;
   const speed = 0.00003 * (4 - ring);
   const rad = ((node.orbit_angle * Math.PI) / 180) + (now ? now * speed : 0);
@@ -274,6 +446,14 @@ function drawOrbits() {
       ctx.setLineDash([4, 8]);
       ctx.stroke();
     }
+  } else if (isNRAIFocused()) {
+    // Focused Central NR-AI subtle pulse ring
+    ctx.beginPath();
+    ctx.arc(0, 0, 130, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.25)";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 8]);
+    ctx.stroke();
   } else {
     // Normal concentric celestial rings
     const rings = (state.galaxy && state.galaxy.orbital_rings) || [260, 400, 540];
@@ -1795,6 +1975,10 @@ function speakText(text, onComplete) {
   const eq = document.getElementById("introEqualizer");
   const notice = document.getElementById("introVoiceNotice");
 
+  if (state.voiceSession !== "INACTIVE") {
+    setVoiceSessionState("SPEAKING");
+  }
+
   if (state.ttsEnabled && 'speechSynthesis' in window) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
@@ -1811,6 +1995,10 @@ function speakText(text, onComplete) {
         completed = true;
         state.isSpeakingAudio = false;
         if (eq) eq.classList.remove("active");
+        if (state.voiceSession !== "INACTIVE") {
+          setVoiceSessionState("LISTENING");
+          startContinuousRecognition();
+        }
         if (onComplete) onComplete();
       }
     };
@@ -1824,7 +2012,7 @@ function speakText(text, onComplete) {
     window.speechSynthesis.speak(utterance);
 
     // Safety timeout in case speech synthesis hangs or voices unavailable
-    const maxDuration = Math.max(4000, text.length * 85);
+    const maxDuration = Math.max(3000, text.length * 75);
     state.introTimer = setTimeout(finish, maxDuration);
   } else {
     // Voice unavailable: display clearly and advance after reading delay
@@ -1835,8 +2023,12 @@ function speakText(text, onComplete) {
       notice.textContent = "VOICE UNAVAILABLE • TEXT DISPLAY";
     }
 
-    const readDuration = Math.max(3000, Math.min(7500, text.length * 60));
+    const readDuration = Math.max(1500, Math.min(4000, text.length * 40));
     state.introTimer = setTimeout(() => {
+      if (state.voiceSession !== "INACTIVE") {
+        setVoiceSessionState("LISTENING");
+        startContinuousRecognition();
+      }
       if (onComplete) onComplete();
     }, readDuration);
   }
@@ -2015,16 +2207,17 @@ async function pollGalaxyState() {
     const data = await res.json();
     if (!data.success) return;
 
-    const prevFocusMode = state.galaxy ? state.galaxy.focus_mode : (state.focusAgent === "android_unified_agent");
-    const prevFocusAgent = state.galaxy ? state.galaxy.focus_agent_id : state.focusAgent;
-    const prevSelectedNode = state.galaxy ? state.galaxy.selected_node_id : (state.selectedNode ? state.selectedNode.agent_id : null);
+    const prevFocusMode = state.focusAgent !== null;
+    const prevFocusAgent = state.focusAgent;
+    const prevSelectedNode = state.selectedNode ? state.selectedNode.agent_id : null;
     state.galaxy = data;
-    if (prevFocusMode || state.focusAgent === "android_unified_agent") {
+    if (prevFocusMode) {
       state.galaxy.focus_mode = true;
-      state.galaxy.focus_agent_id = prevFocusAgent || "android_unified_agent";
+      state.galaxy.focus_agent_id = prevFocusAgent;
       state.galaxy.selected_node_id = prevSelectedNode;
     }
     updateHUDTelemetry(data.system_metrics);
+    updateVoiceUI();
 
     // Sync active conversational agent banner
     const activeId = data.active_conversation_agent || state.activeConversationAgent;
@@ -2136,47 +2329,71 @@ function initEventListeners() {
 // -----------------------------------------------------------------------------
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) return;
+  if (!SpeechRecognition) {
+    console.log("SpeechRecognition not supported in browser engine (synthetic voice dispatch ready).");
+    return;
+  }
 
   state.recognition = new SpeechRecognition();
-  state.recognition.continuous = false;
+  state.recognition.continuous = true;
   state.recognition.interimResults = false;
 
   state.recognition.onresult = (event) => {
-    const text = event.results[0][0].transcript;
-    const input = document.getElementById("globalCommandInput");
-    if (input) {
-      input.value = text;
-      sendGlobalCommand();
+    let transcript = "";
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        transcript += event.results[i][0].transcript;
+      }
+    }
+    if (!transcript && event.results && event.results[0] && event.results[0][0]) {
+      transcript = event.results[0][0].transcript;
+    }
+    if (transcript && transcript.trim()) {
+      console.log("🎤 Speech recognized:", transcript);
+      dispatchVoiceUtterance(transcript.trim());
     }
   };
 
   state.recognition.onerror = (e) => {
     console.warn("Speech recognition error:", e);
-    const micBtn = document.getElementById("micBtn");
-    if (micBtn) micBtn.classList.remove("listening");
+    if (state.voiceSession !== "INACTIVE" && e.error !== "not-allowed") {
+      setTimeout(() => {
+        if (state.voiceSession !== "INACTIVE") {
+          try { state.recognition.start(); } catch (err) {}
+        }
+      }, 500);
+    }
   };
 
   state.recognition.onend = () => {
-    const micBtn = document.getElementById("micBtn");
-    if (micBtn) micBtn.classList.remove("listening");
+    // In continuous listening mode, automatically keep listening unless session was stopped!
+    if (state.voiceSession !== "INACTIVE") {
+      setTimeout(() => {
+        if (state.voiceSession !== "INACTIVE") {
+          try { state.recognition.start(); } catch (err) {}
+        }
+      }, 200);
+    }
   };
 }
 
-function toggleVoiceInput() {
-  if (!state.recognition) {
-    alert("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
-    return;
-  }
-  const micBtn = document.getElementById("micBtn");
+function startContinuousRecognition() {
+  if (!state.recognition) return;
   try {
     state.recognition.start();
-    if (micBtn) micBtn.classList.add("listening");
-  } catch (e) {
-    state.recognition.stop();
-    if (micBtn) micBtn.classList.remove("listening");
+  } catch (e) {}
+}
+window.startContinuousRecognition = startContinuousRecognition;
+
+function toggleVoiceInput() {
+  if (state.voiceSession === "INACTIVE") {
+    setVoiceSessionState("LISTENING", state.activeAgent || "NR-AI");
+    startContinuousRecognition();
+  } else {
+    stopVoiceCommunication();
   }
 }
+window.toggleVoiceInput = toggleVoiceInput;
 
 // -----------------------------------------------------------------------------
 // SkyShield Security Command Center Engine
@@ -3438,69 +3655,7 @@ async function sendDedicatedChatMessage() {
   const text = input.value.trim();
   if (!text) return;
   input.value = "";
-
-  appendChatMessage("Operator", "user", text);
-
-  // Address recognition & Focus mode switching
-  const textLow = text.toLowerCase();
-  if (textLow.includes("droid scout") || textLow.startsWith("scout")) {
-    selectAgent("droid_scout");
-  } else if (textLow.includes("droid guardian") || textLow.startsWith("guardian")) {
-    selectAgent("droid_guardian");
-  } else if (textLow.includes("droid") || textLow.startsWith("hey droid") || textLow.startsWith("open droid")) {
-    selectAgent("android_unified_agent");
-  }
-
-  const isEngineering = textLow.includes("open") || textLow.includes("build") || textLow.includes("run") || textLow.includes("project") || textLow.includes("create") || textLow.includes("modify") || textLow.includes("activity");
-  const progBanner = document.getElementById("droidProgressBanner");
-  if (isEngineering && progBanner) {
-    progBanner.style.display = "block";
-    updateDroidProgress("EXECUTING", `Executing: "${text}"`, 20);
-  }
-
-  try {
-    const pollInterval = isEngineering ? setInterval(async () => {
-      try {
-        const pRes = await fetch("/api/engineering/progress");
-        if (pRes.ok) {
-          const pData = await pRes.json();
-          if (pData.progress) {
-            const p = pData.progress;
-            updateDroidProgress(p.state || "EXECUTING", p.description || text, Math.round(p.progress * 100));
-          }
-        }
-      } catch (e) {}
-    }, 400) : null;
-
-    const res = await fetch("/api/command", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command: text }),
-    });
-    if (pollInterval) clearInterval(pollInterval);
-
-    const data = await res.json();
-    const reply = data.text || "Operation completed.";
-    const activeName = state.activeConversationAgentName || "Droid";
-    appendChatMessage(activeName, "agent", reply);
-
-    if (progBanner) {
-      updateDroidProgress("COMPLETED", "Execution completed successfully.", 100);
-      setTimeout(() => {
-        if (progBanner) progBanner.style.display = "none";
-      }, 3500);
-    }
-
-    if (state.ttsEnabled) speakText(reply);
-  } catch (err) {
-    console.error("Dedicated chat error:", err);
-    appendChatMessage("System", "agent", `Error executing command: ${err.message}`);
-    if (progBanner) {
-      updateDroidProgress("FAILED", `Error: ${err.message}`, 100);
-    }
-  }
-
-  pollGalaxyState();
+  await dispatchVoiceUtterance(text);
 }
 window.sendDedicatedChatMessage = sendDedicatedChatMessage;
 
@@ -3556,33 +3711,262 @@ function monitorClapAudio() {
   requestAnimationFrame(monitorClapAudio);
 }
 
-function triggerClapEvent() {
+// =============================================================================
+// CONTINUOUS VOICE CONVERSATION & AGENT FOCUS PIPELINE
+// =============================================================================
+
+function getLocalTimeGreeting() {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return "Good morning, Boss.";
+  if (h >= 12 && h < 18) return "Good afternoon, Boss.";
+  return "Good evening, Boss.";
+}
+window.getLocalTimeGreeting = getLocalTimeGreeting;
+
+async function triggerClapEvent() {
   console.log("👏 CLAP EVENT TRIGGERED!");
-  const indicator = document.getElementById("voiceClapIndicator");
-  if (indicator) {
-    indicator.textContent = "👏 CLAP DETECTED • LISTENING...";
-    indicator.classList.add("clap-active");
+  // 1. NR-AI becomes active at center, other agents disappear, NR-AI chat opens
+  await selectAgent("nr_ai_central_intelligence");
+  state.activeAgent = "NR-AI";
+  state.focusAgent = "nr_ai_central_intelligence";
+  state.activeConversationAgent = "nr_ai_central_intelligence";
+  state.activeConversationAgentName = "NR-AI";
+
+  // 2. Play local time-based greeting ONCE per session upon activation
+  const alreadyGreeted = sessionStorage.getItem("nrai_voice_session_greeted") === "true";
+  if (!alreadyGreeted) {
+    sessionStorage.setItem("nrai_voice_session_greeted", "true");
+    setVoiceSessionState("PROCESSING", "NR-AI");
+
+    try {
+      const res = await fetch("/api/session/greeting");
+      const data = res.ok ? await res.json() : null;
+      const greeting = (data && data.greeting) || getLocalTimeGreeting();
+      appendChatMessage("NR-AI", "agent", greeting);
+
+      if (state.ttsEnabled) {
+        setVoiceSessionState("SPEAKING", "NR-AI");
+        speakText(greeting, () => {
+          // 4. Continues listening seamlessly after greeting
+          setVoiceSessionState("LISTENING", "NR-AI");
+          startContinuousRecognition();
+        });
+      } else {
+        setVoiceSessionState("LISTENING", "NR-AI");
+        startContinuousRecognition();
+      }
+    } catch (err) {
+      const greeting = getLocalTimeGreeting();
+      appendChatMessage("NR-AI", "agent", greeting);
+      setVoiceSessionState("LISTENING", "NR-AI");
+      startContinuousRecognition();
+    }
+  } else {
+    setVoiceSessionState("LISTENING", state.activeAgent || "NR-AI");
+    startContinuousRecognition();
   }
-  const banner = document.getElementById("droidProgressBanner");
-  if (banner) {
-    banner.textContent = "👏 CLAP DETECTED • LISTENING...";
+
+  pollGalaxyState();
+}
+window.triggerClapEvent = triggerClapEvent;
+
+function stopVoiceCommunication() {
+  console.log("⏹️ Stopping Voice Communication session...");
+  if (state.speechSynth) {
+    state.speechSynth.cancel();
   }
+  state.isSpeakingAudio = false;
+  clearTimeout(state.introTimer);
 
   if (state.recognition) {
     try {
-      state.recognition.start();
+      state.recognition.stop();
     } catch (e) {}
   }
 
-  clearTimeout(clapListeningTimeout);
-  clapListeningTimeout = setTimeout(() => {
-    if (indicator) {
-      indicator.textContent = "🎤 VOICE READY";
-      indicator.classList.remove("clap-active");
-    }
-  }, 7000);
+  setVoiceSessionState("INACTIVE");
+  state.focusAgent = null;
+  state.activeConversationAgent = null;
+  state.activeConversationAgentName = null;
+  state.activeAgent = "NR-AI";
+
+  if (state.galaxy) {
+    state.galaxy.focus_mode = false;
+    state.galaxy.focus_agent_id = null;
+  }
+
+  const chatTitle = document.getElementById("dedicatedChatTitle");
+  if (chatTitle) chatTitle.textContent = "ACTIVE CHAT: NR-AI";
+  const chatSub = document.getElementById("dedicatedChatSub");
+  if (chatSub) chatSub.textContent = "● ONLINE • CENTRAL INTELLIGENCE CORE";
+  const chatAvatar = document.getElementById("dedicatedChatAvatar");
+  if (chatAvatar) chatAvatar.textContent = "🌌";
+
+  updateVoiceUI();
+  updateCoreLabelVisibility();
+  pollGalaxyState();
 }
-window.triggerClapEvent = triggerClapEvent;
+window.stopVoiceCommunication = stopVoiceCommunication;
+
+async function dispatchVoiceUtterance(text) {
+  if (!text || !text.trim()) return;
+  const rawText = text.trim();
+  const cLower = rawText.toLowerCase().replace(/[.!?]+$/, "").trim();
+
+  console.log(`[Voice Pipeline] Dispatching: "${rawText}" (activeAgent: ${state.activeAgent}, session: ${state.voiceSession})`);
+
+  // 1. Natural conversation / Barge-in: interrupt ongoing speech immediately
+  if (state.isSpeakingAudio || (state.speechSynth && state.speechSynth.speaking)) {
+    interruptSpeech();
+  }
+
+  // 2. Explicit Stop Communication Triggers
+  const stopTriggers = ["stop communication", "stop listening", "stop voice session", "end voice session", "stop voice", "end session"];
+  if (stopTriggers.some(trig => cLower === trig || cLower.startsWith(trig))) {
+    appendChatMessage("Operator", "user", rawText);
+    appendChatMessage("System", "agent", "Voice communication session stopped, Boss. Standing by.");
+    stopVoiceCommunication();
+    return;
+  }
+
+  // Set to THINKING / PROCESSING while executing
+  setVoiceSessionState("PROCESSING");
+
+  // 3. Central NR-AI return triggers ("wake up NR-AI" / "wake NR-AI")
+  const centralTriggers = [
+    "wake up nr-ai", "wake nr-ai", "wake up nrai", "wake nrai",
+    "wake up nr ai", "wake nr ai", "nr-ai", "hey nr-ai", "central",
+    "back to nr-ai", "let nr-ai handle this", "return to nr-ai", "return to central", "reset"
+  ];
+  if (centralTriggers.includes(cLower)) {
+    appendChatMessage("Operator", "user", rawText);
+    await returnToCentral();
+    return;
+  }
+
+  // 4. Check for direct agent addressing
+  // e.g. "Droid", "Hey Droid", "Activate Droid", "Droid Scout", "Droid Guardian", etc.
+  const isDroidAddress = cLower === "droid" || cLower === "hey droid" || cLower === "hi droid" || cLower === "activate droid" || cLower === "open droid" || cLower === "select droid";
+  const isScoutAddress = cLower === "droid scout" || cLower === "scout" || cLower === "hey scout";
+  const isGuardianAddress = cLower === "droid guardian" || cLower === "guardian" || cLower === "hey guardian";
+
+  let addressedAgentId = null;
+  let addressedFriendlyName = null;
+
+  if (isScoutAddress) {
+    addressedAgentId = "droid_scout";
+    addressedFriendlyName = "Droid Scout";
+  } else if (isGuardianAddress) {
+    addressedAgentId = "droid_guardian";
+    addressedFriendlyName = "Droid Guardian";
+  } else if (isDroidAddress) {
+    addressedAgentId = "android_unified_agent";
+    addressedFriendlyName = "Droid";
+  }
+
+  if (addressedAgentId) {
+    appendChatMessage("Operator", "user", rawText);
+    await selectAgent(addressedAgentId);
+    setVoiceSessionState("PROCESSING", addressedFriendlyName);
+
+    try {
+      const res = await fetch("/api/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: rawText }),
+      });
+      const data = await res.json();
+      const reply = data.text || "Yes Boss, I'm listening.";
+      appendChatMessage(addressedFriendlyName, "agent", reply);
+
+      if (state.ttsEnabled && state.voiceSession !== "INACTIVE") {
+        setVoiceSessionState("SPEAKING", addressedFriendlyName);
+        speakText(reply, () => {
+          if (state.voiceSession !== "INACTIVE") {
+            setVoiceSessionState("LISTENING", addressedFriendlyName);
+            startContinuousRecognition();
+          }
+        });
+      } else if (state.voiceSession !== "INACTIVE") {
+        setVoiceSessionState("LISTENING", addressedFriendlyName);
+        startContinuousRecognition();
+      }
+    } catch (err) {
+      appendChatMessage("System", "agent", `Error: ${err.message}`);
+      if (state.voiceSession !== "INACTIVE") {
+        setVoiceSessionState("LISTENING", addressedFriendlyName);
+        startContinuousRecognition();
+      }
+    }
+    return;
+  }
+
+  // 5. Active Agent Command Execution (or General NR-AI Command)
+  // The active agent remains center, other agents remain hidden, response is spoken, resumes listening!
+  const currentActiveName = state.activeAgent || state.activeConversationAgentName || "NR-AI";
+  appendChatMessage("Operator", "user", rawText);
+
+  const isEngineering = cLower.includes("open") || cLower.includes("build") || cLower.includes("run") || cLower.includes("project") || cLower.includes("create") || cLower.includes("modify") || cLower.includes("activity");
+  const progBanner = document.getElementById("droidProgressBanner");
+  if (isEngineering && progBanner && (currentActiveName === "Droid" || isDroidFocused())) {
+    progBanner.style.display = "block";
+    updateDroidProgress("EXECUTING", `Executing: "${rawText}"`, 25);
+  }
+
+  try {
+    const res = await fetch("/api/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: rawText }),
+    });
+    const data = await res.json();
+    const reply = data.text || "Operation completed.";
+    appendChatMessage(currentActiveName, "agent", reply);
+
+    if (progBanner && (currentActiveName === "Droid" || isDroidFocused())) {
+      updateDroidProgress("COMPLETED", "Execution completed successfully.", 100);
+      setTimeout(() => {
+        if (progBanner) progBanner.style.display = "none";
+      }, 3500);
+    }
+
+    if (state.ttsEnabled && state.voiceSession !== "INACTIVE") {
+      setVoiceSessionState("SPEAKING", currentActiveName);
+      speakText(reply, () => {
+        if (state.voiceSession !== "INACTIVE") {
+          setVoiceSessionState("LISTENING", currentActiveName);
+          startContinuousRecognition();
+        }
+      });
+    } else if (state.voiceSession !== "INACTIVE") {
+      setVoiceSessionState("LISTENING", currentActiveName);
+      startContinuousRecognition();
+    }
+  } catch (err) {
+    console.error("Voice command execution error:", err);
+    appendChatMessage("System", "agent", `Error: ${err.message}`);
+    if (progBanner) {
+      updateDroidProgress("FAILED", `Error: ${err.message}`, 100);
+    }
+    if (state.voiceSession !== "INACTIVE") {
+      setVoiceSessionState("LISTENING", currentActiveName);
+      startContinuousRecognition();
+    }
+  }
+
+  pollGalaxyState();
+}
+window.dispatchVoiceUtterance = dispatchVoiceUtterance;
+
+window.getVoiceSessionState = function() {
+  return {
+    voiceSession: state.voiceSession || "INACTIVE",
+    activeAgent: state.activeAgent || (isDroidFocused() ? "Droid" : "NR-AI"),
+    focusAgent: state.focusAgent,
+    isSpeaking: Boolean(state.isSpeakingAudio || (state.speechSynth && state.speechSynth.speaking)),
+    isListening: state.voiceSession === "LISTENING",
+  };
+};
 
 function toggleClapDetection() {
   state.clapEnabled = !state.clapEnabled;
@@ -3591,94 +3975,124 @@ function toggleClapDetection() {
 }
 window.toggleClapDetection = toggleClapDetection;
 
-// =============================================================================
-// TIME-BASED GREETING & WELCOME BACK
-// =============================================================================
-
-async function checkSessionGreeting() {
-  const greeted = sessionStorage.getItem("nrai_session_greeted");
-  if (!greeted) {
-    try {
-      const res = await fetch("/api/session/greeting");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.greeting) {
-          appendChatMessage("NR-AI", "agent", data.greeting);
-          sessionStorage.setItem("nrai_session_greeted", "true");
-        }
-      }
-    } catch (e) {
-      console.warn("Session greeting fetch failed:", e);
-    }
-  }
-}
-
-let lastFocusTime = Date.now();
-window.addEventListener("focus", async () => {
-  const now = Date.now();
-  if (now - lastFocusTime > 60000) {
-    try {
-      const res = await fetch("/api/session/greeting?resume=1");
-      if (res.ok) {
-        const data = await res.json();
-        appendChatMessage("NR-AI", "agent", data.greeting);
-      }
-    } catch (e) {}
-  }
-  lastFocusTime = now;
-});
-window.addEventListener("blur", () => {
-  lastFocusTime = Date.now();
-});
-
 // Update selectAgent to handle string IDs and sync info panel
 const origSelectAgent = window.selectAgent;
 window.selectAgent = async function(nodeOrId) {
   let node = nodeOrId;
+  if (!nodeOrId) {
+    state.focusAgent = null;
+    state.activeConversationAgent = null;
+    state.activeConversationAgentName = null;
+    state.activeAgent = "NR-AI";
+    if (state.galaxy) {
+      state.galaxy.focus_mode = false;
+      state.galaxy.focus_agent_id = null;
+    }
+    updateVoiceUI();
+    return;
+  }
+
   if (typeof nodeOrId === "string") {
-    const found = state.galaxy && state.galaxy.nodes ? state.galaxy.nodes.find(n => n.agent_id === nodeOrId) : null;
-    if (found) {
-      node = found;
-    } else {
-      const fname = nodeOrId === "droid_scout" ? "Droid Scout" : (nodeOrId === "droid_guardian" ? "Droid Guardian" : "Droid");
-      const role = nodeOrId === "droid_scout" ? "Android Studio Watch & Development Assistant" : (nodeOrId === "droid_guardian" ? "Android Build & Verification Guardian" : "Android Agent");
+    if (nodeOrId === "nr_ai_central_intelligence" || nodeOrId === "NR-AI" || nodeOrId === "central") {
       node = {
-        agent_id: nodeOrId,
-        friendly_name: fname,
-        role: role,
+        agent_id: "nr_ai_central_intelligence",
+        friendly_name: "NR-AI",
+        role: "Central Intelligence Core",
         status: "ONLINE",
-        status_color: "#10b981",
-        color: "#10b981",
-        glow: "rgba(16, 185, 129, 0.6)",
-        icon_type: nodeOrId === "droid_scout" ? "eye" : (nodeOrId === "droid_guardian" ? "shield" : "android"),
-        parent_agent: nodeOrId === "android_unified_agent" ? "NR-AI" : "Droid",
-        child_agents: nodeOrId === "android_unified_agent" ? ["Droid Scout", "Droid Guardian"] : [],
+        status_color: "#38bdf8",
+        color: "#38bdf8",
+        glow: "rgba(56, 189, 248, 0.6)",
+        icon_type: "brain",
+        parent_agent: "Root",
+        child_agents: ["Droid", "Studio", "Unity", "Unreal", "SkyShield", "Knowledge"],
       };
+    } else {
+      const found = state.galaxy && state.galaxy.nodes ? state.galaxy.nodes.find(n => n.agent_id === nodeOrId || n.friendly_name.toLowerCase() === nodeOrId.toLowerCase()) : null;
+      if (found) {
+        node = found;
+      } else {
+        const fname = nodeOrId === "droid_scout" ? "Droid Scout" : (nodeOrId === "droid_guardian" ? "Droid Guardian" : "Droid");
+        const role = nodeOrId === "droid_scout" ? "Android Studio Watch & Development Assistant" : (nodeOrId === "droid_guardian" ? "Android Build & Verification Guardian" : "Android Agent");
+        node = {
+          agent_id: nodeOrId,
+          friendly_name: fname,
+          role: role,
+          status: "ONLINE",
+          status_color: "#10b981",
+          color: "#10b981",
+          glow: "rgba(16, 185, 129, 0.6)",
+          icon_type: nodeOrId === "droid_scout" ? "eye" : (nodeOrId === "droid_guardian" ? "shield" : "android"),
+          parent_agent: nodeOrId === "android_unified_agent" ? "NR-AI" : "Droid",
+          child_agents: nodeOrId === "android_unified_agent" ? ["Droid Scout", "Droid Guardian"] : [],
+        };
+      }
     }
   }
 
-  // Set focus mode
-  if (node.agent_id === "android_unified_agent" || node.agent_id === "droid" || node.agent_id === "droid_scout" || node.agent_id === "droid_guardian") {
+  // Set focus mode & active conversation agent
+  if (node.agent_id === "nr_ai_central_intelligence" || node.agent_id === "NR-AI") {
+    state.focusAgent = "nr_ai_central_intelligence";
+    state.activeConversationAgent = "nr_ai_central_intelligence";
+    state.activeConversationAgentName = "NR-AI";
+    state.activeAgent = "NR-AI";
+    if (state.galaxy) {
+      state.galaxy.focus_mode = true;
+      state.galaxy.focus_agent_id = "nr_ai_central_intelligence";
+      state.galaxy.selected_node_id = "nr_ai_central_intelligence";
+    }
+    const chatTitle = document.getElementById("dedicatedChatTitle");
+    if (chatTitle) chatTitle.textContent = "ACTIVE CHAT: NR-AI";
+    const chatSub = document.getElementById("dedicatedChatSub");
+    if (chatSub) chatSub.textContent = "● ONLINE • CENTRAL INTELLIGENCE CORE";
+    const chatAvatar = document.getElementById("dedicatedChatAvatar");
+    if (chatAvatar) chatAvatar.textContent = "🌌";
+    const input = document.getElementById("dedicatedChatInput");
+    if (input) input.placeholder = "Talk to NR-AI Central Intelligence...";
+  } else if (node.agent_id === "android_unified_agent" || node.agent_id === "droid" || node.agent_id === "droid_scout" || node.agent_id === "droid_guardian") {
     state.focusAgent = "android_unified_agent";
     state.activeConversationAgent = node.agent_id;
     state.activeConversationAgentName = node.friendly_name;
+    state.activeAgent = node.friendly_name;
     if (state.galaxy) {
       state.galaxy.focus_mode = true;
       state.galaxy.focus_agent_id = "android_unified_agent";
       state.galaxy.selected_node_id = node.agent_id;
     }
+    const chatTitle = document.getElementById("dedicatedChatTitle");
+    if (chatTitle) chatTitle.textContent = `ACTIVE CHAT: ${node.friendly_name}`;
+    const chatSub = document.getElementById("dedicatedChatSub");
+    if (chatSub) chatSub.textContent = `● ONLINE • DETERMINISTIC SAFETY GATE`;
+    const chatAvatar = document.getElementById("dedicatedChatAvatar");
+    if (chatAvatar) chatAvatar.textContent = "🤖";
+    const input = document.getElementById("dedicatedChatInput");
+    if (input) input.placeholder = `Talk to ${node.friendly_name} (e.g. 'Open Android Studio', 'Build the project')...`;
   } else {
-    state.focusAgent = null;
+    state.focusAgent = node.agent_id;
+    state.activeConversationAgent = node.agent_id;
+    state.activeConversationAgentName = node.friendly_name;
+    state.activeAgent = node.friendly_name;
     if (state.galaxy) {
-      state.galaxy.focus_mode = false;
-      state.galaxy.focus_agent_id = null;
+      state.galaxy.focus_mode = true;
+      state.galaxy.focus_agent_id = node.agent_id;
       state.galaxy.selected_node_id = node.agent_id;
     }
+    const chatTitle = document.getElementById("dedicatedChatTitle");
+    if (chatTitle) chatTitle.textContent = `ACTIVE CHAT: ${node.friendly_name}`;
+    const chatSub = document.getElementById("dedicatedChatSub");
+    if (chatSub) chatSub.textContent = `● ONLINE • SPECIALIST AGENT`;
+    const chatAvatar = document.getElementById("dedicatedChatAvatar");
+    if (chatAvatar) chatAvatar.textContent = getIconGlyph ? getIconGlyph(node.icon_type) : "🤖";
+    const input = document.getElementById("dedicatedChatInput");
+    if (input) input.placeholder = `Talk to ${node.friendly_name}...`;
   }
 
-  syncAgentInfoPanel(node);
+  updateVoiceUI();
+  updateCoreLabelVisibility();
+  if (typeof syncAgentInfoPanel === "function") {
+    syncAgentInfoPanel(node);
+  }
 
-  if (origSelectAgent) {
+  if (origSelectAgent && typeof node === "object" && node.agent_id !== "nr_ai_central_intelligence") {
     try {
       await origSelectAgent(node);
     } catch (e) {}
@@ -3687,8 +4101,6 @@ window.selectAgent = async function(nodeOrId) {
 
 // Initialize greeting and clap on load
 document.addEventListener("DOMContentLoaded", () => {
-  checkSessionGreeting();
   initClapDetector();
-  // Default focus on Droid in Agent Info Panel
-  selectAgent("android_unified_agent");
+  updateVoiceUI();
 });

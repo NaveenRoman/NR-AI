@@ -266,10 +266,11 @@
 
       <!-- Bottom-Center Command Console -->
             <!-- Active Conversation Agent Banner -->
-      <div id="activeChatBanner" class="active-chat-banner" style="display: none;">
+      <div id="activeChatBanner" class="active-chat-banner" style="display: flex;">
         <span class="active-chat-pulse"></span>
-        <span class="active-chat-label">ACTIVE CHAT:</span>
-        <strong id="activeChatAgentName" class="active-chat-name">Droid</strong>
+        <span class="active-chat-label">ACTIVE AGENT:</span>
+        <strong id="activeChatAgentName" class="active-chat-name">NR-AI</strong>
+        <span id="bannerVoiceStatus" class="banner-voice-status" style="margin-left: 12px; font-family: var(--font-mono); font-size: 0.72rem; color: #38bdf8;">VOICE SESSION: INACTIVE</span>
         <button class="btn-return-central" onclick="returnToCentral()" title="Return to Central NR-AI">Back to Central NR-AI ↩</button>
       </div>
 
@@ -313,7 +314,9 @@
             </div>
           </div>
           <div class="chat-header-controls">
-            <span id="voiceClapIndicator" class="voice-clap-pill">🎤 VOICE READY</span>
+            <span id="voiceSessionBadge" class="voice-session-badge">VOICE SESSION: INACTIVE</span>
+            <span id="activeAgentBadge" class="active-agent-badge">ACTIVE AGENT: NR-AI</span>
+            <span id="voiceClapIndicator" class="voice-clap-pill">VOICE SESSION: INACTIVE</span>
             <button class="chat-top-btn" onclick="clearActiveAgentChat()" title="Clear Chat">Clear</button>
             <button class="chat-top-btn estop" onclick="triggerEmergencyStop()" title="Emergency Stop">🛑</button>
           </div>

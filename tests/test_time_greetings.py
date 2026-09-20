@@ -32,11 +32,11 @@ class TestTimeGreetings(unittest.TestCase):
             self.assertEqual(get_time_based_greeting(), "Good evening, Boss.")
 
     def test_late_night_greeting(self):
-        # 23:30 (11:30 PM)
+        # 23:30 (11:30 PM) is in the 18:00 - 04:59 interval: "Good evening, Boss."
         dt = datetime.datetime(2026, 9, 20, 23, 30, 0)
         with patch("datetime.datetime") as mock_dt:
             mock_dt.now.return_value = dt
-            self.assertEqual(get_time_based_greeting(), "Welcome back, Boss.")
+            self.assertEqual(get_time_based_greeting(), "Good evening, Boss.")
 
     def test_session_resume_greeting(self):
         # Any hour with is_resume=True
