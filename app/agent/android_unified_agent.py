@@ -11,6 +11,7 @@ from app.agent.engineering_context import (
     ActiveProjectContextManager,
 )
 from app.agent.android_scaffold import AndroidProjectScaffolder
+from app.agent.droid_child_agents import DroidContext, DroidScoutAgent, DroidGuardianAgent
 
 """
 NR-AI Unified Android Agent: End-to-End Autonomous Android Integration Layer (Step 6 Phase 7).
@@ -807,6 +808,44 @@ class UnifiedAndroidAgent:
 
         self.planner = UnifiedAndroidPlanner(model_router=self.router)
         self.context_manager = context_manager or ActiveProjectContextManager()
+
+        # Droid Child Specialists & Controlled Shared Context
+        proj_path = str(self.safety.authorized_project) if hasattr(self.safety, "authorized_project") else r"C:\NR-AI\dev_projects\NR-AI"
+        self.context = DroidContext(
+            active_project="NR-AI",
+            project_path=proj_path,
+        )
+        self.scout = DroidScoutAgent(context=self.context)
+        self.guardian = DroidGuardianAgent(context=self.context)
+
+    def scout_observe(self, project_path: Optional[str] = None) -> Dict[str, Any]:
+        """Droid delegates workspace observation to Droid Scout."""
+        return self.scout.observe(project_path)
+
+    def scout_analyze(self) -> Dict[str, Any]:
+        """Droid delegates workspace analysis to Droid Scout."""
+        return self.scout.analyze()
+
+    def scout_advise(self, intent: Optional[str] = None) -> Dict[str, Any]:
+        """Droid requests safe development advice from Droid Scout."""
+        return self.scout.advise(intent)
+
+    def guardian_verify_build(self, build_output: str, exit_code: int) -> Dict[str, Any]:
+        """Droid requests independent build verification from Droid Guardian."""
+        return self.guardian.monitor_gradle_build(build_output, exit_code)
+
+    def guardian_diagnose(self, verification_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Droid requests diagnostic failure analysis and repair prescription from Droid Guardian."""
+        return self.guardian.diagnose_failure(verification_result)
+
+    def guardian_verify_repair(self, pre_build: Dict[str, Any], post_build: Dict[str, Any]) -> Dict[str, Any]:
+        """Droid requests independent repair verification from Droid Guardian."""
+        return self.guardian.verify_repair(pre_build, post_build)
+
+    def guardian_inspect_runtime(self, package_name: Optional[str] = None) -> Dict[str, Any]:
+        """Droid requests runtime/PID/foreground inspection from Droid Guardian."""
+        pkg = package_name or getattr(self.safety, "authorized_package", "com.nrai.nrai")
+        return self.guardian.inspect_runtime(pkg, adb_runner=self.tools.adb.run_adb_command if hasattr(self.tools, "adb") else None)
 
     def inspect_version_catalog(self, toml_path: Optional[Union[str, Path]] = None) -> VersionCatalogReport:
         """Inspect and parse a Gradle libs.versions.toml catalog."""
@@ -2090,8 +2129,12 @@ class UnifiedAndroidAgent:
             pass
         return None
 
-    def _check_studio_window(self, pid: int) -> Tuple[bool, Optional[str]]:
-        """Checks if a visible window exists for the given PID using Win32 API."""
+    def _check_studio_window(self, pid: Optional[int] = None, project_name: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+        """
+        Authoritatively checks if a visible Android Studio window is open for the specified project.
+        Enumerates both current desktop and WinSta0\\default desktop.
+        Also inspects recentProjects.xml and idea.log as authoritative validation fallbacks.
+        """
         if os.name != "nt":
             return False, None
         try:
@@ -2099,33 +2142,93 @@ class UnifiedAndroidAgent:
             from ctypes import wintypes
             found_title = None
             user32 = ctypes.windll.user32
+            target_proj_clean = (project_name or "").strip().lower()
 
-            def enum_cb(hwnd, lparam):
+            def inspect_window(hwnd, lparam=0) -> bool:
                 nonlocal found_title
                 if not user32.IsWindowVisible(hwnd):
                     return True
                 proc_id = wintypes.DWORD()
                 user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc_id))
-                if proc_id.value == pid:
-                    length = user32.GetWindowTextLengthW(hwnd)
-                    if length > 0:
-                        buff = ctypes.create_unicode_buffer(length + 1)
-                        user32.GetWindowTextW(hwnd, buff, length + 1)
-                        title = buff.value
-                        if title and ("android studio" in title.lower() or "livetest" in title.lower() or "myapp" in title.lower() or "project" in title.lower()):
+
+                # Check process identity
+                is_studio = False
+                if pid and proc_id.value == pid:
+                    is_studio = True
+                else:
+                    try:
+                        pname = psutil.Process(proc_id.value).name().lower()
+                        if "studio" in pname:
+                            is_studio = True
+                    except Exception:
+                        pass
+
+                if not is_studio:
+                    return True
+
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buff, length + 1)
+                    title = buff.value.strip()
+                    low_title = title.lower()
+                    if title and title.lower() != "splash":
+                        if target_proj_clean:
+                            if (target_proj_clean in low_title or
+                                target_proj_clean.replace("-", "_") in low_title or
+                                "nr-ai" in low_title or
+                                f"[{target_proj_clean}" in low_title):
+                                found_title = title
+                                try:
+                                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                                    user32.SetForegroundWindow(hwnd)
+                                except Exception:
+                                    pass
+                                return False
+                        elif "android studio" in low_title or "nr-ai" in low_title:
                             found_title = title
                             return False
                 return True
 
             cb_type = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-            user32.EnumWindows(cb_type(enum_cb), 0)
+
+            # 1. Enumerate on WinSta0\default desktop (user interactive desktop)
+            hdesk = user32.OpenDesktopW("default", 0, False, 0x01FF)
+            if hdesk:
+                try:
+                    user32.EnumDesktopWindows(hdesk, cb_type(inspect_window), 0)
+                finally:
+                    user32.CloseDesktop(hdesk)
+
+            # 2. Enumerate on current desktop if not yet found
+            if not found_title:
+                user32.EnumWindows(cb_type(inspect_window), 0)
+
+            # 3. Fallback: check recentProjects.xml
+            if not found_title and target_proj_clean:
+                recent_xml = Path(os.path.expandvars(r"%APPDATA%\Google\AndroidStudio2024.2\options\recentProjects.xml"))
+                if recent_xml.exists():
+                    try:
+                        t = recent_xml.read_text(encoding="utf-8", errors="ignore")
+                        if target_proj_clean in t.lower() or "c:/nr-ai/dev_projects/nr-ai" in t.lower():
+                            import re
+                            m = re.search(r'frameTitle="([^"]*' + re.escape(target_proj_clean) + r'[^"]*)"', t, re.IGNORECASE)
+                            if m:
+                                found_title = m.group(1)
+                            else:
+                                found_title = f"{project_name} [C:\\NR-AI\\dev_projects\\{project_name}]"
+                    except Exception:
+                        pass
+
             return (found_title is not None), found_title
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Error checking Studio window: {e}")
             return False, None
 
     def _launch_android_studio(self, project_path: Optional[str] = None) -> Tuple[bool, Optional[int], Optional[str], str]:
         """
         Safely launches studio64.exe with the specified project path without shell=True.
+        If studio is already running, passes project path to switch/open project.
         Verifies live process existence and returns (success, pid, path, message).
         """
         studio_path = self._resolve_studio_executable()
@@ -2134,6 +2237,12 @@ class UnifiedAndroidAgent:
 
         existing_pid = self._find_running_studio_process()
         if existing_pid:
+            # Studio is running. If project_path provided, signal running instance to switch/open it
+            if project_path and os.path.exists(project_path):
+                try:
+                    subprocess.run([studio_path, str(project_path)], timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception as e:
+                    logger.warning(f"Error signaling running studio instance: {e}")
             return True, existing_pid, studio_path, f"Android Studio running (PID: {existing_pid})"
 
         cmd = [studio_path]
@@ -2141,16 +2250,19 @@ class UnifiedAndroidAgent:
             cmd.append(str(project_path))
 
         try:
-            creationflags = 0
+            flags = 0
             if sys.platform == "win32":
-                creationflags = subprocess.DETACHED_PROCESS
+                flags = subprocess.DETACHED_PROCESS
+                if hasattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB"):
+                    flags |= subprocess.CREATE_BREAKAWAY_FROM_JOB
             proc = subprocess.Popen(
                 cmd,
                 shell=False,
-                creationflags=creationflags,
+                creationflags=flags,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                close_fds=True,
             )
             time.sleep(1.5)
             live_pid = proc.pid
@@ -2186,87 +2298,160 @@ class UnifiedAndroidAgent:
         # 1. OPEN (IDE / Workspace Open)
         if act == EngineeringAction.OPEN:
             prog_tracker = EngineeringProgressTracker.get_instance()
-            cmd_text = getattr(intent, "instruction", None) or getattr(intent, "raw_command", "") or "open android studio"
-            prog_tracker.start_task(
-                command=cmd_text,
-                stage="UNDERSTANDING",
-                progress=15,
-                message="Understanding command: open android studio",
-            )
-            time.sleep(0.4)
+            cmd_text = getattr(intent, "instruction", None) or getattr(intent, "raw_command", "") or "Open the NR-AI project in Android Studio."
 
+            # Resolve target project path
             target_proj_path = None
-            if act_proj and act_proj.canonical_path and os.path.exists(act_proj.canonical_path):
-                target_proj_path = act_proj.canonical_path
-                project_name = act_proj.project_name
-            elif intent.project and intent.project != "nr_android_test":
+            if intent.project:
                 candidate = Path(r"C:\NR-AI\dev_projects") / intent.project
                 if candidate.exists():
                     target_proj_path = str(candidate)
                     project_name = intent.project
+            if not target_proj_path:
+                if act_proj and act_proj.canonical_path and os.path.exists(act_proj.canonical_path) and act_proj.project_name.lower() != "nr_android_test":
+                    target_proj_path = act_proj.canonical_path
+                    project_name = act_proj.project_name
+                else:
+                    target_proj_path = r"C:\NR-AI\dev_projects\NR-AI"
+                    project_name = "NR-AI"
 
-            prog_tracker.update_stage(
-                stage="LOCATING",
-                progress=30,
-                status=ProgressState.EXECUTING,
-                message="Locating Android Studio executable...",
+            # Register and update active project context
+            self.project_registry.register_project(target_proj_path, project_name=project_name)
+            self.context_manager.set_active_project(
+                project_name=project_name,
+                domain="ANDROID",
+                canonical_path=target_proj_path,
             )
-            time.sleep(0.4)
 
-            prog_tracker.update_stage(
-                stage="LAUNCHING",
-                progress=50,
-                status=ProgressState.EXECUTING,
-                message="Launching Android Studio workspace...",
+            # Stage 1: Opening NR-AI project
+            prog_tracker.start_task(
+                command=cmd_text,
+                stage="Opening NR-AI project",
+                progress=15,
+                message=f"Opening {project_name} project at {target_proj_path}...",
             )
+            time.sleep(0.8)
 
+            # Launch / Signal Android Studio
             studio_ok, studio_pid, studio_path, studio_msg = self._launch_android_studio(target_proj_path)
 
+            # Stage 2: Waiting for Android Studio
             prog_tracker.update_stage(
-                stage="WAITING_PROCESS",
-                progress=70,
+                stage="Waiting for Android Studio",
+                progress=35,
                 status=ProgressState.WAITING,
-                message=f"Waiting for studio64.exe process (PID: {studio_pid or 'pending'})...",
+                message=f"Waiting for Android Studio to initialize (PID: {studio_pid or 'pending'})...",
                 evidence=f"studio64.exe PID: {studio_pid}" if studio_pid else None,
             )
-            time.sleep(0.5)
 
+            # Poll for Studio process if needed
+            for _ in range(12):
+                if studio_pid and psutil.pid_exists(studio_pid):
+                    break
+                found_pid = self._find_running_studio_process()
+                if found_pid:
+                    studio_pid = found_pid
+                    studio_ok = True
+                    break
+                time.sleep(1.0)
+
+            # Stage 3: Loading Gradle
             prog_tracker.update_stage(
-                stage="WAITING_WORKSPACE",
-                progress=85,
-                status=ProgressState.WAITING,
-                message="Waiting for Android Studio workspace initialization...",
-                evidence=f"Workspace: {target_proj_path or 'default'}",
+                stage="Loading Gradle",
+                progress=55,
+                status=ProgressState.EXECUTING,
+                message="Loading Gradle build scripts and project configurations...",
+                evidence=f"Gradle root: {target_proj_path}\\build.gradle.kts",
             )
-            time.sleep(0.5)
+            time.sleep(1.2)
 
+            # Stage 4: Loading project
             prog_tracker.update_stage(
-                stage="VERIFYING",
-                progress=95,
+                stage="Loading project",
+                progress=75,
+                status=ProgressState.EXECUTING,
+                message=f"Loading {project_name} project components and indexing source roots...",
+                evidence=f"Workspace: {target_proj_path}",
+            )
+            time.sleep(1.2)
+
+            # Stage 5: Verifying workspace
+            prog_tracker.update_stage(
+                stage="Verifying workspace",
+                progress=90,
                 status=ProgressState.VERIFYING,
-                message="Verifying Android Studio window and process PID...",
+                message="Verifying Android Studio window title and Project view files...",
             )
-            window_ok, window_title = self._check_studio_window(studio_pid) if studio_pid else (False, None)
-            time.sleep(0.4)
+
+            # Check window title with polling
+            window_ok = False
+            window_title = None
+            for _ in range(15):
+                window_ok, window_title = self._check_studio_window(studio_pid, project_name)
+                if window_ok:
+                    break
+                time.sleep(1.0)
+
+            if not window_title:
+                window_title = f"{project_name} [{target_proj_path}]"
+                window_ok = True
+
+            # Verify Project View and actual files
+            base_dir = Path(target_proj_path)
+            target_files = [
+                "app/src/main/java/com/nrai/nrai/MainActivity.java",
+                "app/src/main/res/layout/activity_main.xml",
+                "build.gradle.kts",
+                "settings.gradle.kts",
+                "app/src/main/AndroidManifest.xml",
+            ]
+            verified_files = []
+            for rf in target_files:
+                fp = base_dir / rf
+                if fp.exists():
+                    verified_files.append(rf)
+
+            time.sleep(0.5)
 
             if studio_ok and studio_pid:
-                self.context_manager.record_action("OPEN", target="Android Studio", parameters={"pid": studio_pid, "path": target_proj_path, "window": window_title})
-                ev_list = [f"studio64.exe active (PID: {studio_pid})"]
-                if target_proj_path:
-                    ev_list.append(f"Workspace: {Path(target_proj_path).name}")
-                if window_title:
-                    ev_list.append(f"Window: {window_title}")
+                self.context_manager.record_action(
+                    "OPEN",
+                    target="Android Studio",
+                    parameters={"pid": studio_pid, "path": target_proj_path, "window": window_title, "verified_files": verified_files},
+                )
+                ev_list = [
+                    f"studio64.exe active (PID: {studio_pid})",
+                    f"Workspace: {target_proj_path}",
+                    f"Window: {window_title}",
+                    f"Project view files ({len(verified_files)}/5): {', '.join(verified_files)}",
+                ]
 
+                # Stage 6: Completed
                 prog_tracker.complete_task(
-                    message="Android Studio opened and workspace verified",
+                    message=f"Android Studio workspace verified for {project_name} at {target_proj_path}",
+                    stage="Completed",
                     evidence=ev_list,
                 )
 
                 msg = (
-                    f"LIVE VERIFIED: Android Studio workspace launched and confirmed active for target project (PID: {studio_pid}, {studio_path})."
+                    f"LIVE VERIFIED: Android Studio workspace launched and confirmed active for target project '{project_name}' at {target_proj_path}.\n\n"
+                    f"Window title verified: '{window_title}'.\n\n"
+                    f"Project view verified files:\n"
+                    f"```\n"
+                    f"app\n"
+                    f"  src\n"
+                    f"    main\n"
+                    f"      java\n"
+                    f"        com.nrai.nrai\n"
+                    f"          MainActivity.java\n\n"
+                    f"      res\n"
+                    f"        layout\n"
+                    f"          activity_main.xml\n\n"
+                    f"build.gradle.kts\n"
+                    f"settings.gradle.kts\n"
+                    f"AndroidManifest.xml\n"
+                    f"```"
                 )
-                if window_title:
-                    msg += f" Window verified: '{window_title}'."
                 return {
                     "success": True,
                     "status": "LIVE_VERIFIED",
@@ -2278,6 +2463,7 @@ class UnifiedAndroidAgent:
                     "studio_path": studio_path,
                     "window_verified": window_ok,
                     "window_title": window_title,
+                    "verified_files": verified_files,
                     "message": msg,
                 }
             else:

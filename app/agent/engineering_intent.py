@@ -243,7 +243,7 @@ class EngineeringIntentParser:
         elif "c#" in cmd_lower or "csharp" in cmd_lower:
             params["language"] = "C#"
 
-        # Project extraction pattern: "called/named <name>", "project <name>", "create <name>"
+        # Project extraction pattern: "called/named <name>", "project <name>", "create <name>", "open the <name> project"
         extracted_project: Optional[str] = None
         m_named = re.search(r"(?:called|named)\s+([A-Za-z0-9_-]+)", cmd, re.IGNORECASE)
         if m_named:
@@ -257,13 +257,29 @@ class EngineeringIntentParser:
             if m_create_proj:
                 extracted_project = m_create_proj.group(1).strip()
             else:
-                m_create_single = re.search(
-                    r"^create\s+([A-Za-z0-9_-]+)(?:\.|$)",
+                m_the_proj = re.search(
+                    r"(?:open|load|import|switch\s+to|view)?\s*(?:the\s+)?([A-Za-z0-9_-]+)\s+project",
                     cmd,
                     re.IGNORECASE,
                 )
-                if m_create_single and m_create_single.group(1).lower() not in ("a", "an", "the", "project", "new"):
-                    extracted_project = m_create_single.group(1).strip()
+                if m_the_proj and m_the_proj.group(1).lower() not in ("a", "an", "the", "this", "new", "my", "active", "android", "unreal", "unity", "existing", "open"):
+                    extracted_project = m_the_proj.group(1).strip()
+                else:
+                    m_proj_named = re.search(
+                        r"project\s+(?:called\s+|named\s+)?([A-Za-z0-9_-]+)",
+                        cmd,
+                        re.IGNORECASE,
+                    )
+                    if m_proj_named and m_proj_named.group(1).lower() not in ("called", "named", "in", "with", "for", "on", "a", "an", "the", "this", "new", "my", "active", "android", "unreal", "unity"):
+                        extracted_project = m_proj_named.group(1).strip()
+                    else:
+                        m_create_single = re.search(
+                            r"^create\s+([A-Za-z0-9_-]+)(?:\.|$)",
+                            cmd,
+                            re.IGNORECASE,
+                        )
+                        if m_create_single and m_create_single.group(1).lower() not in ("a", "an", "the", "project", "new"):
+                            extracted_project = m_create_single.group(1).strip()
 
         # -------------------------------------------------------------
         # 1. OPEN (IDE / Workspace Open)

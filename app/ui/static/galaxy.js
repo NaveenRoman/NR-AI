@@ -76,6 +76,9 @@ const state = {
   currentSpeakerId: null,
   isSpeakingAudio: false,
   introTimer: null,
+  focusAgent: null,
+  clapEnabled: true,
+  isListeningClap: false,
 };
 window.state = state;
 
@@ -197,8 +200,57 @@ function renderLoop(now) {
 // -----------------------------------------------------------------------------
 // Drawing Helpers
 // -----------------------------------------------------------------------------
+function isDroidFocused() {
+  const cur = (state.activeConversationAgent || "").toLowerCase();
+  const foc = (state.focusAgent || "").toLowerCase();
+  return cur.includes("droid") || cur.includes("android") || foc.includes("droid") || foc.includes("android");
+}
+
 function getNodePosition(node, now) {
-  // Slow, elegant continuous orbital revolution without camera translation
+  if (!node) return { x: 0, y: 0, hidden: true };
+  const inFocus = isDroidFocused();
+
+  // 1. Droid Focus Mode: Droid moves to center, Scout & Guardian orbit Droid, others hidden!
+  if (inFocus) {
+    if (node.agent_id === "android_unified_agent") {
+      return { x: 0, y: 0, angleRad: 0, isCenter: true };
+    }
+    if (node.agent_id === "droid_scout") {
+      const speed = 0.0008;
+      const angle = ((30 * Math.PI) / 180) + (now ? now * speed : 0);
+      const r = 150;
+      return { x: Math.cos(angle) * r, y: Math.sin(angle) * r, angleRad: angle };
+    }
+    if (node.agent_id === "droid_guardian") {
+      const speed = 0.0008;
+      const angle = ((210 * Math.PI) / 180) + (now ? now * speed : 0);
+      const r = 185;
+      return { x: Math.cos(angle) * r, y: Math.sin(angle) * r, angleRad: angle };
+    }
+    // All other unrelated agents disappear from visible scene
+    return { x: 99999, y: 99999, angleRad: 0, hidden: true };
+  }
+
+  // 2. Normal Galaxy Mode: Droid Scout & Guardian orbit Droid as moons/satellites
+  if (node.parent_department === "android_unified_agent" || node.parent_agent === "android_unified_agent") {
+    const droidNode = state.galaxy && state.galaxy.nodes ? state.galaxy.nodes.find(n => n.agent_id === "android_unified_agent") : null;
+    let basePos = { x: 180, y: 180 };
+    if (droidNode) {
+      const dRing = droidNode.orbit_ring || 1;
+      const dSpeed = 0.00003 * (4 - dRing);
+      const dRad = ((droidNode.orbit_angle * Math.PI) / 180) + (now ? now * dSpeed : 0);
+      basePos = { x: Math.cos(dRad) * droidNode.orbit_radius, y: Math.sin(dRad) * droidNode.orbit_radius };
+    }
+    const offsetAngle = node.agent_id === "droid_scout" ? (now ? now * 0.001 : 0) : ((now ? now * 0.001 : 0) + Math.PI);
+    const satelliteR = node.agent_id === "droid_scout" ? 48 : 64;
+    return {
+      x: basePos.x + Math.cos(offsetAngle) * satelliteR,
+      y: basePos.y + Math.sin(offsetAngle) * satelliteR,
+      angleRad: offsetAngle,
+    };
+  }
+
+  // 3. Standard celestial orbital revolution
   const ring = node.orbit_ring || 1;
   const speed = 0.00003 * (4 - ring);
   const rad = ((node.orbit_angle * Math.PI) / 180) + (now ? now * speed : 0);
@@ -208,17 +260,31 @@ function getNodePosition(node, now) {
     angleRad: rad,
   };
 }
+window.getNodePosition = getNodePosition;
 
 function drawOrbits() {
-  const rings = (state.galaxy && state.galaxy.orbital_rings) || [260, 400, 540];
   ctx.save();
-  for (const r of rings) {
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(56, 189, 248, 0.09)";
-    ctx.lineWidth = 1.2;
-    ctx.setLineDash([4, 10]);
-    ctx.stroke();
+  if (isDroidFocused()) {
+    // Focused Droid Satellite Orbit Rings
+    for (const r of [150, 185]) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(16, 185, 129, 0.25)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 8]);
+      ctx.stroke();
+    }
+  } else {
+    // Normal concentric celestial rings
+    const rings = (state.galaxy && state.galaxy.orbital_rings) || [260, 400, 540];
+    for (const r of rings) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.09)";
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 10]);
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }
@@ -236,14 +302,41 @@ function drawConnections(now) {
   // Render connections list (Central and Trinity Inter-Agent)
   if (state.galaxy.connections && Array.isArray(state.galaxy.connections)) {
     for (const conn of state.galaxy.connections) {
+      if (isDroidFocused()) {
+        // In Focus Mode, only draw Droid to child satellites connections
+        if (conn.from === "android_unified_agent" || conn.is_droid_hierarchy) {
+          const toNode = nodeMap.get(conn.to);
+          if (!toNode) continue;
+          const pos = getNodePosition(toNode, now);
+          if (pos.hidden) continue;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(pos.x, pos.y);
+          ctx.strokeStyle = toNode.agent_id === "droid_scout" ? "#34d399" : "#10b981";
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = ctx.strokeStyle;
+          ctx.shadowBlur = 12;
+          ctx.stroke();
+
+          // Data particle
+          const t = ((now * 0.002) % 1);
+          ctx.beginPath();
+          ctx.arc(pos.x * t, pos.y * t, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.fill();
+        }
+        continue;
+      }
+
       if (conn.from === "nr_ai_central_intelligence") {
         const toNode = nodeMap.get(conn.to);
         if (!toNode) continue;
+        const pos = getNodePosition(toNode, now);
+        if (pos.hidden) continue;
         const isSpeaker = state.introMode && state.currentSpeakerId === toNode.agent_id;
         const isFiltered = isNodeFilteredOut(toNode);
         const alpha = isFiltered ? 0.05 : (state.introMode && !isSpeaker ? 0.12 : 0.25);
 
-        const pos = getNodePosition(toNode, now);
         const nx = pos.x;
         const ny = pos.y;
 
@@ -435,12 +528,13 @@ function drawNodes(now) {
   if (!state.galaxy || !state.galaxy.nodes) return;
 
   for (const node of state.galaxy.nodes) {
+    const pos = getNodePosition(node, now);
+    if (pos.hidden) continue;
     const isFiltered = isNodeFilteredOut(node);
     const isSelected = state.selectedNode && state.selectedNode.agent_id === node.agent_id;
     const isSpeaker = state.introMode && state.currentSpeakerId === node.agent_id;
 
     ctx.save();
-    const pos = getNodePosition(node, now);
     const x = pos.x;
     const y = pos.y;
 
@@ -1921,7 +2015,15 @@ async function pollGalaxyState() {
     const data = await res.json();
     if (!data.success) return;
 
+    const prevFocusMode = state.galaxy ? state.galaxy.focus_mode : (state.focusAgent === "android_unified_agent");
+    const prevFocusAgent = state.galaxy ? state.galaxy.focus_agent_id : state.focusAgent;
+    const prevSelectedNode = state.galaxy ? state.galaxy.selected_node_id : (state.selectedNode ? state.selectedNode.agent_id : null);
     state.galaxy = data;
+    if (prevFocusMode || state.focusAgent === "android_unified_agent") {
+      state.galaxy.focus_mode = true;
+      state.galaxy.focus_agent_id = prevFocusAgent || "android_unified_agent";
+      state.galaxy.selected_node_id = prevSelectedNode;
+    }
     updateHUDTelemetry(data.system_metrics);
 
     // Sync active conversational agent banner
@@ -3203,3 +3305,390 @@ async function checkDeviceVulnerabilities(deviceId) {
     alert("Check error: " + err.message);
   }
 }
+
+
+// =============================================================================
+// DEDICATED CHAT PANEL & AGENT INFORMATION SYNC
+// =============================================================================
+
+function syncAgentInfoPanel(node) {
+  if (!node) return;
+  const nameElem = document.getElementById("infoAgentName");
+  if (nameElem) nameElem.textContent = node.friendly_name;
+
+  const roleElem = document.getElementById("infoAgentRole");
+  if (roleElem) roleElem.textContent = node.role;
+
+  const statusElem = document.getElementById("infoAgentStatus");
+  if (statusElem) {
+    statusElem.textContent = `● ${node.status || "ONLINE"}`;
+    statusElem.style.color = node.status_color || "#10b981";
+  }
+
+  const avatar = document.getElementById("infoAgentAvatar");
+  if (avatar) avatar.textContent = getIconGlyph(node.icon_type);
+
+  const parentElem = document.getElementById("infoParentAgent");
+  if (parentElem) {
+    if (node.agent_id === "droid_scout" || node.agent_id === "droid_guardian") {
+      parentElem.textContent = "Droid";
+    } else {
+      parentElem.textContent = node.parent_agent || "NR-AI";
+    }
+  }
+
+  const childrenElem = document.getElementById("infoChildAgents");
+  if (childrenElem) {
+    if (node.agent_id === "android_unified_agent" || node.agent_id === "droid") {
+      childrenElem.textContent = "Droid Scout, Droid Guardian";
+    } else {
+      childrenElem.textContent = "None";
+    }
+  }
+
+  const projElem = document.getElementById("infoActiveProject");
+  if (projElem) projElem.textContent = node.project_name || "NR-AI";
+
+  const taskElem = document.getElementById("infoCurrentTask");
+  if (taskElem) taskElem.textContent = (node.current_task && node.current_task.description) || "Standing by in Android Studio workspace";
+
+  const stageElem = document.getElementById("infoCurrentStage");
+  if (stageElem) stageElem.textContent = "READY";
+
+  const safetyElem = document.getElementById("infoSafetyState");
+  if (safetyElem) safetyElem.textContent = "ModelIsolationGate (Deterministic)";
+
+  // Update chat header
+  const chatTitle = document.getElementById("dedicatedChatTitle");
+  if (chatTitle) chatTitle.textContent = `ACTIVE CHAT: ${node.friendly_name}`;
+
+  const chatSub = document.getElementById("dedicatedChatSub");
+  if (chatSub) chatSub.textContent = `● ${node.status || "ONLINE"} • MODEL ISOLATION GATE`;
+
+  const chatAvatar = document.getElementById("dedicatedChatAvatar");
+  if (chatAvatar) chatAvatar.textContent = getIconGlyph(node.icon_type);
+}
+
+function appendChatMessage(arg1, arg2, arg3, arg4) {
+  const container = document.getElementById("dedicatedChatHistory");
+  const oldContainer = document.getElementById("panelChatHistory");
+
+  let author = "Agent";
+  let role = "agent";
+  let text = "";
+
+  if (arg3 !== undefined && typeof arg2 === "string" && (arg2 === "user" || arg2 === "agent" || arg2 === "scout" || arg2 === "guardian")) {
+    author = arg1 || "Agent";
+    role = arg2;
+    text = (arg3 !== undefined && arg3 !== null) ? String(arg3) : "";
+  } else {
+    role = arg1 || "agent";
+    text = (arg2 !== undefined && arg2 !== null) ? String(arg2) : "";
+    author = role === "user" ? "Operator" : (role === "agent" ? (state.selectedAgent ? state.selectedAgent.name : "Agent") : String(role).toUpperCase());
+  }
+
+  const safeText = String(text);
+
+  if (container) {
+    const bubble = document.createElement("div");
+    bubble.className = `chat-bubble ${role}`;
+
+    const authorSpan = document.createElement("span");
+    authorSpan.className = "bubble-author";
+    authorSpan.textContent = author;
+
+    const textNode = document.createElement("div");
+    textNode.className = "bubble-text";
+    textNode.innerHTML = safeText.replace(/\n/g, "<br/>");
+
+    bubble.appendChild(authorSpan);
+    bubble.appendChild(textNode);
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // Also sync to legacy container if exists
+  if (oldContainer) {
+    const bubble = document.createElement("div");
+    bubble.className = `chat-bubble ${role}`;
+    bubble.innerHTML = `<span class="bubble-author">${author}:</span> ${safeText.replace(/\n/g, "<br/>")}`;
+    oldContainer.appendChild(bubble);
+    oldContainer.scrollTop = oldContainer.scrollHeight;
+  }
+}
+window.appendChatMessage = appendChatMessage;
+
+function updateDroidProgress(stage, desc, pct) {
+  const banner = document.getElementById("droidProgressBanner");
+  if (banner) banner.style.display = "block";
+  const stageElem = document.getElementById("droidProgressStage");
+  if (stageElem) stageElem.textContent = stage;
+  const descElem = document.getElementById("droidProgressDesc");
+  if (descElem) descElem.textContent = desc;
+  const pctElem = document.getElementById("droidProgressPct");
+  if (pctElem) pctElem.textContent = `${pct}%`;
+  const barFill = document.getElementById("droidProgressBarFill");
+  if (barFill) barFill.style.width = `${pct}%`;
+}
+window.updateDroidProgress = updateDroidProgress;
+
+async function sendDedicatedChatMessage() {
+  const input = document.getElementById("dedicatedChatInput");
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+
+  appendChatMessage("Operator", "user", text);
+
+  // Address recognition & Focus mode switching
+  const textLow = text.toLowerCase();
+  if (textLow.includes("droid scout") || textLow.startsWith("scout")) {
+    selectAgent("droid_scout");
+  } else if (textLow.includes("droid guardian") || textLow.startsWith("guardian")) {
+    selectAgent("droid_guardian");
+  } else if (textLow.includes("droid") || textLow.startsWith("hey droid") || textLow.startsWith("open droid")) {
+    selectAgent("android_unified_agent");
+  }
+
+  const isEngineering = textLow.includes("open") || textLow.includes("build") || textLow.includes("run") || textLow.includes("project") || textLow.includes("create") || textLow.includes("modify") || textLow.includes("activity");
+  const progBanner = document.getElementById("droidProgressBanner");
+  if (isEngineering && progBanner) {
+    progBanner.style.display = "block";
+    updateDroidProgress("EXECUTING", `Executing: "${text}"`, 20);
+  }
+
+  try {
+    const pollInterval = isEngineering ? setInterval(async () => {
+      try {
+        const pRes = await fetch("/api/engineering/progress");
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          if (pData.progress) {
+            const p = pData.progress;
+            updateDroidProgress(p.state || "EXECUTING", p.description || text, Math.round(p.progress * 100));
+          }
+        }
+      } catch (e) {}
+    }, 400) : null;
+
+    const res = await fetch("/api/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: text }),
+    });
+    if (pollInterval) clearInterval(pollInterval);
+
+    const data = await res.json();
+    const reply = data.text || "Operation completed.";
+    const activeName = state.activeConversationAgentName || "Droid";
+    appendChatMessage(activeName, "agent", reply);
+
+    if (progBanner) {
+      updateDroidProgress("COMPLETED", "Execution completed successfully.", 100);
+      setTimeout(() => {
+        if (progBanner) progBanner.style.display = "none";
+      }, 3500);
+    }
+
+    if (state.ttsEnabled) speakText(reply);
+  } catch (err) {
+    console.error("Dedicated chat error:", err);
+    appendChatMessage("System", "agent", `Error executing command: ${err.message}`);
+    if (progBanner) {
+      updateDroidProgress("FAILED", `Error: ${err.message}`, 100);
+    }
+  }
+
+  pollGalaxyState();
+}
+window.sendDedicatedChatMessage = sendDedicatedChatMessage;
+
+// =============================================================================
+// CLAP ACTIVATION ENGINE (Local Web Audio API)
+// =============================================================================
+
+let clapAudioContext = null;
+let clapAnalyser = null;
+let clapMediaStream = null;
+let clapListeningTimeout = null;
+
+function initClapDetector() {
+  window.addEventListener("click", async () => {
+    if (clapMediaStream) return;
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        clapMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        clapAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = clapAudioContext.createMediaStreamSource(clapMediaStream);
+        clapAnalyser = clapAudioContext.createAnalyser();
+        clapAnalyser.fftSize = 256;
+        source.connect(clapAnalyser);
+        requestAnimationFrame(monitorClapAudio);
+        console.log("Web Audio Clap Detector initialized.");
+      }
+    } catch (e) {
+      console.log("Local microphone unavailable for continuous clap listening (mock/simulation ready).");
+    }
+  }, { once: true });
+}
+
+function monitorClapAudio() {
+  if (!clapAnalyser || !state.clapEnabled) return;
+  const buffer = new Float32Array(clapAnalyser.fftSize);
+  clapAnalyser.getFloatTimeDomainData(buffer);
+
+  let peak = 0;
+  let sumSq = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    const val = Math.abs(buffer[i]);
+    if (val > peak) peak = val;
+    sumSq += val * val;
+  }
+  const rms = Math.sqrt(sumSq / buffer.length);
+  const crest = rms > 0.001 ? peak / rms : 0;
+
+  // Clap criterion: peak > 0.4, crest > 3.2
+  if (peak > 0.4 && crest > 3.2) {
+    triggerClapEvent();
+  }
+
+  requestAnimationFrame(monitorClapAudio);
+}
+
+function triggerClapEvent() {
+  console.log("👏 CLAP EVENT TRIGGERED!");
+  const indicator = document.getElementById("voiceClapIndicator");
+  if (indicator) {
+    indicator.textContent = "👏 CLAP DETECTED • LISTENING...";
+    indicator.classList.add("clap-active");
+  }
+  const banner = document.getElementById("droidProgressBanner");
+  if (banner) {
+    banner.textContent = "👏 CLAP DETECTED • LISTENING...";
+  }
+
+  if (state.recognition) {
+    try {
+      state.recognition.start();
+    } catch (e) {}
+  }
+
+  clearTimeout(clapListeningTimeout);
+  clapListeningTimeout = setTimeout(() => {
+    if (indicator) {
+      indicator.textContent = "🎤 VOICE READY";
+      indicator.classList.remove("clap-active");
+    }
+  }, 7000);
+}
+window.triggerClapEvent = triggerClapEvent;
+
+function toggleClapDetection() {
+  state.clapEnabled = !state.clapEnabled;
+  const btn = document.getElementById("btnClapMode");
+  if (btn) btn.textContent = state.clapEnabled ? "👏 Clap Mode: ON" : "👏 Clap Mode: OFF";
+}
+window.toggleClapDetection = toggleClapDetection;
+
+// =============================================================================
+// TIME-BASED GREETING & WELCOME BACK
+// =============================================================================
+
+async function checkSessionGreeting() {
+  const greeted = sessionStorage.getItem("nrai_session_greeted");
+  if (!greeted) {
+    try {
+      const res = await fetch("/api/session/greeting");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.greeting) {
+          appendChatMessage("NR-AI", "agent", data.greeting);
+          sessionStorage.setItem("nrai_session_greeted", "true");
+        }
+      }
+    } catch (e) {
+      console.warn("Session greeting fetch failed:", e);
+    }
+  }
+}
+
+let lastFocusTime = Date.now();
+window.addEventListener("focus", async () => {
+  const now = Date.now();
+  if (now - lastFocusTime > 60000) {
+    try {
+      const res = await fetch("/api/session/greeting?resume=1");
+      if (res.ok) {
+        const data = await res.json();
+        appendChatMessage("NR-AI", "agent", data.greeting);
+      }
+    } catch (e) {}
+  }
+  lastFocusTime = now;
+});
+window.addEventListener("blur", () => {
+  lastFocusTime = Date.now();
+});
+
+// Update selectAgent to handle string IDs and sync info panel
+const origSelectAgent = window.selectAgent;
+window.selectAgent = async function(nodeOrId) {
+  let node = nodeOrId;
+  if (typeof nodeOrId === "string") {
+    const found = state.galaxy && state.galaxy.nodes ? state.galaxy.nodes.find(n => n.agent_id === nodeOrId) : null;
+    if (found) {
+      node = found;
+    } else {
+      const fname = nodeOrId === "droid_scout" ? "Droid Scout" : (nodeOrId === "droid_guardian" ? "Droid Guardian" : "Droid");
+      const role = nodeOrId === "droid_scout" ? "Android Studio Watch & Development Assistant" : (nodeOrId === "droid_guardian" ? "Android Build & Verification Guardian" : "Android Agent");
+      node = {
+        agent_id: nodeOrId,
+        friendly_name: fname,
+        role: role,
+        status: "ONLINE",
+        status_color: "#10b981",
+        color: "#10b981",
+        glow: "rgba(16, 185, 129, 0.6)",
+        icon_type: nodeOrId === "droid_scout" ? "eye" : (nodeOrId === "droid_guardian" ? "shield" : "android"),
+        parent_agent: nodeOrId === "android_unified_agent" ? "NR-AI" : "Droid",
+        child_agents: nodeOrId === "android_unified_agent" ? ["Droid Scout", "Droid Guardian"] : [],
+      };
+    }
+  }
+
+  // Set focus mode
+  if (node.agent_id === "android_unified_agent" || node.agent_id === "droid" || node.agent_id === "droid_scout" || node.agent_id === "droid_guardian") {
+    state.focusAgent = "android_unified_agent";
+    state.activeConversationAgent = node.agent_id;
+    state.activeConversationAgentName = node.friendly_name;
+    if (state.galaxy) {
+      state.galaxy.focus_mode = true;
+      state.galaxy.focus_agent_id = "android_unified_agent";
+      state.galaxy.selected_node_id = node.agent_id;
+    }
+  } else {
+    state.focusAgent = null;
+    if (state.galaxy) {
+      state.galaxy.focus_mode = false;
+      state.galaxy.focus_agent_id = null;
+      state.galaxy.selected_node_id = node.agent_id;
+    }
+  }
+
+  syncAgentInfoPanel(node);
+
+  if (origSelectAgent) {
+    try {
+      await origSelectAgent(node);
+    } catch (e) {}
+  }
+};
+
+// Initialize greeting and clap on load
+document.addEventListener("DOMContentLoaded", () => {
+  checkSessionGreeting();
+  initClapDetector();
+  // Default focus on Droid in Agent Info Panel
+  selectAgent("android_unified_agent");
+});

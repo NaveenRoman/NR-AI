@@ -44,7 +44,7 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
     "android_unified_agent": {
         "friendly_name": "Droid",
         "workspace_name": "Android Studio",
-        "project_name": "NR AI Test",
+        "project_name": "NR-AI",
         "role": "Android Agent",
         "category": "Mobile & OS",
         "color": "#10b981",  # Emerald / Android green
@@ -52,6 +52,8 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
         "orbit_ring": 1,
         "base_angle": 45,
         "icon_type": "android",
+        "parent_agent": "nr_ai_central_intelligence",
+        "child_agents": ["droid_scout", "droid_guardian"],
         "greeting": "Hi Boss! I'm Droid, your Android Agent. I can help you create, build, debug, and deploy Android applications. Tell me your requirement!",
         "suggested_actions": [
             {"id": "android.create_project", "label": "Create Project", "icon": "plus-circle"},
@@ -60,6 +62,50 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
             {"id": "android.find_issues", "label": "Find Issues", "icon": "info"},
             {"id": "android.knowledge_graph", "label": "Knowledge Graph", "icon": "share-2"},
             {"id": "android.engineering_loop", "label": "Engineering Loop", "icon": "zap"},
+        ],
+    },
+    "droid_scout": {
+        "friendly_name": "Droid Scout",
+        "workspace_name": "Android Studio Watch",
+        "project_name": "NR-AI Workspace",
+        "role": "Android Studio Watch & Development Assistant",
+        "category": "Mobile & OS",
+        "color": "#34d399",  # Mint Emerald
+        "glow": "rgba(52, 211, 153, 0.6)",
+        "orbit_ring": 1,
+        "base_angle": 25,
+        "base_radius": 18.0,
+        "icon_type": "eye",
+        "parent_agent": "android_unified_agent",
+        "parent_department": "android_unified_agent",
+        "child_agents": [],
+        "greeting": "Hi Boss! I'm Droid Scout, Droid's development assistant. I observe the Android Studio workspace, monitor Gradle and project state, and advise Droid on development tasks.",
+        "suggested_actions": [
+            {"id": "scout.observe_workspace", "label": "Observe Workspace", "icon": "eye"},
+            {"id": "scout.analyze_project", "label": "Analyze Structure", "icon": "folder"},
+            {"id": "scout.suggest_next", "label": "Suggest Next Action", "icon": "zap"},
+        ],
+    },
+    "droid_guardian": {
+        "friendly_name": "Droid Guardian",
+        "workspace_name": "Build & Runtime Guard",
+        "project_name": "NR-AI Verification",
+        "role": "Android Build & Verification Guardian",
+        "category": "Mobile & OS",
+        "color": "#10b981",  # Deep emerald
+        "glow": "rgba(16, 185, 129, 0.7)",
+        "orbit_ring": 1,
+        "base_angle": 65,
+        "base_radius": 18.0,
+        "icon_type": "shield",
+        "parent_agent": "android_unified_agent",
+        "parent_department": "android_unified_agent",
+        "child_agents": [],
+        "greeting": "Hi Boss! I'm Droid Guardian, Droid's independent verification partner. I monitor Gradle builds, inspect compiler errors, detect runtime crashes, and verify Droid's repairs.",
+        "suggested_actions": [
+            {"id": "guardian.verify_build", "label": "Verify Build", "icon": "check-circle"},
+            {"id": "guardian.inspect_device", "label": "Inspect Device State", "icon": "smartphone"},
+            {"id": "guardian.diagnose_failure", "label": "Diagnose Failure", "icon": "alert-triangle"},
         ],
     },
     "vs_unified_agent": {
@@ -344,6 +390,8 @@ class CelestialNode:
     focus_mode: str = "IDLE" 
     base_radius: float = 26.0
     parent_department: Optional[str] = None
+    parent_agent: Optional[str] = None
+    child_agents: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -520,6 +568,8 @@ class GalaxyEngine:
                 focus_mode="WORKING" if status == "WORKING" else "IDLE",
                 base_radius=float(profile.get("base_radius", 26.0)),
                 parent_department=profile.get("parent_department"),
+                parent_agent=profile.get("parent_agent", "nr_ai_central_intelligence"),
+                child_agents=list(profile.get("child_agents", [])),
             )
             nodes.append(node)
 
@@ -616,6 +666,9 @@ class GalaxyEngine:
 
         connections = []
         for n in nodes:
+            # Hierarchy Invariant: Droid Scout and Droid Guardian MUST NOT connect directly to NR-AI central core!
+            if getattr(n, "parent_agent", None) == "android_unified_agent" or getattr(n, "parent_department", None) == "android_unified_agent":
+                continue
             connections.append({
                 "from": "nr_ai_central_intelligence",
                 "to": n.agent_id,
@@ -624,6 +677,22 @@ class GalaxyEngine:
                 "glow": n.glow,
                 "animated": n.status in ("WORKING", "THINKING"),
             })
+
+        # Droid Child Specialist Satellite Connections (Droid -> Scout, Droid -> Guardian)
+        # Reflects strictly NR-AI -> Droid -> Droid Scout / Droid Guardian hierarchy
+        node_map = {n.agent_id: n for n in nodes}
+        for child_id in ("droid_scout", "droid_guardian"):
+            child_node = node_map.get(child_id)
+            if child_node:
+                connections.append({
+                    "from": "android_unified_agent",
+                    "to": child_id,
+                    "status": child_node.status,
+                    "color": child_node.color,
+                    "glow": child_node.glow,
+                    "animated": child_node.status in ("WORKING", "THINKING"),
+                    "is_droid_hierarchy": True,
+                })
 
         # Trinity Department Inter-Agent Connections (Knowledge <-> Nova <-> Aegis)
         raw_trinity_tel = (companion_snapshot.get("trinity_telemetry") if companion_snapshot else None) or {}
@@ -906,6 +975,11 @@ class GalaxyEngine:
             "current_task": node.current_task or {"task_name": dev_context.get("current_task", "Standing by"), "progress_pct": 0},
             "development_context": dev_context,
             "step_checklist": steps,
+            "parent_agent": getattr(node, "parent_agent", "NR-AI" if node.agent_id != "nr_ai_central_intelligence" else "None"),
+            "child_agents": getattr(node, "child_agents", ["Droid Scout", "Droid Guardian"] if node.agent_id in ("android_unified_agent", "droid") else []),
+            "safety_state": "ModelIsolationGate (Deterministic)",
+            "current_stage": dev_context.get("verification_status", "READY"),
+            "active_project": dev_context.get("project_name", "NR-AI"),
             "capabilities": node.capabilities,
             "suggested_actions": node.suggested_actions,
             "telemetry": {

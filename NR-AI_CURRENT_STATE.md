@@ -1,10 +1,24 @@
 # NR-AI — Current State
 **Date**: September 20, 2026 Continuum  
-**Active Milestone**: Real Galaxy UI Java Android Engineering Workflow & Live Progress Acceptance Test (100% COMPLETE & LIVE-VERIFIED — REAL ENGINEERING EXECUTION: PASS)  
-**System Status**: All Subsystems Online & Passing (Full Regression Tests Passing 100%, 5/5 Real Galaxy UI Java Acceptance Tests LIVE_VERIFIED, Real Live Host/Emulator Workflow Verified, All Gate Actions LIVE_VERIFIED)  
+**Active Milestone**: DROID UX, Voice, Child Specialists & Closed-Loop Live Validation (100% COMPLETE & LIVE-VERIFIED — REAL ENGINEERING EXECUTION: PASS)  
+**System Status**: All Subsystems Online & Passing (Full Automated Regression 59/59 Suites Passing 100%, 12/12 Real Galaxy UI & Droid Closed-Loop Steps LIVE_VERIFIED, Real Host/Emulator Workflow Verified, All Gate Actions LIVE_VERIFIED)  
 **Droid Phase 5 Readiness Audit**: PASS (25 PASS, 0 FAIL, 1 NOT_AVAILABLE, 0 NOT_TESTED across 26 Dimensions)  
+**Unreal Engine Status**: HARD STOP ENFORCED — UNREAL ENGINE NOT STARTED (Awaiting explicit user command)  
 
 ## Subsystems Summary
+- **DROID UX, Voice, Child Specialists & Closed-Loop Live Validation**: **Complete (`LIVE_VERIFIED`) — 12/12 Live Steps PASS, 59/59 Regression Suites PASS (100% Empirical Evidence)**
+  - Direct live interaction verified in Chromium via Playwright against the running web server (`http://127.0.0.1:8585/`), active Android Studio (`studio64.exe`), and live Android emulator (`emulator-5554` / `Pixel_6_API_34`).
+  - Child Specialist Hierarchy & Invariant Enforced: Central Sun (`nr_ai_central_intelligence`) $\to$ Droid (`android_unified_agent`) $\to$ Droid Scout (`droid_scout`, $r=150\text{px}$) & Droid Guardian (`droid_guardian`, $r=185\text{px}$). Scout & Guardian connect exclusively to Droid with 0 Sun links.
+  - 4-Area Layout Geometry: Top Navigation, Agent Info Panel (`#agentInfoPanel`, $y=489$, $x=214$) sitting directly above System Overview (`.system-overview-card`, $y=784$, $x=214$) on the left, Central Canvas (`#galaxyCanvas`), and Dedicated Chat Panel (`#dedicatedChatPanel`, $x=1136$) on the right.
+  - Focus Mode Dynamics: Selecting Droid centers Droid at $(0, 0)$, orbits Scout at $r=150\text{px}$, orbits Guardian at $r=185\text{px}$, and gracefully hides unrelated specialist nodes.
+  - Local Clap Activation: Bounded acoustic clap detector (`high crest factor > 3.2`, rapid energy decay, 1.5s refractory debounce) updates visual UI banners to `👏 CLAP DETECTED • LISTENING...`.
+  - Time-Based & Session Greetings: Contextual greetings (`Good morning, Boss.` / `Good afternoon, Boss.` / `Good evening, Boss.`) and session resume greeting (`Welcome back, Boss.`).
+  - Empirical Closed Feedback Loop: Deliberate syntax defect injected into `MainActivity.java`; Gradle build failed deterministically; Guardian monitored and diagnosed `UNRESOLVED_SYMBOL`; Droid restored source; Gradle rebuild succeeded (return code 0); Guardian verified repair as `VERIFIED_REPAIRED`; APK re-deployed to emulator and verified running with live PID `5891` and foreground activity.
+  - 59/59 Automated Regression Test Suites passed cleanly (100%, 0 failures, 0 errors) in `regression_results.json`.
+  - 8 live screenshots preserved in artifact directory (`galaxy_live_*.png`, `emulator_live_*.png`).
+  - Hard Stop Rule strictly enforced: Unreal Engine NOT started.
+  - Android / Droid Gate: **READY FOR UNREAL**.
+
 - **Real Galaxy UI Java Android Engineering Workflow & Live Progress Acceptance Test**: **Complete (`LIVE_VERIFIED`) — 5/5 Tests PASS (100% Empirical Host/AVD Evidence)**
   - Direct human-equivalent dialogue through the running web application (`http://127.0.0.1:8585/`) via Playwright browser automation into Droid's Direct Agent Dialogue (`#panelTextInput`, `#panelSendBtn`).
   - Real-time engineering progress system verified: `#droidProgressBanner` polling `/api/engineering/progress` throughout the full lifecycle with live progress percentage, stage names, and step evidence.
@@ -103,3 +117,12 @@
 - **Specialist Agents**: Isolated & Standing By (Droid, Studio, Unity, Unreal, Sentinel, Browser)
 - **Voice & Speech**: Dual-channel PTT barge-in & TTS speech synthesis
 - **Hard Stop Enforcement**: Universal Engineering Workflow = COMPLETE; Visual Studio, Unity, Unreal, and Cross-Agent Fabric remain strictly NOT started.
+
+- **Galaxy UI Open NR-AI Project in Android Studio Acceptance Test (2026-09-20)**:
+  - Command: `"Open the NR-AI project in Android Studio."` dispatched via Galaxy UI Direct Agent Dialogue (`http://127.0.0.1:8585/`).
+  - Droid Agent selected; 6 real-time progress stages polled and rendered in `#droidProgressBanner`:
+    `Opening NR-AI project` → `Waiting for Android Studio` → `Loading Gradle` → `Loading project` → `Verifying workspace` → `Completed`.
+  - Android Studio (`studio64.exe`, PID 16672 / Java PID 19628) visibly opened/switched to target workspace: `C:\NR-AI\dev_projects\NR-AI`.
+  - Android Studio window title verified: `'NR-AI [C:\NR-AI\dev_projects\NR-AI]'`.
+  - Project view files verified on disk and in workspace: `MainActivity.java` (308 B), `activity_main.xml` (567 B), `build.gradle.kts` (77 B), `settings.gradle.kts` (550 B), `AndroidManifest.xml` (659 B).
+  - Status: **LIVE_VERIFIED (100% PASS)**.

@@ -297,6 +297,65 @@ class CompanionDashboard:
                     payload = json.dumps({"success": True, "progress": tracker.get_current_dict()}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
+                # Time-based session greeting API
+                elif parsed.path in ("/api/session/greeting", "/api/session/greeting/"):
+                    from app.brain.companion import get_time_based_greeting
+                    params = urllib.parse.parse_qs(parsed.query)
+                    is_resume = params.get("resume", ["0"])[0] in ("1", "true")
+                    comp = dashboard_ref.companion
+                    greeting = comp.get_session_greeting(is_resume=is_resume) if hasattr(comp, "get_session_greeting") else get_time_based_greeting(is_resume=is_resume)
+                    import datetime
+                    now_dt = datetime.datetime.now()
+                    payload = json.dumps({
+                        "success": True,
+                        "greeting": greeting,
+                        "hour": now_dt.hour,
+                        "is_resume": is_resume,
+                        "timestamp": now_dt.isoformat(),
+                    }, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                # Droid Context & Child Agents APIs
+                elif parsed.path in ("/api/droid/context", "/api/droid/context/"):
+                    droid_agent = getattr(dashboard_ref.companion, "android_agent", None)
+                    ctx = droid_agent.context.to_dict() if (droid_agent and hasattr(droid_agent, "context")) else {}
+                    self._send_json(200, json.dumps({"success": True, "context": ctx}, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/scout/observe", "/api/droid/scout/observe/"):
+                    droid_agent = getattr(dashboard_ref.companion, "android_agent", None)
+                    if droid_agent and hasattr(droid_agent, "scout"):
+                        obs = droid_agent.scout_observe()
+                        self._send_json(200, json.dumps({"success": True, "observation": obs}, indent=2).encode("utf-8"))
+                    else:
+                        from app.agent.droid_child_agents import DroidScoutAgent
+                        scout = DroidScoutAgent()
+                        obs = scout.observe()
+                        self._send_json(200, json.dumps({"success": True, "observation": obs}, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/scout/advise", "/api/droid/scout/advise/"):
+                    droid_agent = getattr(dashboard_ref.companion, "android_agent", None)
+                    if droid_agent and hasattr(droid_agent, "scout"):
+                        adv = droid_agent.scout_advise()
+                        self._send_json(200, json.dumps({"success": True, "status": "ADVICE_READY", "advice": adv}, indent=2).encode("utf-8"))
+                    else:
+                        from app.agent.droid_child_agents import DroidScoutAgent
+                        scout = DroidScoutAgent()
+                        adv = scout.advise()
+                        self._send_json(200, json.dumps({"success": True, "status": "ADVICE_READY", "advice": adv}, indent=2).encode("utf-8"))
+
+                elif parsed.path in ("/api/droid/guardian/diagnose", "/api/droid/guardian/diagnose/"):
+                    droid_agent = getattr(dashboard_ref.companion, "android_agent", None)
+                    if droid_agent and hasattr(droid_agent, "guardian"):
+                        diag = droid_agent.guardian_diagnose()
+                        st = "DIAGNOSIS_COMPLETE" if diag else "CLEAN"
+                        self._send_json(200, json.dumps({"success": True, "status": st, "diagnosis": diag}, indent=2).encode("utf-8"))
+                    else:
+                        from app.agent.droid_child_agents import DroidGuardianAgent
+                        guardian = DroidGuardianAgent()
+                        diag = guardian.diagnose_failure()
+                        st = "DIAGNOSIS_COMPLETE" if diag else "CLEAN"
+                        self._send_json(200, json.dumps({"success": True, "status": st, "diagnosis": diag}, indent=2).encode("utf-8"))
+
                 # 1c. SkyShield Security Dashboard API
                 elif parsed.path in ("/api/skyshield/dashboard", "/api/skyshield/dashboard/", "/api/security/dashboard", "/api/security/dashboard/"):
                     coord = getattr(dashboard_ref.companion, "security_coordinator", None)
@@ -553,6 +612,27 @@ class CompanionDashboard:
                     resp = dashboard_ref.companion.interact(cmd, speak_output=False)
                     payload = json.dumps(resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
+
+                # Voice Clap Trigger API (Local simulation / test trigger)
+                elif parsed.path in ("/api/voice/clap/trigger", "/api/voice/clap/trigger/"):
+                    from app.voice.clap_detector import ClapDetector
+                    clap = ClapDetector()
+                    samples = [0.01] * 10 + [0.95] + [0.02] * 20 + [0.005] * 20
+                    res = clap.process_audio_samples(samples)
+                    self._send_json(200, json.dumps({"success": True, "result": res.to_dict()}, indent=2).encode("utf-8"))
+
+                # Droid Guardian Verify POST API
+                elif parsed.path in ("/api/droid/guardian/verify", "/api/droid/guardian/verify/"):
+                    try:
+                        b_data = json.loads(body) if body else {}
+                    except Exception:
+                        b_data = {}
+                    out = b_data.get("output", "")
+                    code = int(b_data.get("exit_code", 0))
+                    from app.agent.droid_child_agents import DroidGuardianAgent
+                    guardian = DroidGuardianAgent()
+                    res = guardian.monitor_gradle_build(out, code)
+                    self._send_json(200, json.dumps({"success": True, "verification": res}, indent=2).encode("utf-8"))
 
                 # 2. Emergency Stop Trigger
                 elif parsed.path in ("/api/emergency_stop", "/api/emergency_stop/"):

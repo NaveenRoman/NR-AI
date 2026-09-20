@@ -65,7 +65,7 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
    - Verified ADB Deployment & Runtime Pipeline: Validates device connectivity, boots authorized `Pixel_6_API_34` on `emulator-5554`, checks APK staleness and triggers automatic `assembleDebug` builds if sources are newer, installs APK via `SafeAdbClient`, launches package, validates running PID via `pidof`, verifies foreground activity via window displays, and captures live PNG screenshots to disk.
    - Final Gate Actions Alignment: All 8 actions (`CREATE_PROJECT`, `OPEN`, `BUILD`, `RUN`, `MODIFY`, `CONTINUE_PROJECT`, `REBUILD`, `VERIFY`) guaranteed `LIVE_VERIFIED`.
 
-4. **Droid Production Stack (Phases 1–5)**:
+4. **Droid Production Stack (Phases 1â€“5)**:
    - Phase 1: Dynamic Project Registry, Gradle TOML Catalog, Kotlin/Java AST, XML Resource Graph, Compose Intelligence, JUnit/Lint Parser, SQLite Task Store.
    - Phase 2: 16-State Device Lifecycle Controller, 6-Stage Verified Deployment Pipeline, Compose Preview Analysis, Runtime Compose Semantics, Visual Verifier.
    - Phase 3: Failure Reproduction Engine, Approved UI Actions, Multi-Domain Evidence Collection, Root Cause Analysis, Bounded Repair Orchestrator (max 2 attempts).
@@ -108,7 +108,33 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
      ```
 
 6. **Real-Time Engineering Progress Pipeline & Audio Hardening**:
-   - **`ProgressTracker` (`app/agent/progress.py`)**: Thread-safe singleton capturing in-flight task stages (`UNDERSTANDING`, `CONFIGURING_GRADLE`, `BUILDING`, `OPENING_STUDIO`, `VERIFYING_EMULATOR`, `INSTALLING_APK`, `LAUNCHING_APP`, `VERIFYING_RUNTIME`, `CAPTURING_SCREEN`), progress percentages (0–100%), stage states (`QUEUED`, `EXECUTING`, `VERIFYING`, `COMPLETED`, `FAILED`), human-readable messages, and evidence arrays.
+   - **`ProgressTracker` (`app/agent/progress.py`)**: Thread-safe singleton capturing in-flight task stages (`UNDERSTANDING`, `CONFIGURING_GRADLE`, `BUILDING`, `OPENING_STUDIO`, `VERIFYING_EMULATOR`, `INSTALLING_APK`, `LAUNCHING_APP`, `VERIFYING_RUNTIME`, `CAPTURING_SCREEN`), progress percentages (0â€“100%), stage states (`QUEUED`, `EXECUTING`, `VERIFYING`, `COMPLETED`, `FAILED`), human-readable messages, and evidence arrays.
    - **`/api/engineering/progress` Endpoint (`app/ui/dashboard.py`)**: High-performance HTTP endpoint returning serialized active task state with zero locking overhead.
    - **`#droidProgressBanner` Component (`app/ui/static/galaxy.js`)**: Interactive DOM banner mounted in the Direct Agent Dialogue panel. Automatically begins 500ms polling upon command dispatch, updates percentage bar, stage badge, and evidence text in real-time, and cleanly tears down when the final agent chat bubble renders.
    - **Audio Subsystem Hardening**: Headless and non-voice modes bypass Windows PortAudio C drivers entirely using `DummyVoiceListener` (`app/voice/listener.py`). Microphone device enumeration in `/api/galaxy/state` is shielded by a 30-second TTL cache, preventing asynchronous memory collisions (`STATUS_ACCESS_VIOLATION 0xc0000005`) when browser WebAudio contexts initialize.
+
+7. **Droid Child Specialist Hierarchy & Invariant Enforcement (`app/agent/droid_child_agents.py`)**:
+   - **`DroidContext`**: Thread-safe shared state repository maintaining active project references, observation logs, failure records, and deterministic repair verification reports.
+   - **Droid Scout (`droid_scout`)**:
+     * Role: *Android Studio Watch & Development Assistant*.
+     * Invariant: Strictly read-only observer. Prohibited from mutating files independently. Analyzes workspace files and advises Droid on improvements.
+     * UI Representation: Planetary satellite orbiting Droid at radius $r = 150\text{px}$.
+   - **Droid Guardian (`droid_guardian`)**:
+     * Role: *Android Build & Verification Guardian*.
+     * Invariant: Enforces deterministic build monitoring, compiler error extraction, runtime process/window verification, and closed-loop defect repair verification. Evidence takes absolute priority over speculative LLM text.
+     * UI Representation: Planetary satellite orbiting Droid at radius $r = 185\text{px}$.
+   - **Hierarchy Invariant**: Scout and Guardian NEVER connect directly to the Central Sun (`nr_ai_central_intelligence`). All connections originate exclusively from Droid (`android_unified_agent`). Validated empirically: 0 Sun links, 2 Droid links.
+
+8. **4-Area Galaxy UI Architecture & Focus Mode Dynamics**:
+   - **Top Navigation Bar**: System telemetry, connection status, global HUD.
+   - **Left Panel Stack**: Agent Information Panel (`#agentInfoPanel`, $y=489$, $x=214$) positioned directly above System Overview Card (`.system-overview-card`, $y=784$, $x=214$).
+   - **Central Canvas Viewport (`#galaxyCanvas`)**: 3D interactive celestial orbit graph. Focus Mode centers Droid at $(0, 0)$, orbits Scout at $r=150\text{px}$, orbits Guardian at $r=185\text{px}$, and gracefully hides unrelated agents.
+   - **Right Side Panel (`#dedicatedChatPanel`)**: Dedicated conversational panel ($x=1136\text{px}$) with full message history and audio visualization.
+
+9. **Voice & Acoustic Activation Subsystem (`app/voice/clap_detector.py`)**:
+   - **Local Bounded Clap Detector**: High Crest Factor ($> 3.2$), rapid energy decay ($< 80\text{ms}$), 1.5s refractory debounce. Instantaneously triggers DOM banner `ðŸ‘ CLAP DETECTED â€¢ LISTENING...` with zero cloud latency.
+   - **Time-Based Greetings (`/api/session/greeting`)**: Returns contextual morning/afternoon/evening greetings and session resume greetings.
+
+10. **Hard Stop Rule Enforcement**:
+    - Android Engineering Workflow, Droid, Child Agents, Voice, and Live Verification are 100% complete and empirically verified.
+    - Unreal Engine, Unity, Visual Studio, and Cross-Agent Fabric remain strictly NOT started awaiting explicit user command.

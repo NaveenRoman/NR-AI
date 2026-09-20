@@ -178,6 +178,7 @@ class EngineeringProgressTracker:
     def complete_task(
         self,
         message: str = "Completed successfully",
+        stage: str = "Completed",
         evidence: Optional[List[str]] = None,
         extra: Optional[Dict[str, Any]] = None,
         **kwargs,
@@ -186,7 +187,7 @@ class EngineeringProgressTracker:
             if self._current is None:
                 return None
             now = time.time()
-            self._current.stage = "COMPLETED"
+            self._current.stage = stage
             self._current.progress = 100
             self._current.status = ProgressState.COMPLETED.value
             self._current.message = message

@@ -1,0 +1,363 @@
+{
+  "total": 59,
+  "passed": 59,
+  "failed": 0,
+  "errors": 0,
+  "duration_seconds": 557.69,
+  "suites": [
+    {
+      "target": "tests/test_droid_child_specialists.py",
+      "status": "PASS",
+      "ran": "Ran 5 tests in 0.127s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_clap_detector.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 0.001s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_time_greetings.py",
+      "status": "PASS",
+      "ran": "Ran 5 tests in 0.006s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_galaxy_droid_hierarchy.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.173s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_dashboard_telemetry.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 27.050s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase2_galaxy.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 31.317s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_agent_factory.py",
+      "status": "PASS",
+      "ran": "Ran 34 tests in 71.547s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_companion_and_activation.py",
+      "status": "PASS",
+      "ran": "Ran 15 tests in 101.838s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_companion_voice_pipeline.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 4.895s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase1_ast.py",
+      "status": "PASS",
+      "ran": "Ran 10 tests in 0.156s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase1_compose.py",
+      "status": "PASS",
+      "ran": "Ran 7 tests in 0.070s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase1_gradle.py",
+      "status": "PASS",
+      "ran": "Ran 8 tests in 0.116s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase1_integration.py",
+      "status": "PASS",
+      "ran": "Ran 6 tests in 0.650s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase1_project_registry.py",
+      "status": "PASS",
+      "ran": "Ran 9 tests in 0.322s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase1_resources.py",
+      "status": "PASS",
+      "ran": "Ran 6 tests in 0.265s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase1_test_results.py",
+      "status": "PASS",
+      "ran": "Ran 5 tests in 0.039s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase2_compose_preview.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.048s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase2_deployment.py",
+      "status": "PASS",
+      "ran": "Ran 5 tests in 0.046s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase2_device_lifecycle.py",
+      "status": "PASS",
+      "ran": "Ran 7 tests in 1.061s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase2_integration.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 0.407s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase2_runtime_semantics.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 0.010s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase2_visual_verifier.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 0.053s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase3_e2e.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 18.591s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase3_evidence.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 0.004s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase3_regression.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.013s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase3_repair.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 0.017s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase3_reproduction.py",
+      "status": "PASS",
+      "ran": "Ran 6 tests in 2.015s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase3_root_cause.py",
+      "status": "PASS",
+      "ran": "Ran 5 tests in 0.006s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase3_security.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 0.013s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase3_task_recovery.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.200s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase3_ui_actions.py",
+      "status": "PASS",
+      "ran": "Ran 5 tests in 0.010s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_compose.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.096s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_e2e.py",
+      "status": "PASS",
+      "ran": "Ran 1 test in 4.154s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_gradle_graph.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 0.020s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_impact.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 0.763s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_memory.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.003s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_model_reasoning.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.000s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_performance.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 7.447s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_project_graph.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 1.588s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_resource_graph.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.518s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_security.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 10.905s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_semantics.py",
+      "status": "PASS",
+      "ran": "Ran 4 tests in 0.119s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_studio.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.731s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_test_intelligence.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 0.001s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase4_ui_debug.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 0.000s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase5_accessibility_audit.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.020s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase5_manifest_merge.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.029s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase5_multi_project.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 0.012s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase5_readiness_auditor.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 0.133s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase5_runtime_pro.py",
+      "status": "PASS",
+      "ran": "Ran 2 tests in 0.002s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_droid_phase5_studio_workspace.py",
+      "status": "PASS",
+      "ran": "Ran 3 tests in 0.025s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_android_support.py",
+      "status": "PASS",
+      "ran": "Ran 11 tests in 3.404s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_universal_engineering_workflow.py",
+      "status": "PASS",
+      "ran": "Ran 17 tests in 197.241s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_command_routing_regression.py",
+      "status": "PASS",
+      "ran": "Ran 14 tests in 9.852s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_knowledge_trinity.py",
+      "status": "PASS",
+      "ran": "Ran 10 tests in 0.012s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_skyshield_phase1.py",
+      "status": "PASS",
+      "ran": "Ran 25 tests in 9.623s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_skyshield_phase2_pairing.py",
+      "status": "PASS",
+      "ran": "Ran 30 tests in 0.015s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_skyshield_phase3_health.py",
+      "status": "PASS",
+      "ran": "Ran 32 tests in 0.059s",
+      "detail": ""
+    },
+    {
+      "target": "tests/test_skyshield_phase4_intelligence.py",
+      "status": "PASS",
+      "ran": "Ran 32 tests in 0.044s",
+      "detail": ""
+    }
+  ]
+}

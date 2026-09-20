@@ -164,6 +164,53 @@
         </div>
       </div>
 
+            <!-- Agent Information Panel (Placed ABOVE System Overview) -->
+      <div id="agentInfoPanel" class="agent-info-card">
+        <div class="agent-info-header">
+          <div class="agent-info-avatar-ring" id="infoAgentAvatar">🤖</div>
+          <div class="agent-info-meta">
+            <div class="agent-info-name" id="infoAgentName">Droid</div>
+            <div class="agent-info-role" id="infoAgentRole">Android Agent</div>
+          </div>
+          <span class="agent-info-status-badge" id="infoAgentStatus">● ONLINE</span>
+        </div>
+        <div class="agent-info-details">
+          <div class="info-stat-row">
+            <span class="info-stat-key">PARENT:</span>
+            <strong class="info-stat-val" id="infoParentAgent">NR-AI</strong>
+          </div>
+          <div class="info-stat-row">
+            <span class="info-stat-key">CHILDREN:</span>
+            <strong class="info-stat-val highlight-emerald" id="infoChildAgents">Droid Scout, Droid Guardian</strong>
+          </div>
+          <div class="info-stat-row">
+            <span class="info-stat-key">ACTIVE PROJECT:</span>
+            <strong class="info-stat-val" id="infoActiveProject">NR-AI</strong>
+          </div>
+          <div class="info-stat-row">
+            <span class="info-stat-key">CURRENT TASK:</span>
+            <span class="info-stat-val" id="infoCurrentTask">Standing by in Android Studio workspace</span>
+          </div>
+          <div class="info-stat-row">
+            <span class="info-stat-key">CURRENT STAGE:</span>
+            <strong class="info-stat-val" id="infoCurrentStage">READY</strong>
+          </div>
+          <div class="info-stat-row">
+            <span class="info-stat-key">SAFETY STATE:</span>
+            <strong class="info-stat-val safe-badge" id="infoSafetyState">ModelIsolationGate (Deterministic)</strong>
+          </div>
+          <div class="info-capabilities-section">
+            <div class="info-caps-title">CAPABILITIES:</div>
+            <div class="info-caps-pills" id="infoCapabilitiesPills">
+              <span class="cap-pill">studio.workspace</span>
+              <span class="cap-pill">gradle.build</span>
+              <span class="cap-pill">adb.deploy</span>
+              <span class="cap-pill">bounded.repair</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Bottom-Left System Overview Widget -->
       <div class="system-overview-card">
         <div class="widget-title">
@@ -254,6 +301,66 @@
           SECURE AGENT ECOSYSTEM • 100% LIVE TELEMETRY • DETERMINISTIC SAFETY GATE
         </div>
       </div>
+
+            <!-- Dedicated Clean Chat Panel (Right Side, Visually Separate from Galaxy) -->
+      <aside id="dedicatedChatPanel" class="dedicated-chat-panel">
+        <div class="dedicated-chat-header">
+          <div class="chat-agent-header-info">
+            <div class="chat-agent-avatar" id="dedicatedChatAvatar">🤖</div>
+            <div>
+              <div class="chat-header-title" id="dedicatedChatTitle">ACTIVE CHAT: Droid</div>
+              <div class="chat-header-sub" id="dedicatedChatSub">● ONLINE • DETERMINISTIC SAFETY GATE</div>
+            </div>
+          </div>
+          <div class="chat-header-controls">
+            <span id="voiceClapIndicator" class="voice-clap-pill">🎤 VOICE READY</span>
+            <button class="chat-top-btn" onclick="clearActiveAgentChat()" title="Clear Chat">Clear</button>
+            <button class="chat-top-btn estop" onclick="triggerEmergencyStop()" title="Emergency Stop">🛑</button>
+          </div>
+        </div>
+
+        <!-- Real Progress State Banner -->
+        <div id="droidProgressBanner" class="droid-progress-banner" style="display: none;">
+          <div class="progress-banner-header">
+            <span class="progress-anim-gear">⚙️</span>
+            <span id="droidProgressStage" class="progress-stage-name">READY</span>
+            <span id="droidProgressPct" class="progress-pct-badge">100%</span>
+          </div>
+          <div id="droidProgressDesc" class="progress-status-text">Standing by for engineering command...</div>
+          <div class="progress-track-bar">
+            <div id="droidProgressBarFill" class="progress-fill" style="width: 100%;"></div>
+          </div>
+        </div>
+
+        <!-- Clean Conversation History -->
+        <div id="dedicatedChatHistory" class="dedicated-chat-body">
+          <!-- Populated with clean user and agent messages -->
+        </div>
+
+        <!-- Chat Controls & Text Console -->
+        <div class="dedicated-chat-footer">
+          <div class="chat-quick-chips">
+            <button id="btnClapMode" class="chip-action" onclick="toggleClapDetection()">👏 Clap Mode: ON</button>
+            <button id="btnCentralReturn" class="chip-action" onclick="returnToCentral()">🌌 Central Core</button>
+            <button id="btnFocusDroidToggle" class="chip-action active" onclick="selectAgent('android_unified_agent')">🪐 Focus Droid</button>
+          </div>
+          <div class="chat-input-bar">
+            <button id="dedicatedMicBtn" class="chat-mic-icon-btn" onclick="toggleVoiceInput()" title="Voice Dictation">
+              🎤
+            </button>
+            <input 
+              id="dedicatedChatInput" 
+              type="text" 
+              class="chat-text-input" 
+              placeholder="Talk to Droid (e.g. 'Open the NR-AI project in Android Studio')..." 
+              onkeydown="if(event.key==='Enter') sendDedicatedChatMessage()"
+            />
+            <button id="dedicatedSendBtn" class="chat-send-icon-btn" onclick="sendDedicatedChatMessage()" title="Send">
+              ➔
+            </button>
+          </div>
+        </div>
+      </aside>
 
       <!-- Right-Side Agent Detail & Interaction Panel (Dedicated Agent Chat Workspace) -->
       <aside id="agentPanel" class="agent-panel">

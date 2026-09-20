@@ -1,3 +1,26 @@
+import datetime
+
+def get_time_based_greeting(is_resume: bool = False) -> str:
+    """
+    Returns time-based greeting using actual local system time:
+    - Morning (05:00 - 11:59): 'Good morning, Boss.'
+    - Afternoon (12:00 - 16:59): 'Good afternoon, Boss.'
+    - Evening (17:00 - 21:59): 'Good evening, Boss.'
+    - Late night (22:00 - 04:59): 'Welcome back, Boss.'
+    - Session resume / inactivity: 'Welcome back, Boss.'
+    """
+    if is_resume:
+        return "Welcome back, Boss."
+    current_hour = datetime.datetime.now().hour
+    if 5 <= current_hour < 12:
+        return "Good morning, Boss."
+    elif 12 <= current_hour < 17:
+        return "Good afternoon, Boss."
+    elif 17 <= current_hour < 22:
+        return "Good evening, Boss."
+    else:
+        return "Welcome back, Boss."
+
 from app.agent.engineering_intent import (
     EngineeringAction,
     EngineeringDomain,
@@ -791,6 +814,10 @@ class NRCompanion:
     # Direct Agent Addressing & Continuous Conversation Helpers
     # -------------------------------------------------------------------------
 
+    def get_session_greeting(self, is_resume: bool = False) -> str:
+        """Returns session greeting using system local time and session state."""
+        return get_time_based_greeting(is_resume=is_resume)
+
     def activate_agent_session(self, agent_id: str, agent_name: Optional[str] = None) -> Tuple[str, bool]:
         """
         Activates an agent session with session-aware introduction:
@@ -1031,6 +1058,12 @@ class NRCompanion:
             "android studio": ("android_unified_agent", "Droid"),
             "androidstudioagent": ("android_unified_agent", "Droid"),
             "android studio agent": ("android_unified_agent", "Droid"),
+            "droid scout": ("droid_scout", "Droid Scout"),
+            "scout": ("droid_scout", "Droid Scout"),
+            "droid_scout": ("droid_scout", "Droid Scout"),
+            "droid guardian": ("droid_guardian", "Droid Guardian"),
+            "guardian": ("droid_guardian", "Droid Guardian"),
+            "droid_guardian": ("droid_guardian", "Droid Guardian"),
             "studio": ("vs_unified_agent", "Studio"),
             "vs": ("vs_unified_agent", "Studio"),
             "visual studio": ("vs_unified_agent", "Studio"),
@@ -4071,8 +4104,9 @@ class NRCompanion:
                         greeting = f"I just explained '{last_user}':\n\n{clean_resp}"
                 else:
                     greeting = "We haven't discussed a previous topic yet in this session. What would you like me to explain?"
-            elif any(g in c_low for g in ["hello", "hi", "hey"]):
-                greeting = "Hello! I am NR AI, your autonomous companion."
+            elif any(g in c_low for g in ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "welcome back"]):
+                time_greeting = get_time_based_greeting(is_resume=("welcome back" in c_low))
+                greeting = f"{time_greeting} I am NR AI, ready to assist."
             elif "who are you" in c_low:
                 greeting = "I am NR AI, your autonomous desktop, coding, and multi-model companion."
             elif "how are you" in c_low:

@@ -3,64 +3,44 @@
   "project_name": "NR-AI",
   "domain": "ANDROID",
   "canonical_path": "C:\\NR-AI\\dev_projects\\NR-AI",
-  "active_feature": "welcome screen",
-  "last_action": "RUN",
-  "last_action_timestamp": 1789843540.4538395,
-  "affected_files": [
-    "C:\\NR-AI\\dev_projects\\NR-AI\\app\\src\\main\\res\\layout\\activity_main.xml"
-  ],
+  "active_feature": "Android Studio",
+  "last_action": "OPEN",
+  "last_action_timestamp": 1789873731.758204,
+  "affected_files": [],
   "parameters": {
-    "language": "Java",
-    "template": "empty_activity",
-    "build_exit_code": 0,
-    "apk_size": 9449,
-    "text": "Hello from NR-AI",
-    "serial": "emulator-5554",
-    "pkg": "com.nrai.nrai",
-    "pid": 27021,
-    "activity": ".MainActivity"
+    "pid": 16672,
+    "path": "C:\\NR-AI\\dev_projects\\NR-AI",
+    "window": "NR-AI [C:\\NR-AI\\dev_projects\\NR-AI]",
+    "verified_files": [
+      "app/src/main/java/com/nrai/nrai/MainActivity.java",
+      "app/src/main/res/layout/activity_main.xml",
+      "build.gradle.kts",
+      "settings.gradle.kts",
+      "app/src/main/AndroidManifest.xml"
+    ]
   },
   "history": [
     {
       "action": "ACTIVATE_PROJECT",
-      "timestamp": 1789843286.6152768,
+      "timestamp": 1789873691.1282876,
       "project": "NR-AI"
     },
     {
-      "action": "MODIFY",
-      "target": "welcome screen",
-      "timestamp": 1789843363.8271458,
-      "affected_files": [
-        "C:\\NR-AI\\dev_projects\\NR-AI\\app\\src\\main\\java\\com\\nrai\\nrai\\MainActivity.java",
-        "C:\\NR-AI\\dev_projects\\NR-AI\\app\\src\\main\\res\\layout\\activity_main.xml",
-        "C:\\NR-AI\\dev_projects\\NR-AI\\app\\src\\main\\AndroidManifest.xml"
-      ],
-      "parameters": {
-        "build_exit_code": 0,
-        "apk_size": 9449
-      }
-    },
-    {
-      "action": "CONTINUE_PROJECT",
-      "target": "welcome screen",
-      "timestamp": 1789843405.4331121,
-      "affected_files": [
-        "C:\\NR-AI\\dev_projects\\NR-AI\\app\\src\\main\\res\\layout\\activity_main.xml"
-      ],
-      "parameters": {
-        "text": "Hello from NR-AI"
-      }
-    },
-    {
-      "action": "RUN",
-      "target": "NR-AI",
-      "timestamp": 1789843540.4538395,
+      "action": "OPEN",
+      "target": "Android Studio",
+      "timestamp": 1789873731.758204,
       "affected_files": [],
       "parameters": {
-        "serial": "emulator-5554",
-        "pkg": "com.nrai.nrai",
-        "pid": 27021,
-        "activity": ".MainActivity"
+        "pid": 16672,
+        "path": "C:\\NR-AI\\dev_projects\\NR-AI",
+        "window": "NR-AI [C:\\NR-AI\\dev_projects\\NR-AI]",
+        "verified_files": [
+          "app/src/main/java/com/nrai/nrai/MainActivity.java",
+          "app/src/main/res/layout/activity_main.xml",
+          "build.gradle.kts",
+          "settings.gradle.kts",
+          "app/src/main/AndroidManifest.xml"
+        ]
       }
     }
   ]

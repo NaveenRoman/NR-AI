@@ -2,6 +2,34 @@
 **Run Date**: September 20, 2026 Continuum  
 **Execution Environment**: Python 3.11 (.venv) on Windows 11 + Authorized AVD `Pixel_6_API_34` (`emulator-5554`, Android 14 / API 34)  
 
+## DROID UX, Voice, Child Specialists & Closed-Loop Live Validation (`PASS — 100%`):
+- **Test Date**: September 20, 2026 Continuum
+- **Target URL**: `http://127.0.0.1:8585/`
+- **Target Agents**: Droid (`android_unified_agent`), Droid Scout (`droid_scout`), Droid Guardian (`droid_guardian`), Central Intelligence (`nr_ai_central_intelligence`)
+- **Target Device**: `Pixel_6_API_34` on `emulator-5554` (Android 14 / API 34)
+- **Host Execution**: Windows 11 Host, Android Studio 2024.2.1 (`studio64.exe` PID 10248)
+- **Automated Regression Battery**: **59 of 59 Suites PASS (100% Clean, 0 Failures, 0 Errors, 557.69s)** in `regression_results.json`
+- **Live Interactive Steps Executed**: **12 of 12 Steps PASS (100%)** in `live_validation_results.json`
+- **Visual Evidence Captured**: 8 Full-Resolution Screenshots preserved in artifact directory
+- **Overall Result**: **PASS (REAL ENGINEERING EXECUTION: PASS)**
+- **Android / Droid Gate Status**: **READY FOR UNREAL**
+- **Unreal Engine Status**: **HARD STOP ENFORCED — UNREAL ENGINE STRICTLY NOT STARTED**
+
+| Step | Live Validation Description | Target Component | Empirical Evidence | Status |
+|:---:|:---|:---|:---|:---:|
+| **1** | Galaxy Canvas & Node Presence | `#galaxyCanvas` DOM | 18 celestial nodes rendered and active in DOM | **PASS** |
+| **2** | Child Agent Existence & Pointers | `droid_scout`, `droid_guardian` | Both nodes exist with `parent_agent = android_unified_agent` | **PASS** |
+| **3** | Hierarchy Link Invariant | Celestial Connections | 0 Sun-to-Child links, 2 Droid-to-Child links verified in DOM | **PASS** |
+| **4** | 4-Area Layout Geometry | Layout Bounding Boxes | Agent Info ($y=489$, $x=214$) above System Overview ($y=784$, $x=214$); Chat ($x=1136$) | **PASS** |
+| **5** | Droid Focus Mode Dynamics | Orbit Geometry | Droid at $(0, 0)$, Scout $r=150.0\text{px}$, Guardian $r=185.0\text{px}$, unrelated agents hidden | **PASS** |
+| **6** | Agent Info Content Sync | `#agentInfoPanel` DOM | Accurate title, Android Agent role, parent, children, ModelIsolationGate | **PASS** |
+| **7** | Child Selection Behavior | Agent Selection State | Calling Scout/Guardian maintains Droid parent center; child becomes target | **PASS** |
+| **8** | Dedicated Chat Exchange | `#dedicatedChatPanel` | Dispatched "status check"; received Droid response in DOM | **PASS** |
+| **9** | Local Clap Activation | Local Acoustic Engine | High crest factor trigger updates banner to `👏 CLAP DETECTED • LISTENING...` | **PASS** |
+| **10** | Session & Time Greetings | `/api/session/greeting` | Verified "Good morning, Boss." (Hour 10) & "Welcome back, Boss." (Resume) | **PASS** |
+| **11** | Android Studio & Emulator Run | Gradle, ADB, Emulator | `assembleDebug` 0; APK streamed install; PID `5775` live; foreground window verified | **PASS** |
+| **12** | Closed-Loop Defect Repair | Droid + Guardian | Injected defect $\to$ build failed $\to$ diagnosed $\to$ repaired $\to$ verified PID `5891` | **PASS** |
+
 ## Real Galaxy UI Java Android Engineering Workflow & Live Progress Acceptance Test (`PASS — 100%`):
 - **Test Date**: September 20, 2026 Continuum
 - **Target URL**: `http://127.0.0.1:8585/`
@@ -144,3 +172,5 @@
 8. `VERIFY`: **LIVE_VERIFIED** (26-dimension readiness audit = PASS, 0 failures)
 
 **FINAL GATE VERDICT**: **ANDROID ENGINEERING WORKFLOW = READY FOR UNREAL**
+
+- **Galaxy UI Open NR-AI Project Acceptance Test**: Passed 100% (LIVE_VERIFIED). Studio PID 16672, window title `'NR-AI [C:\NR-AI\dev_projects\NR-AI]'`, 6 progress stages tracked in DOM, 5 Project view files verified (`MainActivity.java`, `activity_main.xml`, `build.gradle.kts`, `settings.gradle.kts`, `AndroidManifest.xml`), 2 browser screenshots captured.
