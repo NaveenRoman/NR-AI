@@ -181,6 +181,15 @@ PII_RULES: Dict[str, Tuple[re.Pattern, FindingSeverity, str]] = {
 }
 
 
+class SanitizedTextResult(str):
+    """String subclass that also exposes .sanitized_text and .matches."""
+    def __new__(cls, text: str, matches=None):
+        instance = super().__new__(cls, text)
+        instance.sanitized_text = text
+        instance.matches = matches or []
+        return instance
+
+
 class GuardrailsEngine:
     """
     Deterministic security guardrails engine.
@@ -189,6 +198,13 @@ class GuardrailsEngine:
 
     def __init__(self, mode: RedactionMode = RedactionMode.REDACT):
         self.mode = mode
+
+    @classmethod
+    def sanitize_text(cls, text: str) -> SanitizedTextResult:
+        """Helper method to scan and redact text, returning sanitized_text and findings matches."""
+        scanner = GuardrailsEngine(mode=RedactionMode.REDACT)
+        res = scanner.scan(text)
+        return SanitizedTextResult(res.redacted_text, res.findings)
 
     def scan(self, text: str) -> ScanResult:
         """Exhaustively scan text for secret and PII violations."""
@@ -331,5 +347,9 @@ class GuardrailsEngine:
         return result
 
 
+# Aliases
+PromptGuardrails = GuardrailsEngine
+
 # Global singleton instance
 global_guardrails = GuardrailsEngine(mode=RedactionMode.REDACT)
+

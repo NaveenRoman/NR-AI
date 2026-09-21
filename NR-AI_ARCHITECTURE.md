@@ -175,7 +175,41 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
     - **Declarative Agent Definitions (`app/agent/definitions/declarative.py`)**: Declarative TOML parsing (`from_toml`) with strict `allow_shell=False` safety invariant mapping to `AgentSpecification`.
     - **Explicit 5-Domain Memory Boundaries (`app/memory/boundaries.py`)**: Enforces strict boundaries across Knowledge, Conversation, Task, Project, and Agent domains with workspace leak prevention.
 
-12. **Hard Stop Rule Enforcement**:
-    - Android Engineering Workflow, Droid, Child Agents, Voice, and OpenJarvis Phase 1 Adapters are 100% complete and empirically verified.
-    - Unreal Engine, Unity, Visual Studio, Voice Phase 2 (Whisper/Kokoro), and Cross-Agent Fabric remain strictly NOT started awaiting explicit user command.
+12. **OpenJarvis Integration Phase 2: Persistent Automation, Connectivity & Context Intelligence**:
+    - **Architectural Topology**:
+      ```
+      [OpenJarvis Capabilities (Apache 2.0)]
+                             |
+                             v
+                 [NR-AI Phase 2 Subsystems]
+      - Persistent Automation Engine (app/automation/engine.py, models.py, scheduler.py)
+      - Automation Safety & Recovery Barrier (app/automation/scheduler.py)
+      - A2A Phase 2 Local Broker (app/a2a/protocol.py, router.py, client.py)
+      - Controlled MCP Client (app/mcp/config.py, client.py, adapter.py)
+      - Selective Personal Connectors (app/connectors/)
+      - 7-Channel Context Intelligence (app/context/budget.py, manager.py)
+      - Unified Memory Boundaries (app/memory/integration.py)
+      - Sanitized Observability & Telemetry (app/telemetry/)
+                             |
+                             v
+              [Existing NR-AI Central Brain]
+      - NRCompanion / ModelRouter / MultiAgentOrchestrator
+                             |
+                             v
+             [Existing Safety & Verification]
+      - ModelIsolationGate / MCPSafetyGate / Shell Execution Barrier / E-Stop
+      ```
+    - **Persistent Automation Engine (`app/automation/`)**: SQLite WAL store (`data/automations.db`), 4 schedule types (`ONCE`, `INTERVAL`, `CRON`, `CONDITION`), rate limits (10/min), timeouts (1-120s), and `AutomationExecutionRecord` history.
+    - **Automation Safety & Recovery Barrier**: Destructive verb detection requiring human confirmation tokens. Active destructive tasks paused across process restarts with `RECOVERY_BARRIER`.
+    - **A2A Phase 2 Subsystem (`app/a2a/`)**: Google A2A JSON-RPC 2.0 broker with discovery, structured task delegation with checkpoint and evidence references, status polling, cancellation, and emergency stop freeze.
+    - **Controlled MCP Client (`app/mcp/`)**: Explicit server trust states (`TRUSTED`, `PROBATION`, `QUARANTINED`), tool allowlists, `ModelIsolationGate` enforcement blocking direct LLM invocations, output sanitization, and audit logging.
+    - **Selective Personal Connectors (`app/connectors/`)**: Strict read-only enforcement (`WRITE_PROHIBITED`), unconfigured fallback (`CONNECTOR_NOT_CONFIGURED`), `LocalFileConnector` with path traversal defense, and `SystemInfoConnector` without shell execution.
+    - **Context Intelligence & Budget Manager (`app/context/`)**: 7-channel partitioning (`SYSTEM`, `TASK`, `PROJECT`, `KNOWLEDGE`, `CONVERSATION`, `EVIDENCE`, `AGENT`), channel caps, deterministic priority truncation, and secret/PII scrubbing.
+    - **Unified Memory Boundaries (`app/memory/integration.py`)**: 5-domain boundary validation, authorized checkpoint restore, cross-workspace leakage block (`WORKSPACE_LEAKAGE_DENIED`), and agent scratchpad isolation (`AGENT_ISOLATION_DENIED`).
+    - **Sanitized Observability & Telemetry (`app/telemetry/`)**: Structured event logging with recursive stripping of bearer tokens, cookies, auth headers, and session credentials.
+
+13. **Hard Stop Rule Enforcement**:
+    - Android Engineering Workflow, Droid, Child Agents, Voice, OpenJarvis Phase 1, and OpenJarvis Phase 2 are 100% complete and empirically verified.
+    - Unreal Engine, Unity, Visual Studio, Voice Phase 2 (Whisper/Kokoro), and OpenJarvis Phase 3 remain strictly NOT started awaiting explicit user command.
+
 

@@ -33,6 +33,8 @@ class A2APermissionScope(str, Enum):
     TASK_CREATE = "a2a:task:create"
     TASK_QUERY = "a2a:task:query"
     TASK_CANCEL = "a2a:task:cancel"
+    TASK_DELEGATE = "a2a:task:delegate"
+    CAPABILITY_DISCOVER = "a2a:capabilities:discover"
     KNOWLEDGE_READ = "a2a:knowledge:read"
     TELEMETRY_READ = "a2a:telemetry:read"
     DIRECT_MESSAGE = "a2a:message:direct"
@@ -40,9 +42,14 @@ class A2APermissionScope(str, Enum):
 
 METHOD_SCOPE_MAP: Dict[str, A2APermissionScope] = {
     "tasks.create": A2APermissionScope.TASK_CREATE,
+    "tasks.delegate": A2APermissionScope.TASK_DELEGATE,
     "tasks.get": A2APermissionScope.TASK_QUERY,
+    "tasks.status": A2APermissionScope.TASK_QUERY,
+    "tasks.result": A2APermissionScope.TASK_QUERY,
     "tasks.list": A2APermissionScope.TASK_QUERY,
     "tasks.cancel": A2APermissionScope.TASK_CANCEL,
+    "agent.discover": A2APermissionScope.CAPABILITY_DISCOVER,
+    "capabilities.query": A2APermissionScope.CAPABILITY_DISCOVER,
     "knowledge.query": A2APermissionScope.KNOWLEDGE_READ,
     "telemetry.get": A2APermissionScope.TELEMETRY_READ,
     "message.send": A2APermissionScope.DIRECT_MESSAGE,
@@ -65,10 +72,12 @@ class LocalA2ABroker:
     Internal broker dispatching JSON-RPC 2.0 messages between registered NR-AI agents.
     """
 
-    def __init__(self):
+    def __init__(self, emergency_controller: Optional[Any] = None):
         self._agents: Dict[str, RegisteredAgent] = {}
         self._audit_log: List[Dict[str, Any]] = []
         self._lock = threading.RLock()
+        from app.remote.emergency import EmergencyStopController
+        self._emergency_controller = emergency_controller or EmergencyStopController()
 
     def register_agent(
         self,
@@ -114,6 +123,41 @@ class LocalA2ABroker:
         with self._lock:
             return [a.card for a in self._agents.values() if a.is_active]
 
+    def discover_agents(self, caller_agent_id: str) -> List[Dict[str, Any]]:
+        """List discoverable agent cards for caller."""
+        with self._lock:
+            return [a.card.to_dict() for a in self._agents.values() if a.is_active]
+
+    def query_capabilities(self, caller_agent_id: str, target_agent_id: str) -> Optional[Dict[str, Any]]:
+        """Query capabilities of a specific target agent."""
+        with self._lock:
+            tgt = self._agents.get(target_agent_id)
+            if not tgt or not tgt.is_active:
+                return None
+            return {
+                "agent_id": tgt.agent_id,
+                "capabilities": tgt.card.capabilities,
+                "skills": tgt.card.skills,
+                "permission_scopes": sorted(list(tgt.granted_scopes)),
+            }
+
+    def delegate_task(
+        self,
+        caller_agent_id: str,
+        target_agent_id: str,
+        payload: Any,
+        timeout: float = 30.0,
+    ) -> A2AResponse:
+        """Helper to package and dispatch a tasks.delegate A2A request."""
+        params = payload.to_dict() if hasattr(payload, "to_dict") else dict(payload)
+        req = A2ARequest(
+            method="tasks.delegate",
+            params=params,
+            source_agent=caller_agent_id,
+            target_agent=target_agent_id,
+        )
+        return self.dispatch(req, timeout=timeout)
+
     def dispatch(self, request: A2ARequest, timeout: float = 10.0) -> A2AResponse:
         """
         Dispatches a JSON-RPC 2.0 request from source_agent to target_agent.
@@ -123,6 +167,15 @@ class LocalA2ABroker:
         src = request.source_agent
         tgt = request.target_agent
         method = request.method
+
+        # 0. Emergency Stop Barrier
+        if self._emergency_controller and self._emergency_controller.is_active():
+            err = JsonRpcError.make_error(
+                JsonRpcError.ESTOP_ACTIVE,
+                "EMERGENCY_STOP_ACTIVE: Inter-agent messaging halted by emergency freeze.",
+            )
+            self._record_audit("ESTOP_BLOCKED", src, {"target": tgt, "method": method})
+            return A2AResponse(request_id=req_id, error=err)
 
         # 1. Verify Sender Registration
         with self._lock:

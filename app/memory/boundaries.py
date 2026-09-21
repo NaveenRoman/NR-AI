@@ -133,10 +133,13 @@ class MemoryBoundaryManager:
         """Returns the private ephemeral scratchpad for a given agent."""
         return self._agent_scratchpads.setdefault(agent_id, {})
 
-    def update_agent_scratchpad(self, agent_id: str, updates: Dict[str, Any]):
+    def update_agent_scratchpad(self, agent_id: str, updates_or_key: Any, value: Any = None):
         """Updates the private ephemeral scratchpad for a given agent."""
         pad = self.get_agent_scratchpad(agent_id)
-        pad.update(updates)
+        if isinstance(updates_or_key, dict):
+            pad.update(updates_or_key)
+        elif isinstance(updates_or_key, str):
+            pad[updates_or_key] = value
 
     def clear_agent_scratchpad(self, agent_id: str):
         """Wipes the private ephemeral scratchpad for a given agent."""

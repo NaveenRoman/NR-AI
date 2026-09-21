@@ -67,12 +67,49 @@ class AgentCard:
 
 
 @dataclass
+class A2ADelegationPayload:
+    """Structured payload for task delegation between agents."""
+    task_id: str = field(default_factory=lambda: f"a2a_task_{uuid.uuid4().hex[:12]}")
+    instruction: str = ""
+    checkpoint_id: Optional[str] = None
+    evidence_references: List[str] = field(default_factory=list)
+    workspace_scope: str = "global"
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    timeout_seconds: float = 30.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "instruction": self.instruction,
+            "checkpoint_id": self.checkpoint_id,
+            "evidence_references": self.evidence_references,
+            "workspace_scope": self.workspace_scope,
+            "parameters": self.parameters,
+            "timeout_seconds": self.timeout_seconds,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "A2ADelegationPayload":
+        return cls(
+            task_id=data.get("task_id", f"a2a_task_{uuid.uuid4().hex[:12]}"),
+            instruction=str(data.get("instruction", "")),
+            checkpoint_id=data.get("checkpoint_id"),
+            evidence_references=list(data.get("evidence_references", [])),
+            workspace_scope=data.get("workspace_scope", "global"),
+            parameters=dict(data.get("parameters", {})),
+            timeout_seconds=float(data.get("timeout_seconds", 30.0)),
+        )
+
+
+@dataclass
 class A2ATask:
     """An asynchronous task managed across agents via A2A."""
     task_id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
     state: TaskState = TaskState.SUBMITTED
     input_text: str = ""
     output_text: str = ""
+    checkpoint_id: Optional[str] = None
+    evidence_references: List[str] = field(default_factory=list)
     history: List[Dict[str, Any]] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -82,6 +119,8 @@ class A2ATask:
             "state": self.state.value,
             "input": self.input_text,
             "output": self.output_text,
+            "checkpoint_id": self.checkpoint_id,
+            "evidence_references": self.evidence_references,
             "history": self.history,
             "metadata": self.metadata,
         }
@@ -158,6 +197,8 @@ class JsonRpcError:
     SCOPE_DENIED = -32002
     TIMEOUT = -32003
     TASK_NOT_FOUND = -32004
+    ESTOP_ACTIVE = -32005
+    RATE_LIMIT_EXCEEDED = -32006
 
     @classmethod
     def make_error(cls, code: int, message: str, data: Optional[Any] = None) -> Dict[str, Any]:

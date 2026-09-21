@@ -1,12 +1,29 @@
 # NR-AI — Current State
 **Date**: September 21, 2026 Continuum  
-**Active Milestone**: OpenJarvis Integration Phase 1: Model Intelligence + Task Memory + Guardrails + A2A/MCP Foundation (100% COMPLETE & LIVE-VERIFIED — REPORT 35)  
-**System Status**: All Subsystems Online & Passing (48/48 Dedicated Unit Tests PASS; 7/7 Host Domains LIVE_VERIFIED; Zero Core Regressions; Strict Engineering Boundary Preserved)  
-**Voice Integration Status**: **OPERATIONAL (Report 33/35)** — Pluggable Voice Provider Registry Verified; Safe Standby Classification Active; Whisper/Kokoro Deferred to Phase 2.  
+**Active Milestone**: OpenJarvis Integration Phase 2: Persistent Automation + Connectivity + Context Intelligence (100% COMPLETE & LIVE-VERIFIED — REPORT 36)  
+**System Status**: All Subsystems Online & Passing (43/43 Dedicated Phase 2 Tests PASS; 54/54 Phase 1 Tests PASS; 16/16 Core Regressions PASS; Total 113/113 PASS; 7/7 Host Domains LIVE_VERIFIED; Zero Core Regressions; Strict Engineering Boundary Preserved)  
+**Voice Integration Status**: **OPERATIONAL (Report 33/35/36)** — Pluggable Voice Provider Registry Verified; Safe Standby Classification Active; Whisper/Kokoro Deferred to dedicated Voice Phase.  
 **Droid Phase 5 Readiness Audit**: PASS (25 PASS, 0 FAIL, 1 NOT_AVAILABLE, 0 NOT_TESTED across 26 Dimensions)  
 **Unreal Engine Status**: HARD STOP ENFORCED — UNREAL ENGINE NOT STARTED (Awaiting explicit user command)  
 
 ## Subsystems Summary
+- **OpenJarvis Integration Phase 2: Persistent Automation + Connectivity + Context Intelligence (Report 36)**: **Complete (`LIVE_VERIFIED`) — 100% Empirical Evidence**
+  - Implemented 8 native NR-AI subsystems incorporating OpenJarvis architectural patterns under Apache 2.0:
+    1. **Persistent Automation Engine (`app/automation/engine.py`, `models.py`, `scheduler.py`)**: SQLite WAL store (`data/automations.db`), 4 schedule types (`ONCE`, `INTERVAL`, `CRON`, `CONDITION`), rate limits (max 10/min), bounded timeout (1-120s), and `AutomationExecutionRecord` audit logs.
+    2. **Automation Safety & Recovery Barrier**: Deterministic destructive verb detection flagging confirmation requirements. Destructive actions paused across reboot with `RECOVERY_BARRIER` preventing silent auto-execution without fresh token.
+    3. **Agent-to-Agent (A2A) Phase 2 Subsystem (`app/a2a/protocol.py`, `router.py`, `client.py`)**: Google A2A JSON-RPC 2.0 broker, capability discovery, task delegation with checkpoint & evidence references, task status polling, cancellation, and emergency stop freeze.
+    4. **Controlled MCP Client (`app/mcp/config.py`, `client.py`, `adapter.py`)**: Server trust evaluation (`TRUSTED`, `PROBATION`, `QUARANTINED`), tool allowlists, `ModelIsolationGate` enforcement blocking direct LLM tool execution, output sanitization, and audit logging.
+    5. **Selective Personal & Data Connectors (`app/connectors/`)**: Strict read-only enforcement (`WRITE_PROHIBITED`), unconfigured fallback (`CONNECTOR_NOT_CONFIGURED`), `LocalFileConnector` with path traversal defense, and `SystemInfoConnector` without shell execution.
+    6. **Context Intelligence & Budget Manager (`app/context/`)**: 7-channel partitioning (`SYSTEM`, `TASK`, `PROJECT`, `KNOWLEDGE`, `CONVERSATION`, `EVIDENCE`, `AGENT`), channel caps, deterministic priority truncation, and secret/PII scrubbing.
+    7. **Unified Memory Integration (`app/memory/integration.py`)**: 5-domain boundary validation, authorized checkpoint restore, cross-workspace leakage block (`WORKSPACE_LEAKAGE_DENIED`), and agent scratchpad isolation (`AGENT_ISOLATION_DENIED`).
+    8. **Sanitized Observability & Telemetry (`app/telemetry/`)**: Structured event logging with recursive stripping of bearer tokens, cookies, auth headers, and session credentials.
+  - **Test & Empirical Proof**:
+    * 43/43 dedicated Phase 2 unit tests passed 100% across 8 test suites.
+    * 54/54 Phase 1 tests and 16/16 core regression tests passed (113/113 total passing automated tests).
+    * Real Windows host validation (`scratch/validate_openjarvis_phase2.py`) passed 100% (7/7 domains `LIVE_VERIFIED` in `data/openjarvis_phase2_live_validation.json`).
+  - Published comprehensive Report 36 to `C:\Users\navee\Desktop\NR-AI Project Report\36_OPENJARVIS_INTEGRATION_PHASE2.md`.
+  - Invariants: NR-AI remains sole orchestrator; zero `shell=True`, zero `eval`/`exec`; no Whisper/Kokoro downloads; Unreal Engine NOT started.
+
 - **OpenJarvis Integration Phase 1: Architecture Adapters & Safety Foundations (Report 35)**: **Complete (`LIVE_VERIFIED`) — 100% Empirical Evidence**
   - Implemented 7 native NR-AI adapters incorporating validated patterns from OpenJarvis commit `9cd0a09` under Apache 2.0:
     1. **Model Catalog Intelligence (`app/config/model_catalog.py`)**: 20 standard models cataloged with verified hardware limits, provenance tracking (`VERIFIED`, `CONFIGURED`, `PROVIDER_REPORTED`, `UNKNOWN`), host hardware probe (RAM, CPU, CUDA GPU), and advisory `ModelCompatibilityEvaluator` integrated into `ModelRouter`.

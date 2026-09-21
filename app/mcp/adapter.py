@@ -287,8 +287,14 @@ class MCPToolRegistry:
             )
 
         output_data = result_holder[0] if result_holder else {}
-        is_success = bool(output_data.get("success", True))
-        content_str = str(output_data.get("content", output_data.get("result", json.dumps(output_data))))
+        if isinstance(output_data, dict):
+            is_success = bool(output_data.get("success", True))
+            content_str = str(output_data.get("content", output_data.get("result", json.dumps(output_data))))
+            error_msg = output_data.get("error")
+        else:
+            is_success = True
+            content_str = str(output_data)
+            error_msg = None
 
         self._record_audit("TOOL_EXECUTED", agent_id, {
             "tool_name": tool_name,
@@ -301,7 +307,7 @@ class MCPToolRegistry:
             success=is_success,
             tool_name=tool_name,
             content=content_str,
-            error=output_data.get("error"),
+            error=error_msg,
             audit_id=audit_id,
             execution_time_ms=elapsed_ms,
         )
@@ -323,5 +329,10 @@ class MCPToolRegistry:
             return list(self._audit_log[-limit:])
 
 
+# Aliases for seamless backward and forward compatibility
+MCPAdapter = MCPToolRegistry
+MCPToolAdapter = MCPToolRegistry
+
 # Global singleton instance
 global_mcp_registry = MCPToolRegistry()
+

@@ -120,6 +120,17 @@ class ActiveProjectContextManager:
             self.set_active_project("nr_android_test", domain="ANDROID", canonical_path=r"C:\NR-AI\nr_android_test")
         return self._active_context
 
+    def get_active_context(self) -> Optional[ActiveProjectContext]:
+        return self.get_active_project()
+
+    def set_active_context(self, context: Union[ActiveProjectContext, Dict[str, Any]]) -> ActiveProjectContext:
+        if isinstance(context, dict):
+            self._active_context = ActiveProjectContext.from_dict(context)
+        else:
+            self._active_context = context
+        self.save()
+        return self._active_context
+
     def update_active_feature(
         self,
         feature_name: str,

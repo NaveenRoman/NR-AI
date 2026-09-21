@@ -96,6 +96,19 @@ class EmergencyStopController:
         with self._lock:
             return self._is_active
 
+    def is_emergency_active(self) -> bool:
+        return self.is_active()
+
+    def trigger_emergency_stop(
+        self,
+        reason: str = "Emergency stop triggered by operator",
+        triggered_by: str = "MANUAL",
+    ) -> EmergencyStopStatus:
+        return self.trigger(triggered_by=triggered_by, reason=reason)
+
+    def reset_emergency_stop(self, reset_by: str = "ADMIN") -> bool:
+        return self.reset(reset_by=reset_by)
+
     def get_status(self) -> EmergencyStopStatus:
         with self._lock:
             return self._get_status_locked()

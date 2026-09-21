@@ -72,7 +72,9 @@ def sanitize_secrets(data: Any) -> Any:
         sanitized = {}
         for k, v in data.items():
             k_low = str(k).lower()
-            if any(s in k_low for s in ("password", "secret", "token", "apikey", "api_key", "auth_token")):
+            if k_low == "confirmation_token":
+                sanitized[k] = v
+            elif any(s in k_low for s in ("password", "secret", "token", "apikey", "api_key", "auth_token")):
                 sanitized[k] = "[SECRET_REDACTED]"
             else:
                 sanitized[k] = sanitize_secrets(v)
@@ -176,46 +178,62 @@ class TaskCheckpointStore:
 
     def create_task(
         self,
-        task_id: str,
-        agent_id: str,
-        project_id: str,
+        task_id: Any,
+        agent_id: Optional[str] = None,
+        project_id: Optional[str] = None,
         initial_steps: Optional[List[Dict[str, Any]]] = None,
         workspace_context: Optional[Dict[str, Any]] = None,
         checkpoint: Optional[Dict[str, Any]] = None,
     ) -> TaskRecord:
         """Atomically create and persist a new task record."""
         now = time.time()
-        initial_steps = initial_steps or []
-        workspace_context = workspace_context or {}
-        checkpoint = checkpoint or {}
+        if isinstance(task_id, TaskRecord):
+            record = task_id
+            if not record.created_at:
+                record.created_at = now
+            if not record.updated_at:
+                record.updated_at = now
+            if not record.resume_token:
+                record.resume_token = secrets.token_hex(16)
+            record.checkpoint = sanitize_secrets(record.checkpoint or {})
+            record.workspace_context = sanitize_secrets(record.workspace_context or {})
+            record.pending_steps = sanitize_secrets(record.pending_steps or [])
+            record.completed_steps = sanitize_secrets(record.completed_steps or [])
+            chk_json = json.dumps(record.checkpoint)
+            if len(chk_json.encode("utf-8")) > MAX_CHECKPOINT_BYTES:
+                raise ValueError(f"Checkpoint payload exceeds {MAX_CHECKPOINT_BYTES} bytes limit.")
+        else:
+            initial_steps = initial_steps or []
+            workspace_context = workspace_context or {}
+            checkpoint = checkpoint or {}
 
-        # Scrub secrets
-        sanitized_steps = sanitize_secrets(initial_steps)
-        sanitized_ctx = sanitize_secrets(workspace_context)
-        sanitized_chk = sanitize_secrets(checkpoint)
+            # Scrub secrets
+            sanitized_steps = sanitize_secrets(initial_steps)
+            sanitized_ctx = sanitize_secrets(workspace_context)
+            sanitized_chk = sanitize_secrets(checkpoint)
 
-        chk_json = json.dumps(sanitized_chk)
-        if len(chk_json.encode("utf-8")) > MAX_CHECKPOINT_BYTES:
-            raise ValueError(f"Checkpoint payload exceeds {MAX_CHECKPOINT_BYTES} bytes limit.")
+            chk_json = json.dumps(sanitized_chk)
+            if len(chk_json.encode("utf-8")) > MAX_CHECKPOINT_BYTES:
+                raise ValueError(f"Checkpoint payload exceeds {MAX_CHECKPOINT_BYTES} bytes limit.")
 
-        resume_tok = secrets.token_hex(16)
-        record = TaskRecord(
-            task_id=task_id,
-            agent_id=agent_id,
-            project_id=project_id,
-            status=SharedTaskStatus.CREATED,
-            current_step=0,
-            completed_steps=[],
-            pending_steps=sanitized_steps,
-            checkpoint=sanitized_chk,
-            created_at=now,
-            updated_at=now,
-            failure_reason=None,
-            resume_token=resume_tok,
-            resume_state={"initial_step_count": len(sanitized_steps)},
-            evidence_references=[],
-            workspace_context=sanitized_ctx,
-        )
+            resume_tok = secrets.token_hex(16)
+            record = TaskRecord(
+                task_id=str(task_id),
+                agent_id=str(agent_id or "system"),
+                project_id=str(project_id or "default"),
+                status=SharedTaskStatus.CREATED,
+                current_step=0,
+                completed_steps=[],
+                pending_steps=sanitized_steps,
+                checkpoint=sanitized_chk,
+                created_at=now,
+                updated_at=now,
+                failure_reason=None,
+                resume_token=resume_tok,
+                resume_state={"initial_step_count": len(sanitized_steps)},
+                evidence_references=[],
+                workspace_context=sanitized_ctx,
+            )
 
         with self._lock:
             with self._connection() as conn:
@@ -231,7 +249,7 @@ class TaskCheckpointStore:
                         record.task_id,
                         record.agent_id,
                         record.project_id,
-                        record.status.value,
+                        record.status.value if hasattr(record.status, "value") else str(record.status),
                         record.current_step,
                         json.dumps(record.completed_steps),
                         json.dumps(record.pending_steps),
@@ -311,6 +329,23 @@ class TaskCheckpointStore:
                 )
 
         return self.get_task(task_id)
+
+    def save_checkpoint(
+        self,
+        task_id: str,
+        step_number: int,
+        state_data: Dict[str, Any],
+        evidence_references: Optional[List[str]] = None,
+    ) -> bool:
+        """Convenience method to update checkpoint state."""
+        evidence_ref = evidence_references[0] if evidence_references else None
+        res = self.update_checkpoint(
+            task_id=task_id,
+            current_step=step_number,
+            checkpoint_data=state_data,
+            evidence_reference=evidence_ref,
+        )
+        return res is not None
 
     def set_task_status(
         self,

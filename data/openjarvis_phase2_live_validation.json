@@ -1,0 +1,59 @@
+{
+  "timestamp": 1789966205.674525,
+  "phase": "OpenJarvis Integration Phase 2",
+  "system": {
+    "os": "win32",
+    "python_version": "3.11.9",
+    "project_root": "C:\\NR-AI"
+  },
+  "domains": {
+    "domain_1_persistent_automation": {
+      "status": "LIVE_VERIFIED",
+      "automation_id": "auto_dfe0b44566d5",
+      "db_path": "C:\\NR-AI\\data\\validation_run\\live_automations.db",
+      "prompt_sanitized": "Execute recurring workspace verification [SECRET_REDACTED]",
+      "wal_mode_active": true
+    },
+    "domain_2_automation_safety_barrier": {
+      "status": "LIVE_VERIFIED",
+      "destructive_detection": true,
+      "unconfirmed_tick_blocked": true,
+      "confirmed_tick_permitted": true,
+      "recovery_barrier_enforced": true
+    },
+    "domain_3_a2a_phase2": {
+      "status": "LIVE_VERIFIED",
+      "discovered_agent_count": 2,
+      "delegation_acknowledged": true,
+      "emergency_stop_enforced": true
+    },
+    "domain_4_controlled_mcp": {
+      "status": "LIVE_VERIFIED",
+      "authorized_tool_executed": true,
+      "secrets_sanitized": true,
+      "model_isolation_enforced": true
+    },
+    "domain_5_personal_connectors": {
+      "status": "LIVE_VERIFIED",
+      "system_info_read": true,
+      "local_file_read_sanitized": true,
+      "write_prohibition_enforced": true
+    },
+    "domain_6_context_intelligence": {
+      "status": "LIVE_VERIFIED",
+      "total_packed_chars": 427,
+      "budget_limit": 1200,
+      "secrets_redacted": true,
+      "provenance_count": 5
+    },
+    "domain_7_unified_memory_boundaries": {
+      "status": "LIVE_VERIFIED",
+      "checkpoint_saved": true,
+      "authorized_restore": true,
+      "cross_workspace_blocked": true
+    }
+  },
+  "overall_status": "ALL_DOMAINS_LIVE_VERIFIED",
+  "passed_domains": 7,
+  "total_domains": 7
+}
