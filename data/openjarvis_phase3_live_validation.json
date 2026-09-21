@@ -1,0 +1,133 @@
+{
+  "timestamp": 1789967438.4567785,
+  "date_utc": "2026-09-21 05:10:38",
+  "host": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python_version": "3.11.9",
+    "cpu": "AMD64 Family 23 Model 104 Stepping 1, AuthenticAMD",
+    "cores_logical": 12
+  },
+  "validations": {
+    "01_hardware_audit": {
+      "passed": true,
+      "total_ram_mb": 14181,
+      "available_ram_mb": 6189,
+      "gpu_available": false,
+      "gpu_name": null,
+      "cpu_cores_logical": 12
+    },
+    "02_audio_devices": {
+      "passed": true,
+      "device_count": 23,
+      "mic_detected": true,
+      "speaker_detected": true,
+      "microphone": "PC Speaker (Realtek HD Audio 2nd output with HAP)",
+      "speakers": "Headphones 2 (Realtek HD Audio 2nd output with HAP)"
+    },
+    "03_provider_registry": {
+      "passed": true,
+      "stt_providers": [
+        "speech-recognition",
+        "mock-stt",
+        "faster-whisper"
+      ],
+      "tts_providers": [
+        "sapi5",
+        "memory-tts",
+        "silent-tts",
+        "kokoro"
+      ],
+      "stt_discovery_order": [
+        "faster-whisper",
+        "speech-recognition",
+        "mock-stt"
+      ],
+      "tts_discovery_order": [
+        "kokoro",
+        "sapi5",
+        "memory-tts",
+        "silent-tts"
+      ],
+      "resolved_stt_id": "faster-whisper",
+      "resolved_tts_id": "sapi5"
+    },
+    "04_faster_whisper_stt": {
+      "passed": true,
+      "health": true,
+      "device": "cpu",
+      "compute_type": "int8",
+      "threads": 4,
+      "latency_sec": 2.394,
+      "transcription": ""
+    },
+    "05_tts_synthesis_and_fallback": {
+      "passed": true,
+      "kokoro_health": false,
+      "kokoro_available_voices": [
+        "af_heart",
+        "af_bella",
+        "af_sarah",
+        "af_nicole",
+        "af_sky"
+      ],
+      "sapi5_resolved": true,
+      "sapi5_latency_sec": 2.682,
+      "sapi5_duration_sec": 1.4500000000000002
+    },
+    "06_vad_engine": {
+      "passed": true,
+      "calibrated": true,
+      "calibrated_threshold": 250.0,
+      "speech_detected": true,
+      "silence_timeout_triggered": true
+    },
+    "07_barge_in_controller": {
+      "passed": true,
+      "interrupted": true,
+      "was_interrupted_event": true,
+      "interruption_count": 1,
+      "onset_audio_captured": true
+    },
+    "08_session_lifecycle": {
+      "passed": true,
+      "states_exercised": 8,
+      "inactivity_timeout_auto_sleep": true,
+      "emergency_stop_freeze": true,
+      "final_state": "STANDBY",
+      "audit_entries_count": 10
+    },
+    "09_privacy_and_guardrails": {
+      "passed": true,
+      "secret_scrubbed": true,
+      "redaction_tokens_present": true,
+      "audio_files_leaked": 0
+    },
+    "10_performance_telemetry": {
+      "passed": true,
+      "stt_latency_ms": 50.44150003232062,
+      "processing_latency_ms": 20.35599999362603,
+      "tts_first_chunk_ms": 10.276899964082986,
+      "tts_total_ms": 50.56100001093,
+      "total_turnaround_ms": 81.07439999002963,
+      "real_time_factor": 0.02522075001616031,
+      "provenance_tags": {
+        "stt_latency": "MEASURED",
+        "stt_rtf": "MEASURED",
+        "processing_latency": "MEASURED",
+        "tts_first_chunk": "MEASURED",
+        "tts_total": "MEASURED",
+        "total_turnaround": "MEASURED"
+      }
+    },
+    "11_model_catalog_provenance": {
+      "passed": true,
+      "whisper_base_provenance": "CONFIGURED",
+      "kokoro_provenance": "CONFIGURED",
+      "sapi5_provenance": "CONFIGURED",
+      "whisper_cpu_only_supported": true
+    }
+  },
+  "status": "PASSED",
+  "total_validations": 11,
+  "passed_validations": 11
+}

@@ -126,8 +126,8 @@ class VoiceProviderRegistry:
     ]
 
     TTS_DISCOVERY_ORDER: List[str] = [
-        "sapi5",
         "kokoro",
+        "sapi5",
         "memory-tts",
         "silent-tts",
     ]
@@ -432,8 +432,18 @@ class KokoroTTSProviderStub(TTSProvider):
 
 
 # -----------------------------------------------------------------------------
-# Module Exports
+# Module Exports & Concrete Provider Registration
 # -----------------------------------------------------------------------------
+
+try:
+    from app.voice.providers.faster_whisper_provider import FasterWhisperSTTProvider
+except ImportError:
+    FasterWhisperSTTProvider = FasterWhisperSTTProviderStub  # type: ignore
+
+try:
+    from app.voice.providers.kokoro_provider import KokoroTTSProvider
+except ImportError:
+    KokoroTTSProvider = KokoroTTSProviderStub  # type: ignore
 
 __all__ = [
     "STTProvider",
@@ -444,6 +454,10 @@ __all__ = [
     "VoiceProviderRegistry",
     "SpeechRecognitionSTTProvider",
     "MockSTTProvider",
+    "FasterWhisperSTTProvider",
+    "FasterWhisperSTTProviderStub",
+    "KokoroTTSProvider",
+    "KokoroTTSProviderStub",
     "SAPI5TTSProvider",
     "MemoryTTSProvider",
     "SilentTTSProvider",

@@ -208,8 +208,31 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
     - **Unified Memory Boundaries (`app/memory/integration.py`)**: 5-domain boundary validation, authorized checkpoint restore, cross-workspace leakage block (`WORKSPACE_LEAKAGE_DENIED`), and agent scratchpad isolation (`AGENT_ISOLATION_DENIED`).
     - **Sanitized Observability & Telemetry (`app/telemetry/`)**: Structured event logging with recursive stripping of bearer tokens, cookies, auth headers, and session credentials.
 
-13. **Hard Stop Rule Enforcement**:
-    - Android Engineering Workflow, Droid, Child Agents, Voice, OpenJarvis Phase 1, and OpenJarvis Phase 2 are 100% complete and empirically verified.
-    - Unreal Engine, Unity, Visual Studio, Voice Phase 2 (Whisper/Kokoro), and OpenJarvis Phase 3 remain strictly NOT started awaiting explicit user command.
+13. **OpenJarvis Integration Phase 3: Local Voice Intelligence (Faster-Whisper + Kokoro TTS)**:
+    - **Architectural Topology**:
+      ```
+      [Microphone Input] ---> [Bounded VAD Engine] ---> [Faster-Whisper STT (CPU INT8)]
+                                       |                               |
+                                       |                               v
+      [Barge-In Controller] <----------+                  [TranscriptionResult]
+               |                                                       |
+               v                                                       v
+      [Speech Playback Interruption] <---------------+     [Central Brain / ModelRouter]
+                                                     |                 |
+                                                     |                 v
+      [Audio Output (WAV)] <--- [Kokoro / SAPI5 TTS] +-------- [Synthesized Text]
+      ```
+    - **Faster-Whisper Local STT (`app/voice/providers/faster_whisper_provider.py`)**: Local CTranslate2 STT inference optimized for CPU INT8 quantized inference (`device="cpu"`, `compute_type="int8"`, `cpu_threads=4`), lazy model loading, explicit `unload_model()` and memory cleanup.
+    - **Kokoro ONNX Local TTS (`app/voice/providers/kokoro_provider.py`)**: High-fidelity neural TTS using ONNX Runtime with strict file presence verification, producing 24 kHz WAV audio with graceful, deterministic fallback to native Windows SAPI5 when model weights are not downloaded.
+    - **VoiceProviderRegistry Fallback Chains (`app/voice/provider.py`)**: Prioritized multi-provider resolution: STT (`faster-whisper` -> `speech-recognition` -> `mock-stt`), TTS (`kokoro` -> `sapi5` -> `memory-tts` -> `silent-tts`). Preserves legacy provider stubs for 100% backwards compatibility.
+    - **Bounded VAD Engine (`app/voice/vad.py`)**: Acoustic voice activity detection with dynamic ambient noise calibration, 1.5s trailing silence timeout, 15.0s max utterance cutoff, and pre-speech ring buffer.
+    - **Non-Blocking Barge-In Controller (`app/voice/barge_in.py`)**: Immediate playback interruption upon speech onset without blocking loops, preserving onset audio chunks for seamless command continuation.
+    - **8-State Continuous Session State Machine (`app/voice/session.py`)**: Full conversational lifecycle (`STANDBY` -> `WAKE_DETECTED` -> `LISTENING` -> `TRANSCRIBING` -> `THINKING` -> `SPEAKING` -> `INTERRUPTED` -> `STOPPED`), 10s inactivity auto-sleep, emergency stop freeze, and secret scrubbing on utterance history.
+    - **Performance Telemetry Engine (`app/voice/telemetry.py`)**: Precision latency tracking (`stt_latency_ms`, `processing_latency_ms`, `tts_first_chunk_ms`, `tts_total_ms`, `total_turnaround_ms`, `real_time_factor`) tagged with explicit provenance (`MEASURED`, `ESTIMATED`, `UNAVAILABLE`).
+    - **Model Catalog Voice Provenance (`app/config/model_catalog.py`)**: Cataloged `whisper-tiny`, `whisper-base`, `whisper-small`, `kokoro-v0_19`, `sapi5-desktop`, and `speech-recognition-google` with explicit hardware requirements and provenance tags.
+
+14. **Hard Stop Rule Enforcement**:
+    - Android Engineering Workflow, Droid, Child Agents, Voice, OpenJarvis Phase 1, Phase 2, and Phase 3 are 100% complete and empirically verified.
+    - Unreal Engine, Unity, Visual Studio, Phase 4, and Droid Phase 5 remain strictly NOT started awaiting explicit user command.
 
 

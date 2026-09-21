@@ -4,6 +4,7 @@ Inspired by OpenJarvis pluggable speech architecture.
 """
 
 import unittest
+from unittest.mock import patch
 from app.voice.provider import (
     STTProvider,
     TTSProvider,
@@ -67,32 +68,36 @@ class TestVoiceProviderAbstraction(unittest.TestCase):
         self.assertEqual(res.audio, b"")
 
     def test_05_faster_whisper_graceful_absence(self):
-        provider = FasterWhisperSTTProviderStub()
-        # Should report False without raising if faster_whisper is not installed
-        self.assertFalse(provider.health())
-        with self.assertRaises(RuntimeError):
-            provider.transcribe(b"data")
+        # Should report False without raising if faster_whisper is not available
+        with patch.dict("sys.modules", {"faster_whisper": None}):
+            provider = FasterWhisperSTTProviderStub()
+            self.assertFalse(provider.health())
+            with self.assertRaises(RuntimeError):
+                provider.transcribe(b"data")
 
     def test_06_kokoro_graceful_absence(self):
-        provider = KokoroTTSProviderStub()
-        self.assertFalse(provider.health())
-        with self.assertRaises(RuntimeError):
-            provider.synthesize("test")
+        with patch.dict("sys.modules", {"kokoro": None, "kokoro_onnx": None}):
+            provider = KokoroTTSProviderStub()
+            self.assertFalse(provider.health())
+            with self.assertRaises(RuntimeError):
+                provider.synthesize("test")
 
     def test_07_stt_fallback_chain(self):
         # Requesting unavailable 'faster-whisper' should fall back to next healthy provider
-        resolved = VoiceProviderRegistry.resolve_stt(preferred="faster-whisper")
-        self.assertIsNotNone(resolved)
-        self.assertTrue(resolved.health())
-        # Should be speech-recognition or mock-stt
-        self.assertIn(resolved.provider_id, ["speech-recognition", "mock-stt"])
+        with patch.object(VoiceProviderRegistry.get_stt_class("faster-whisper"), "health", return_value=False):
+            resolved = VoiceProviderRegistry.resolve_stt(preferred="faster-whisper")
+            self.assertIsNotNone(resolved)
+            self.assertTrue(resolved.health())
+            # Should be speech-recognition or mock-stt
+            self.assertIn(resolved.provider_id, ["speech-recognition", "mock-stt"])
 
     def test_08_tts_fallback_chain(self):
         # Requesting unavailable 'kokoro' should fall back to sapi5 or memory-tts
-        resolved = VoiceProviderRegistry.resolve_tts(preferred="kokoro")
-        self.assertIsNotNone(resolved)
-        self.assertTrue(resolved.health())
-        self.assertIn(resolved.provider_id, ["sapi5", "memory-tts", "silent-tts"])
+        with patch.object(VoiceProviderRegistry.get_tts_class("kokoro"), "health", return_value=False):
+            resolved = VoiceProviderRegistry.resolve_tts(preferred="kokoro")
+            self.assertIsNotNone(resolved)
+            self.assertTrue(resolved.health())
+            self.assertIn(resolved.provider_id, ["sapi5", "memory-tts", "silent-tts"])
 
     def test_09_custom_stt_registration(self):
         @VoiceProviderRegistry.register_stt("custom-test-stt")

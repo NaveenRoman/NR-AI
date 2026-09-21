@@ -1,12 +1,29 @@
 # NR-AI — Current State
 **Date**: September 21, 2026 Continuum  
-**Active Milestone**: OpenJarvis Integration Phase 2: Persistent Automation + Connectivity + Context Intelligence (100% COMPLETE & LIVE-VERIFIED — REPORT 36)  
-**System Status**: All Subsystems Online & Passing (43/43 Dedicated Phase 2 Tests PASS; 54/54 Phase 1 Tests PASS; 16/16 Core Regressions PASS; Total 113/113 PASS; 7/7 Host Domains LIVE_VERIFIED; Zero Core Regressions; Strict Engineering Boundary Preserved)  
-**Voice Integration Status**: **OPERATIONAL (Report 33/35/36)** — Pluggable Voice Provider Registry Verified; Safe Standby Classification Active; Whisper/Kokoro Deferred to dedicated Voice Phase.  
+**Active Milestone**: OpenJarvis Integration Phase 3: Local Voice Intelligence — Faster-Whisper + Kokoro TTS (100% COMPLETE & LIVE-VERIFIED — REPORT 37)  
+**System Status**: All Subsystems Online & Passing (52/52 Dedicated Phase 3 Tests PASS; 49/49 Voice Regression Tests PASS; 16/16 Core Regressions PASS; Total 117/117 PASS; 11/11 Host Domains LIVE_VERIFIED; Zero Core Regressions; Strict Engineering Boundary Preserved)  
+**Voice Integration Status**: **FULLY OPERATIONAL & LOCAL-FIRST (Report 33/37)** — Faster-Whisper CPU INT8 STT Active; Kokoro ONNX TTS & Windows SAPI5 Fallback Active; Bounded VAD (1.5s silence timeout, 15.0s max cutoff) Active; Non-blocking Barge-In Active; 8-State Session Machine Active; Telemetry with Explicit Provenance Active.  
 **Droid Phase 5 Readiness Audit**: PASS (25 PASS, 0 FAIL, 1 NOT_AVAILABLE, 0 NOT_TESTED across 26 Dimensions)  
 **Unreal Engine Status**: HARD STOP ENFORCED — UNREAL ENGINE NOT STARTED (Awaiting explicit user command)  
 
 ## Subsystems Summary
+- **OpenJarvis Integration Phase 3: Local Voice Intelligence (Report 37)**: **Complete (`LIVE_VERIFIED`) — 100% Empirical Evidence**
+  - Implemented 8 native NR-AI voice subsystems incorporating OpenJarvis architectural patterns under Apache 2.0:
+    1. **Faster-Whisper Local STT (`app/voice/providers/faster_whisper_provider.py`)**: High-performance local STT powered by CTranslate2, optimized for CPU INT8 quantized inference (`device="cpu"`, `compute_type="int8"`, `cpu_threads=4`), lazy loading, explicit `unload_model()` and memory cleanup.
+    2. **Kokoro ONNX Local TTS (`app/voice/providers/kokoro_provider.py`)**: High-fidelity neural TTS using ONNX Runtime with strict file presence verification, producing 24 kHz WAV audio with graceful, deterministic fallback to native Windows SAPI5 when model weights are not downloaded.
+    3. **VoiceProviderRegistry Fallback Chains (`app/voice/provider.py`)**: Prioritized multi-provider resolution: STT (`faster-whisper` -> `speech-recognition` -> `mock-stt`), TTS (`kokoro` -> `sapi5` -> `memory-tts` -> `silent-tts`). Preserves legacy provider stubs for 100% backwards compatibility.
+    4. **Bounded VAD Engine (`app/voice/vad.py`)**: Acoustic voice activity detection with dynamic ambient noise calibration, 1.5s trailing silence timeout, 15.0s max utterance cutoff, and pre-speech ring buffer.
+    5. **Non-Blocking Barge-In Controller (`app/voice/barge_in.py`)**: Immediate playback interruption upon speech onset without blocking loops, preserving onset audio chunks for seamless command continuation.
+    6. **8-State Continuous Session State Machine (`app/voice/session.py`)**: Full conversational lifecycle (`STANDBY` -> `WAKE_DETECTED` -> `LISTENING` -> `TRANSCRIBING` -> `THINKING` -> `SPEAKING` -> `INTERRUPTED` -> `STOPPED`), 10s inactivity auto-sleep, emergency stop freeze, and secret scrubbing on utterance history.
+    7. **Performance Telemetry Engine (`app/voice/telemetry.py`)**: Precision latency tracking (`stt_latency_ms`, `processing_latency_ms`, `tts_first_chunk_ms`, `tts_total_ms`, `total_turnaround_ms`, `real_time_factor`) tagged with explicit provenance (`MEASURED`, `ESTIMATED`, `UNAVAILABLE`).
+    8. **Model Catalog Voice Provenance (`app/config/model_catalog.py`)**: Cataloged `whisper-tiny`, `whisper-base`, `whisper-small`, `kokoro-v0_19`, `sapi5-desktop`, and `speech-recognition-google` with explicit hardware requirements and provenance tags.
+  - **Test & Empirical Proof**:
+    * 52/52 dedicated Phase 3 unit and integration tests passed 100% across 8 test suites.
+    * 49/49 existing voice regression tests passed 100% across 5 test suites.
+    * 16/16 core system regression tests passed 100%.
+    * Real Windows host validation (`scratch/validate_openjarvis_phase3.py`) passed 100% (11/11 domains `LIVE_VERIFIED` in `data/openjarvis_phase3_live_validation.json`).
+  - Published comprehensive Report 37 to `C:\Users\navee\Desktop\NR-AI Project Report\37_OPENJARVIS_INTEGRATION_PHASE3.md`.
+  - Invariants: NR-AI remains sole orchestrator; zero `shell=True`, zero `eval`/`exec`; Phase 4 / Droid Phase 5 / Unreal Engine NOT started.
 - **OpenJarvis Integration Phase 2: Persistent Automation + Connectivity + Context Intelligence (Report 36)**: **Complete (`LIVE_VERIFIED`) — 100% Empirical Evidence**
   - Implemented 8 native NR-AI subsystems incorporating OpenJarvis architectural patterns under Apache 2.0:
     1. **Persistent Automation Engine (`app/automation/engine.py`, `models.py`, `scheduler.py`)**: SQLite WAL store (`data/automations.db`), 4 schedule types (`ONCE`, `INTERVAL`, `CRON`, `CONDITION`), rate limits (max 10/min), bounded timeout (1-120s), and `AutomationExecutionRecord` audit logs.

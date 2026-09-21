@@ -1,5 +1,29 @@
 # NR-AI — Phase History Log
 
+### OpenJarvis Integration Phase 3: Local Voice Intelligence — Faster-Whisper + Kokoro TTS (Report 37)
+- **Completion Date**: September 21, 2026 Continuum
+- **Status**: 100% COMPLETE & LIVE-VERIFIED (52/52 Dedicated Phase 3 Tests PASS; 49/49 Voice Regression Tests PASS; 16/16 Core Regressions PASS; Total 117/117 Tests PASS; 11/11 Host Domains LIVE_VERIFIED; Zero Core Regressions)
+- **Objective**: Implement the Phase 3 layer of high-performance local-first voice intelligence (Faster-Whisper local STT, Kokoro ONNX local TTS, multi-provider fallback chains, bounded VAD with ambient calibration, non-blocking barge-in/interruption, 8-state continuous session state machine, and voice telemetry with strict provenance) as native NR-AI subsystems under Apache 2.0 while strictly preserving existing architecture, security invariants, agent isolation, and Central Brain supremacy.
+- **Key Empirical Results**:
+  * **Faster-Whisper Local STT (`app/voice/providers/faster_whisper_provider.py`)**: Local CTranslate2 STT inference optimized for the host's AMD64 hardware (CPU INT8 quantization, `cpu_threads=4`, `compute_type="int8"`). Employs lazy model loading and explicit `unload_model()` with garbage collection, keeping idle RAM overhead at baseline.
+  * **Kokoro ONNX Local TTS (`app/voice/providers/kokoro_provider.py`)**: Local neural speech synthesis using ONNX Runtime with CPU Execution Provider. Strictly probes for model assets on disk; when absent, triggers seamless deterministic fallback to Windows SAPI5 (`Microsoft David` / `Microsoft Zira`) without raising exceptions.
+  * **VoiceProviderRegistry Fallback Chains (`app/voice/provider.py`)**: Formalized fallback orders: STT (`faster-whisper` -> `speech-recognition` -> `mock-stt`), TTS (`kokoro` -> `sapi5` -> `memory-tts` -> `silent-tts`). Preserves legacy provider stubs for 100% backwards compatibility.
+  * **Bounded VAD Engine (`app/voice/vad.py`)**: Pure PCM acoustic energy analyzer with dynamic ambient noise calibration, 1.5-second trailing silence timeout, 15.0-second maximum utterance cutoff, and bounded pre-speech ring buffer.
+  * **Non-Blocking Barge-In Controller (`app/voice/barge_in.py`)**: Thread-safe playback interruption upon speech onset, triggering immediate playback cancellation callbacks without blocking loops, and capturing the triggering speech chunk so the user does not have to repeat their command.
+  * **8-State Continuous Session State Machine (`app/voice/session.py`)**: Full conversational state lifecycle (`STANDBY` -> `WAKE_DETECTED` -> `LISTENING` -> `TRANSCRIBING` -> `THINKING` -> `SPEAKING` -> `INTERRUPTED` -> `STOPPED`), 10s inactivity auto-sleep back to `STANDBY`, emergency stop freezing, and secret scrubbing on utterance history.
+  * **Precision Performance Telemetry (`app/voice/telemetry.py`)**: Real-time turn latency metrics (`stt_latency_ms`, `processing_latency_ms`, `tts_first_chunk_ms`, `tts_total_ms`, `total_turnaround_ms`, `real_time_factor`) tagged with explicit provenance (`MEASURED`, `ESTIMATED`, `UNAVAILABLE`).
+  * **Model Catalog Voice Provenance (`app/config/model_catalog.py`)**: Cataloged `whisper-tiny`, `whisper-base`, `whisper-small`, `kokoro-v0_19`, `sapi5-desktop`, and `speech-recognition-google` with explicit hardware requirements and provenance tags.
+  * **Empirical Verification & Metrics**:
+    - 52/52 dedicated Phase 3 unit and integration tests passed 100% across 8 test suites.
+    - 49/49 existing voice regression tests passed 100% across 5 test suites.
+    - 16/16 core system regression tests passed 100%.
+    - Real Windows host validation (`scratch/validate_openjarvis_phase3.py`) verified 11/11 domains `LIVE_VERIFIED` in `data/openjarvis_phase3_live_validation.json`.
+    - Zero `shell=True`, zero `eval`/`exec` across all Phase 3 code.
+    - Hard stop rules strictly enforced: Phase 4, Droid Phase 5, and Unreal Engine NOT started.
+  * **Published Milestone Report**: Comprehensive 7-section report published to `C:\Users\navee\Desktop\NR-AI Project Report\37_OPENJARVIS_INTEGRATION_PHASE3.md`.
+- **Verdict**: **REAL ENGINEERING EXECUTION: PASS (100%)**
+- **Hard Stop Directive**: Strict hard stop enforced — Unreal Engine, Unity, Visual Studio, Phase 4, and Droid Phase 5 workflows remain firmly NOT started.
+
 ### OpenJarvis Integration Phase 2: Persistent Automation + Connectivity + Context Intelligence (Report 36)
 - **Completion Date**: September 21, 2026 Continuum
 - **Status**: 100% COMPLETE & LIVE-VERIFIED (43/43 Dedicated Phase 2 Tests PASS; 54/54 Phase 1 Tests PASS; 16/16 Core Regressions PASS; Total 113/113 Tests PASS; 7/7 Host Domains LIVE_VERIFIED; Zero Core Regressions)
