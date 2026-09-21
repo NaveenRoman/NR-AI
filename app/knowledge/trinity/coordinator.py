@@ -851,8 +851,11 @@ class KnowledgeTrinityCoordinator:
 
         if self.knowledge_store:
             try:
-                search_term = active_subject or resolved_query
-                bm25_res = self.knowledge_store.search_bm25(search_term, limit=1)
+                bm25_res = self.knowledge_store.search_bm25(resolved_query, limit=1)
+                search_term = resolved_query
+                if not bm25_res and active_subject:
+                    bm25_res = self.knowledge_store.search_bm25(active_subject, limit=1)
+                    search_term = active_subject
                 if bm25_res:
                     node, score = bm25_res[0]
                     stopwords = {

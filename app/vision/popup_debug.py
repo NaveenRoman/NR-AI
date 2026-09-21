@@ -1,6 +1,10 @@
 import os
 
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
+
 
 from rapidocr_onnxruntime import RapidOCR
 

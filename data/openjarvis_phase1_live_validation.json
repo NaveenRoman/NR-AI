@@ -1,0 +1,71 @@
+{
+  "hardware_detection": {
+    "status": "LIVE_VERIFIED",
+    "cpu_name": "AMD64 Family 23 Model 104 Stepping 1, AuthenticAMD",
+    "cpu_physical_cores": 6,
+    "cpu_logical_cores": 12,
+    "total_ram_mb": 14181,
+    "available_ram_mb": 4682,
+    "gpu_available": false,
+    "gpu_name": null,
+    "vram_total_mb": 0,
+    "cloud_model_compatible": true,
+    "local_model_compatible": false,
+    "local_model_reasons": [
+      "Insufficient host RAM for CPU execution (4682MB < 9000MB)",
+      "Model availability status is UNAVAILABLE"
+    ]
+  },
+  "sqlite_task_persistence": {
+    "status": "LIVE_VERIFIED",
+    "db_path": "C:\\NR-AI\\data\\task_checkpoints.db",
+    "task_id": "LIVE-TASK-1789963489",
+    "direct_sqlite_match": true,
+    "secret_scrubbed_in_db": true,
+    "deterministic_barrier_asserted": true,
+    "unconfirmed_resume_blocked": true,
+    "confirmed_resume_succeeded": true
+  },
+  "prompt_guardrails": {
+    "status": "LIVE_VERIFIED",
+    "detected_findings_count": 5,
+    "findings": [
+      "OPENAI_KEY",
+      "GOOGLE_API_KEY",
+      "EMAIL",
+      "PHONE_NUMBER",
+      "US_SSN"
+    ],
+    "redacted_sample": "Deploy service with OPENAI_KEY=[SECRET_REDACTED:OPENAI_KEY] and GOOGLE_KEY=[SECRET_REDACTED:GOOGLE_API_KEY]. Contact admin at [PII_REDACTED:EMAIL], phone [PII_REDACTED:PHONE_NUMBER], SSN [PII_REDACTED:US_SSN].",
+    "clean_code_preserved": true
+  },
+  "a2a_foundation": {
+    "status": "LIVE_VERIFIED",
+    "authorized_request_success": true,
+    "scope_violation_blocked": true,
+    "error_code": -32002,
+    "audit_trail_events": 5
+  },
+  "mcp_adapter": {
+    "status": "LIVE_VERIFIED",
+    "safe_tool_execution": true,
+    "prohibited_tool_rejected": true,
+    "model_bypass_blocked": true,
+    "model_bypass_error": "MODEL_ISOLATION_VIOLATION: Direct LLM tool execution prohibited. All invocations must be mediated by NR-AI orchestrator.",
+    "emergency_stop_freeze": true,
+    "emergency_stop_error": "EMERGENCY_STOP_ACTIVE: System emergency freeze active. Tool execution halted."
+  },
+  "declarative_agent_definitions": {
+    "status": "LIVE_VERIFIED",
+    "is_valid": true,
+    "allow_shell_invariant": true,
+    "mapped_to_specification": true
+  },
+  "memory_boundaries": {
+    "status": "LIVE_VERIFIED",
+    "cross_workspace_blocked": true,
+    "cross_workspace_reason": "WORKSPACE_LEAKAGE_DENIED: Caller in workspace 'C:\\NR-AI\\dev_projects\\AppBeta' cannot access memory scoped to workspace 'C:\\NR-AI\\dev_projects\\AppAlpha'.",
+    "cross_agent_scratchpad_blocked": true,
+    "cross_agent_reason": "AGENT_ISOLATION_DENIED: Agent 'GuardianAgent' cannot access private scratchpad of agent 'ScoutAgent'."
+  }
+}

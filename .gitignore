@@ -5,6 +5,7 @@ __pycache__/
 *.bak
 *.flat
 data/test_*/
+data/test_*.json
 data/real_benchmarks/
 
 # Python

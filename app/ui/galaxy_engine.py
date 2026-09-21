@@ -291,23 +291,6 @@ BUILTIN_CELESTIAL_PROFILES: Dict[str, Dict[str, Any]] = {
             {"id": "research.query_pubmed", "label": "Search PubMed", "icon": "heart"},
         ],
     },
-    "voice_agent": {
-        "friendly_name": "Echo",
-        "workspace_name": "Audio Studio",
-        "project_name": "Voice I/O",
-        "role": "Voice Agent",
-        "category": "Sensory & Speech",
-        "color": "#10b981",  # Emerald
-        "glow": "rgba(16, 185, 129, 0.6)",
-        "orbit_ring": 2,
-        "base_angle": 278,
-        "icon_type": "mic",
-        "greeting": "Hi Boss! I'm Echo, your Voice & Audio Agent. I listen for natural language commands and synthesize audio responses.",
-        "suggested_actions": [
-            {"id": "voice.probe_mic", "label": "Probe Microphone", "icon": "mic"},
-            {"id": "voice.toggle_tts", "label": "Toggle Voice TTS", "icon": "volume-2"},
-        ],
-    },
     "vision_agent": {
         "friendly_name": "Vision",
         "workspace_name": "Vision Lab",
@@ -826,7 +809,7 @@ class GalaxyEngine:
         }
 
         # Check for registered builtins with personalized descriptions
-        if node.agent_id == "android_unified_agent":
+        if node.agent_id in ("android_unified_agent", "droid"):
             return "Hi Boss, I'm Droid, your Android Agent. I handle Android application development, debugging, building and verification."
         elif node.agent_id == "unity_autonomous_agent":
             return "Hi Boss, I'm Unity, your game development agent. I help create, edit, build and test Unity projects."
@@ -842,8 +825,6 @@ class GalaxyEngine:
             return "I am Aegis, the verification layer. I check claims, detect contradictions and help Knowledge avoid unsupported answers."
         elif node.agent_id == "vision_agent":
             return "Hi Boss, I'm Vision, your visual grounding and OCR Agent. I inspect screen pixels, detect UI hierarchies, and identify visual targets."
-        elif node.agent_id == "voice_agent":
-            return "Hi Boss, I'm Echo, your Voice and Audio Agent. I listen for natural language commands and synthesize audio responses."
         elif node.agent_id == "computer_control_agent":
             return "Hi Boss, I'm Sentinel, your unified computer and system agent. I inspect desktop windows and verify application health."
         elif node.agent_id == "nexus_coordinator":

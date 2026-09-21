@@ -191,6 +191,9 @@ class VoiceListener:
         """Resumes microphone capture after TTS with an acoustic cooldown delay."""
         self._is_muted = False
         self._cooldown_until = time.time() + cooldown
+        if not self._is_active:
+            self.state = ListeningState.STOPPED
+            return
         self.state = ListeningState.IDLE
 
     def is_muted(self) -> bool:

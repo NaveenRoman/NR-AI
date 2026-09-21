@@ -1,5 +1,9 @@
 import time
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
+
 
 from app.vision.menu_popup import MenuPopupVision
 from app.agent.state_verifier import StateVerifier

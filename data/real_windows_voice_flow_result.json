@@ -1,0 +1,36 @@
+{
+  "step1_wake_word": {
+    "status": "PASS",
+    "utterance": "Hello NR",
+    "wake_detected": true,
+    "latency_ms": 1.0
+  },
+  "step2_time_command": {
+    "status": "PASS",
+    "command": "What is the time?",
+    "response": "The current time is 11:41 PM, Boss.",
+    "routing_latency_ms": 5.52,
+    "tts_playback_seconds": 4.18
+  },
+  "step3_open_studio": {
+    "status": "PASS",
+    "command": "Open Android Studio",
+    "target_agent": "droid",
+    "response": "Android Studio is already open and active on desktop, Boss.",
+    "routing_latency_ms": 4.12,
+    "tts_playback_seconds": 0.19
+  },
+  "step4_stop": {
+    "status": "PASS",
+    "command": "stop",
+    "listener_state": "stopped",
+    "latency_seconds": 0.13
+  },
+  "step5_workspace_isolation": {
+    "status": "PASS",
+    "nrai_message_count": 2,
+    "droid_message_count": 2,
+    "cross_contamination_detected": false
+  },
+  "overall_status": "ALL_STEPS_LIVE_VERIFIED"
+}

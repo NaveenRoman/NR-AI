@@ -1,0 +1,9 @@
+{
+  "avd": "Pixel_6_API_34",
+  "serial": "emulator-5554",
+  "api_level": "34",
+  "model": "sdk_gphone64_x86_64",
+  "arch": "x86_64",
+  "boot_time_seconds": 76.5,
+  "status": "READY"
+}

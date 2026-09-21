@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "updated_at": 1789824573.4515646,
+  "updated_at": 1789964297.8621905,
   "agents": {
     "android_unified_agent": {
       "agent_id": "android_unified_agent",
@@ -1234,6 +1234,71 @@
       "provenance": {},
       "created_at": 1789824569.1962678,
       "updated_at": 1789824573.4515646
+    },
+    "test_qa_1789964292997": {
+      "agent_id": "test_qa_1789964292997",
+      "name": "Test QA Agent",
+      "version": "1.0.0",
+      "description": "",
+      "purpose": "Automate system verification suites",
+      "capabilities": [
+        "system.core",
+        "ui.visualization"
+      ],
+      "model_requirement": {
+        "required_capabilities": [],
+        "preferred_model": "gemini-3.6-flash",
+        "fallback_models": [],
+        "max_context_tokens": 128000,
+        "latency_tier": "normal",
+        "requires_live_api_verified": true
+      },
+      "tool_requirements": [],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "safety_policy": {
+        "sandboxed_root": "dev_projects",
+        "max_steps": 20,
+        "timeout_seconds": 120,
+        "retry_limit": 2,
+        "allow_shell": false,
+        "allow_network_listen": false,
+        "allow_credential_access": false,
+        "require_emergency_stop_check": true,
+        "prohibited_tools": [
+          "shell.exec",
+          "system.cmd",
+          "powershell.exec",
+          "network.listen",
+          "credential.read",
+          "os.raw_exec",
+          "eval",
+          "exec"
+        ]
+      },
+      "lifecycle_state": "RETIRED",
+      "verification_requirements": [],
+      "test_requirements": [],
+      "provenance": {},
+      "created_at": 1789964292.9979866,
+      "updated_at": 1789964297.8621905
     }
   },
   "history": {}

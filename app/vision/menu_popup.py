@@ -1,7 +1,11 @@
 import os
 import time
 
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
+
 
 from app.vision.screen import ScreenVision
 from app.vision.text_segmenter import TextSegmenter

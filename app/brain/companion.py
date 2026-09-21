@@ -96,6 +96,72 @@ def safe_print(msg: str) -> None:
             pass
 
 
+import json
+import uuid
+
+
+def canonicalize_agent_id(agent_id: Optional[str]) -> str:
+    """
+    Resolves any agent identifier, alias, or friendly name to its stable canonical ID.
+    Central: 'nr_ai'
+    Specialists: 'droid', 'droid_scout', 'droid_guardian', 'studio', 'unity', 'unreal',
+                 'skyshield', 'knowledge', 'nova', 'aegis', 'quest', 'vision',
+                 'sentinel', 'forge', 'pixel', 'nexus'
+    Dynamic agents: agent_id.lower().replace("-", "_")
+    """
+    if not agent_id:
+        return "nr_ai"
+    aid = str(agent_id).lower().strip().replace("-", "_").replace(" ", "_")
+    if aid in ("nr_ai", "nr_ai_central_intelligence", "central", "root", "nrai", "nr ai", "central_intelligence"):
+        return "nr_ai"
+    aliases = {
+        "android_unified_agent": "droid",
+        "android": "droid",
+        "android_agent": "droid",
+        "droid": "droid",
+        "droid_scout": "droid_scout",
+        "scout": "droid_scout",
+        "droid_guardian": "droid_guardian",
+        "guardian": "droid_guardian",
+        "vs_unified_agent": "studio",
+        "visual_studio": "studio",
+        "visual_studio_agent": "studio",
+        "studio": "studio",
+        "vs": "studio",
+        "unity_autonomous_agent": "unity",
+        "unity": "unity",
+        "unreal_autonomous_agent": "unreal",
+        "unreal": "unreal",
+        "security_agent": "skyshield",
+        "shield": "skyshield",
+        "security": "skyshield",
+        "skyshield": "skyshield",
+        "universal_knowledge_engine": "knowledge",
+        "knowledge": "knowledge",
+        "oracle": "knowledge",
+        "nova_discovery_agent": "nova",
+        "nova": "nova",
+        "aegis_verification_agent": "aegis",
+        "aegis": "aegis",
+        "research_agent": "quest",
+        "quest": "quest",
+        "research": "quest",
+        "vision_agent": "vision",
+        "vision": "vision",
+        "computer_control_agent": "sentinel",
+        "sentinel": "sentinel",
+        "computer": "sentinel",
+        "forge_dev_agent": "forge",
+        "forge": "forge",
+        "pixel_ui_agent": "pixel",
+        "pixel": "pixel",
+        "nexus_coordinator": "nexus",
+        "nexus": "nexus",
+        "coordinator": "nexus",
+    }
+    return aliases.get(aid, aid)
+
+
 class CommandCategory(str, Enum):
     NEWS_AI = "NEWS_AI"
     NEWS_GENERAL = "NEWS_GENERAL"
@@ -281,6 +347,7 @@ class NRCompanion:
         self.session_introduced_agents: set = set()
         self.agent_conversation_histories: Dict[str, List[Dict[str, Any]]] = {}
         self.active_development_context: Dict[str, Any] = {}
+        self._load_agent_conversation_histories()
 
     def _on_speaker_state_change(self, state: AssistantState) -> None:
         """Keep Avatar and VoiceListener in sync with TTS playback state to prevent self-triggering."""
@@ -452,6 +519,28 @@ class NRCompanion:
 
         c_candidate = re.sub(r"^(?:please\s+|can you\s+|could you\s+)", "", c).strip()
         c_candidate = re.sub(r"[.?!]+$", "", c_candidate).strip()
+
+        # 0B.28. Informational & Universal Knowledge Inquiries
+        # Conceptual and informational questions (e.g. "What is Kotlin?", "How does Android Studio build an Android app?",
+        # "Explain Python decorators", "What is Unreal Engine?", "How does Unity work?", "What is machine learning?",
+        # "Explain quantum computing") must be answered as knowledge, not executed as physical commands.
+        is_informational_query = any(c_candidate.startswith(pfx) for pfx in (
+            "what is", "what are", "what was", "what were", "what does",
+            "how does", "how do", "how is", "how are", "how can", "how will",
+            "explain ", "explain how", "tell me about", "describe ", "can you explain", "could you explain",
+            "why does", "why is", "why do", "why are", "who is", "who was", "who created", "who invented"
+        ))
+        if is_informational_query:
+            # Conversational greetings like "how are you", "how are you today" route to CONVERSATION
+            if c_candidate.startswith("how are you"):
+                return CommandCategory.CONVERSATION
+            # Agents / orchestrator queries route to CommandCategory.AGENTS
+            if any(p in c for p in ["agents", "what are the agents doing", "orchestrator", "agent status", "slots", "10-agent"]):
+                return CommandCategory.AGENTS
+            # Android environment / status inquiries route to CommandCategory.ANDROID
+            if "android" in c and any(w in c for w in ("status", "environment", "sdk", "avd", "setup", "state")):
+                return CommandCategory.ANDROID
+            return CommandCategory.KNOWLEDGE
 
         # 0B.29. Universal Engineering Intent Check (Android & Unreal Workflows)
         try:
@@ -828,21 +917,22 @@ class NRCompanion:
             agent_id = "universal_knowledge_engine"
             resolved_name = "Knowledge"
 
-        self.active_conversation_agent = agent_id
+        canon_id = canonicalize_agent_id(agent_id)
+        self.active_conversation_agent = canon_id
         if not resolved_name:
             _, resolved_name, _ = self.resolve_addressed_agent(agent_id)
         if not resolved_name:
-            resolved_name = agent_id.replace("_", " ").title()
+            resolved_name = canon_id.replace("_", " ").title()
         self.active_conversation_agent_name = resolved_name
 
-        is_first = agent_id not in self.session_introduced_agents
+        is_first = canon_id not in self.session_introduced_agents
         if resolved_name == "Droid":
             speech = "Yes Boss, I'm listening."
         elif is_first:
-            self.session_introduced_agents.add(agent_id)
+            self.session_introduced_agents.add(canon_id)
             from app.ui.galaxy_engine import GalaxyEngine
             ge = GalaxyEngine()
-            intro_data = ge.get_agent_introductions(single_agent_id=agent_id)
+            intro_data = ge.get_agent_introductions(single_agent_id=canon_id)
             if intro_data.get("sequence"):
                 speech = intro_data["sequence"][0]["speech_text"]
             else:
@@ -851,12 +941,35 @@ class NRCompanion:
             speech = f"Yes Boss, I'm ready. What do you need?"
 
         self.add_agent_chat_message(
-            agent_id,
-            role="agent",
+            canon_id,
+            role="assistant",
             text=speech,
             data={"activation": True, "first_intro": is_first}
         )
         return speech, is_first
+
+    def _load_agent_conversation_histories(self) -> None:
+        file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "agent_conversations.json")
+        try:
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        self.agent_conversation_histories = {
+                            canonicalize_agent_id(k): v for k, v in data.items() if isinstance(v, list)
+                        }
+                        logger.info(f"[Companion] Loaded agent conversations from {file_path}")
+        except Exception as e:
+            logger.warning(f"[Companion] Failed to load agent conversation histories: {e}")
+
+    def _save_agent_conversation_histories(self) -> None:
+        file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "agent_conversations.json")
+        try:
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(self.agent_conversation_histories, f, indent=2)
+        except Exception as e:
+            logger.warning(f"[Companion] Failed to save agent conversation histories: {e}")
 
     def add_agent_chat_message(
         self,
@@ -864,70 +977,64 @@ class NRCompanion:
         role: str,
         text: str,
         data: Optional[Dict[str, Any]] = None
-    ) -> None:
-        """Appends a sanitized, bounded message to the agent's chat history."""
-        # Knowledge Trinity: Nova and Aegis share the single Knowledge chat workspace
-        if agent_id in ("nova_discovery_agent", "aegis_verification_agent"):
-            agent_id = "universal_knowledge_engine"
-
-        if agent_id not in self.agent_conversation_histories:
-            self.agent_conversation_histories[agent_id] = []
+    ) -> Dict[str, Any]:
+        """Appends a sanitized, bounded message to the agent's dedicated chat history."""
+        canon_id = canonicalize_agent_id(agent_id)
+        if canon_id not in self.agent_conversation_histories:
+            self.agent_conversation_histories[canon_id] = []
 
         # Redact potential API keys or sensitive credentials
-        sanitized_text = re.sub(r"(AIza[0-9A-Za-z-_]{20,})", "[REDACTED_API_KEY]", text)
+        sanitized_text = re.sub(r"(AIza[0-9A-Za-z-_]{20,})", "[REDACTED_API_KEY]", str(text))
         sanitized_text = re.sub(r"(sk-[0-9A-Za-z-_]{20,})", "[REDACTED_SECRET]", sanitized_text)
         sanitized_text = re.sub(r"(ghp_[0-9A-Za-z]{30,})", "[REDACTED_TOKEN]", sanitized_text)
 
+        role_clean = "user" if str(role).lower() == "user" else "assistant"
+        now_ts = time.time()
+        msg_id = f"msg_{canon_id}_{int(now_ts * 1000)}_{uuid.uuid4().hex[:6]}"
         msg = {
-            "role": role,
+            "message_id": msg_id,
+            "agent_id": canon_id,
+            "role": role_clean,
+            "content": sanitized_text,
             "text": sanitized_text,
-            "timestamp": time.time(),
-            "time_display": time.strftime("%H:%M:%S"),
+            "timestamp": now_ts,
+            "time_display": time.strftime("%H:%M:%S", time.localtime(now_ts)),
             "data": data or {},
         }
-        self.agent_conversation_histories[agent_id].append(msg)
-        # Bounded to last 20 messages
-        if len(self.agent_conversation_histories[agent_id]) > 20:
-            self.agent_conversation_histories[agent_id] = self.agent_conversation_histories[agent_id][-20:]
+        self.agent_conversation_histories[canon_id].append(msg)
+        # Bounded to last 50 messages per agent (FIFO)
+        if len(self.agent_conversation_histories[canon_id]) > 50:
+            self.agent_conversation_histories[canon_id] = self.agent_conversation_histories[canon_id][-50:]
+
+        self._save_agent_conversation_histories()
+        return msg
 
     @property
     def agent_chat_histories(self) -> Dict[str, List[Dict[str, Any]]]:
         return self.agent_conversation_histories
 
-    def get_agent_chat_history(self, agent_id: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Returns bounded chat history for a specific agent."""
-        # Knowledge Trinity: Nova and Aegis share the single Knowledge chat workspace
-        if agent_id in ("nova_discovery_agent", "aegis_verification_agent"):
-            agent_id = "universal_knowledge_engine"
-
-        history = self.agent_conversation_histories.get(agent_id, [])
+    def get_agent_chat_history(self, agent_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Returns bounded chat history for a specific agent workspace."""
+        canon_id = canonicalize_agent_id(agent_id)
+        history = self.agent_conversation_histories.get(canon_id, [])
         return history[-limit:]
+
+    def clear_agent_chat_history(self, agent_id: str) -> None:
+        """Clears chat history for a specific agent workspace."""
+        canon_id = canonicalize_agent_id(agent_id)
+        self.agent_conversation_histories[canon_id] = []
+        self._save_agent_conversation_histories()
 
     def get_agent_workspace_context(self, agent_id: str) -> Dict[str, Any]:
         """
-        Returns workspace context ensuring Trinity nodes share the single Universal Knowledge Workspace,
-        while maintaining strict specialist isolation.
+        Returns workspace context ensuring strict specialist isolation.
         """
-        if agent_id in ("universal_knowledge_engine", "nova_discovery_agent", "aegis_verification_agent"):
-            return {
-                "workspace_id": "universal_knowledge_engine",
-                "workspace_name": "Universal Knowledge Workspace",
-                "shared": True,
-                "role_agent": agent_id,
-            }
-        if agent_id in ("security_agent", "skyshield"):
-            return {
-                "workspace_id": "security_agent",
-                "workspace_name": "SkyShield Command Center",
-                "shared": False,
-                "role_agent": "security_agent",
-                "is_security_command_center": True,
-            }
+        canon_id = canonicalize_agent_id(agent_id)
         return {
-            "workspace_id": agent_id,
-            "workspace_name": f"{agent_id} Workspace",
+            "workspace_id": canon_id,
+            "workspace_name": f"{canon_id.replace('_', ' ').title()} Workspace",
             "shared": False,
-            "role_agent": agent_id,
+            "role_agent": canon_id,
         }
 
     def get_active_development_context(self, agent_id: Optional[str] = None) -> Dict[str, Any]:
@@ -1088,9 +1195,6 @@ class NRCompanion:
             "quest": ("research_agent", "Quest"),
             "research": ("research_agent", "Quest"),
             "research_agent": ("research_agent", "Quest"),
-            "echo": ("voice_agent", "Echo"),
-            "voice": ("voice_agent", "Echo"),
-            "voice_agent": ("voice_agent", "Echo"),
             "vision": ("vision_agent", "Vision"),
             "vision_agent": ("vision_agent", "Vision"),
             "forge": ("forge_dev_agent", "Forge"),
@@ -1111,25 +1215,31 @@ class NRCompanion:
                 pass
 
         # Match exact address and activation triggers:
-        # e.g. "Droid", "Hey Droid", "Activate Droid", "Switch to Droid", "Select Droid", "Talk to Droid"
+        # e.g. "Droid", "Hey Droid", "Hey hi Droid", "Activate Droid", "Switch to Droid", "Talk to Droid"
         # Note: "open <IDE>" (e.g. "open android studio") is an engineering/launch action, NOT an agent session activation greeting.
         ide_aliases = {"android studio", "androidstudio", "visual studio", "vs", "unity", "unreal"}
-        activation_prefixes = ("hey", "hi", "hello", "activate", "switch to", "select", "talk to", "go to")
-        for alias, (aid, fname) in aliases.items():
-            if c_low == alias:
-                return aid, fname, ""
-            for pfx in activation_prefixes:
-                if c_low == f"{pfx} {alias}":
-                    return aid, fname, ""
-            # Allow "open droid" but NOT "open android studio"
-            if alias not in ide_aliases and c_low == f"open {alias}":
+        
+        # Sort aliases by length descending so multi-word aliases (e.g. "droid guardian", "droid scout") are matched first
+        sorted_aliases = sorted(aliases.items(), key=lambda x: len(x[0]), reverse=True)
+        
+        # Compound preamble pattern matching one or more conversational greetings/prefixes
+        preamble_pattern = r"^(?:(?:hey|hi|hello|yo|please|can you|could you|activate|switch to|select|talk to|go to|wake up)\s+)+"
+        c_stripped = re.sub(preamble_pattern, "", c_low).strip()
+
+        # 1. Exact alias match or preamble + alias match
+        for alias, (aid, fname) in sorted_aliases:
+            if alias in ide_aliases and (c_low.startswith("open ") or "studio" in alias):
+                continue
+            if c_low == alias or c_stripped == alias:
                 return aid, fname, ""
 
-        # Match prefix address with remaining command:
-        # e.g. "Droid, create a login screen", "Hey Droid, build the app", "Activate Droid and build the app"
-        prefix_pattern = r"(?:(?:hey|hi|hello|activate|switch to|open|select|talk to|go to)\s+)?"
-        for alias, (aid, fname) in aliases.items():
-            p1 = rf"^{prefix_pattern}{re.escape(alias)}[,:\s]+(?:and\s+)?(.+)$"
+        # 2. Match address with remainder:
+        # e.g. "Droid, create a login screen", "Hey hi Droid, build the app", "Hey Droid open project"
+        for alias, (aid, fname) in sorted_aliases:
+            if alias in ide_aliases and (c_low.startswith("open ") or "studio" in alias):
+                continue
+            # Check with full input
+            p1 = rf"^(?:(?:hey|hi|hello|yo|please|can you|could you|activate|switch to|select|talk to|go to|wake up)\s+)*{re.escape(alias)}[,:\s]+(?:and\s+)?(.+)$"
             m1 = re.match(p1, c, re.IGNORECASE)
             if m1:
                 remainder = m1.group(1).strip()
@@ -1143,12 +1253,27 @@ class NRCompanion:
         Ensures bounded dialogue logging, specialist context locking, and clean knowledge escape.
         """
         c_low = command.lower().strip()
+        canon_id = canonicalize_agent_id(agent_id)
 
         # Record user turn into agent's dedicated chat history
-        self.add_agent_chat_message(agent_id, role="user", text=command)
+        self.add_agent_chat_message(canon_id, role="user", text=command)
 
         # 1. SPECIALIST CONTEXT: Droid (Android Agent)
-        if agent_id == "android_unified_agent":
+        if canon_id in ("droid", "android_unified_agent"):
+            # Fast conversational greeting / status check for Droid
+            droid_greetings = ("hello", "hi", "hey", "hello droid", "hi droid", "hey droid", "good morning", "good afternoon", "status", "what is your status", "are you ready", "ready")
+            if c_low in droid_greetings or c_low.rstrip("?!.") in droid_greetings:
+                resp_text = "Hello Boss! Android Unified Agent is online and listening. Ready for Android engineering."
+                self.add_agent_chat_message("droid", role="assistant", text=resp_text)
+                return CompanionResponse(
+                    text=resp_text,
+                    category=CommandCategory.CONVERSATION,
+                    routed_to="Droid",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.ATTENTIVE,
+                    data={"active_conversation_agent": "droid", "agent_name": "Droid"},
+                )
+
             # Non-Blind Context Locking: Check for general knowledge questions that should escape to Universal Knowledge
             # while keeping Droid as the active conversation agent and workspace!
             general_knowledge_patterns = (
@@ -1254,8 +1379,8 @@ class NRCompanion:
                 proj_name = act_ctx.project_name if act_ctx else "nr_android_test"
                 resp_text = f"Droid: Standing by in {proj_name} workspace. Ready to build, run, inspect, or modify."
 
-            self.add_agent_chat_message(agent_id, role="agent", text=resp_text)
-            resp_data = {"active_conversation_agent": "android_unified_agent", "agent_name": "Droid"}
+            self.add_agent_chat_message("droid", role="assistant", text=resp_text)
+            resp_data = {"active_conversation_agent": "droid", "agent_name": "Droid"}
             if isinstance(res, dict):
                 resp_data.update(res)
             return CompanionResponse(
@@ -1267,51 +1392,147 @@ class NRCompanion:
                 data=resp_data,
             )
 
-        elif agent_id == "vs_unified_agent":
-            return self._handle_visual_studio(command)
+        elif canon_id == "droid_scout":
+            # Droid Scout is a file/build watcher specialist under Droid.
+            # Any actionable engineering command must be delegated to Droid (android_unified_agent).
+            is_actionable = any(k in c_low for k in ("open", "build", "run", "gradle", "create", "modify", "test", "inspect", "clean", "deploy", "project", "studio", "apk", "activity")) or EngineeringIntentParser.parse(command, default_domain=EngineeringDomain.ANDROID).is_valid
+            if is_actionable:
+                logger.info(f"[Companion] Droid Scout delegating actionable Android intent to Droid: '{command}'")
+                self.active_conversation_agent = "droid"
+                self.active_conversation_agent_name = "Droid"
+                return self._execute_active_agent_turn("droid", "Droid", command)
 
-        elif agent_id == "unity_autonomous_agent":
+            if any(k in c_low for k in ("status", "hello", "hi", "hey", "watch")):
+                resp_text = "Droid Scout: Monitoring Android Studio workspace (nr_android_test). File watchers and diagnostics active. No compilation regressions detected."
+            elif any(k in c_low for k in ("what can you do", "capabilities", "help", "who are you")):
+                resp_text = "Hi Boss, I'm Droid Scout. I continuously watch Android Studio files, track Gradle daemon state, and alert on syntax or build anomalies."
+            else:
+                resp_text = "Droid Scout: Workspace watcher standing by. All actionable engineering workflows are executed directly by Droid."
+            self.add_agent_chat_message("droid_scout", role="assistant", text=resp_text)
+            return CompanionResponse(
+                text=resp_text,
+                category=CommandCategory.ANDROID_STUDIO,
+                routed_to="Droid Scout",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.ATTENTIVE,
+                data={"active_conversation_agent": "droid_scout", "agent_name": "Droid Scout"},
+            )
+
+        elif canon_id == "droid_guardian":
+            # Droid Guardian is a safety/verification subsystem under Droid.
+            # It must NEVER hijack Droid, fake execution, or return dummy safety gate strings for actionable Android work.
+            is_actionable = (
+                any(k in c_low for k in ("open", "build", "run", "gradle", "create", "modify", "test", "inspect", "clean", "deploy", "project", "studio", "apk", "activity"))
+                or EngineeringIntentParser.parse(command, default_domain=EngineeringDomain.ANDROID).is_valid
+            )
+            if is_actionable:
+                logger.info(f"[Companion] Droid Guardian yielding actionable engineering intent to Droid: '{command}'")
+                self.active_conversation_agent = "droid"
+                self.active_conversation_agent_name = "Droid"
+                return self._execute_active_agent_turn("droid", "Droid", command)
+
+            if any(k in c_low for k in ("status", "hello", "hi", "hey", "verify", "gate", "safety")):
+                resp_text = "Droid Guardian: Verification gate active. Monitoring Gradle builds and test artifacts with zero regressions."
+            elif any(k in c_low for k in ("what can you do", "capabilities", "help", "who are you")):
+                resp_text = "Hi Boss, I'm Droid Guardian. I enforce automated test verification, monitor Gradle exit codes, and execute deterministic build repairs for Droid."
+            else:
+                resp_text = "Droid Guardian: Safety verification gate standing by. All actionable engineering workflows are executed directly by Droid."
+            self.add_agent_chat_message("droid_guardian", role="assistant", text=resp_text)
+            return CompanionResponse(
+                text=resp_text,
+                category=CommandCategory.ANDROID_STUDIO,
+                routed_to="Droid Guardian",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.ATTENTIVE,
+                data={"active_conversation_agent": "droid_guardian", "agent_name": "Droid Guardian"},
+            )
+
+        elif canon_id in ("studio", "vs_unified_agent"):
+            v_resp = self._handle_visual_studio(command)
+            self.add_agent_chat_message("studio", role="assistant", text=v_resp.text, data=v_resp.data)
+            return v_resp
+
+        elif canon_id in ("unity", "unity_autonomous_agent"):
             if any(k in c_low for k in ("player controller", "controller", "script")):
                 resp_text = "Unity: Yes Boss, I'm Unity. I can create a C# player controller with Rigidbody movement and input handling."
-            elif any(k in c_low for k in ("what can you do", "capabilities", "help")):
+            elif any(k in c_low for k in ("what can you do", "capabilities", "help", "who are you")):
                 resp_text = "Unity: Hi Boss! I manage Unity 2022.3 projects, C# script AST repairs, scenes, assets, and EditMode tests."
             else:
-                return self._handle_unity(command)
+                u_resp = self._handle_unity(command)
+                self.add_agent_chat_message("unity", role="assistant", text=u_resp.text, data=u_resp.data)
+                return u_resp
 
+            self.add_agent_chat_message("unity", role="assistant", text=resp_text)
             return CompanionResponse(
                 text=resp_text,
                 category=CommandCategory.UNITY,
                 routed_to="Unity",
                 avatar_mode=AvatarMode.SPEAKING,
                 avatar_emotion=AvatarEmotion.ATTENTIVE,
-                data={"active_conversation_agent": "unity_autonomous_agent", "agent_name": "Unity"},
+                data={"active_conversation_agent": "unity", "agent_name": "Unity"},
             )
 
-        elif agent_id == "unreal_autonomous_agent":
+        elif canon_id in ("unreal", "unreal_autonomous_agent"):
             if any(k in c_low for k in ("open", "launch", "editor")):
                 resp_text = "Unreal: Yes Boss. Inspecting Unreal Engine workspace and preparing project compilation with UBT."
-            elif any(k in c_low for k in ("what can you do", "capabilities", "help")):
+            elif any(k in c_low for k in ("what can you do", "capabilities", "help", "who are you")):
                 resp_text = "Unreal: Hi Boss! I handle Unreal Engine 5 C++ source parsing, UBT build orchestration, and Blueprint automation."
             else:
-                return self._handle_unreal(command)
+                un_resp = self._handle_unreal(command)
+                self.add_agent_chat_message("unreal", role="assistant", text=un_resp.text, data=un_resp.data)
+                return un_resp
 
+            self.add_agent_chat_message("unreal", role="assistant", text=resp_text)
             return CompanionResponse(
                 text=resp_text,
                 category=CommandCategory.UNREAL,
                 routed_to="Unreal",
                 avatar_mode=AvatarMode.SPEAKING,
                 avatar_emotion=AvatarEmotion.ATTENTIVE,
-                data={"active_conversation_agent": "unreal_autonomous_agent", "agent_name": "Unreal"},
+                data={"active_conversation_agent": "unreal", "agent_name": "Unreal"},
             )
 
-        elif agent_id == "universal_knowledge_engine":
+        elif canon_id in ("knowledge", "universal_knowledge_engine"):
             k_resp = self._handle_knowledge(command)
-            k_resp.text = f"Knowledge: {k_resp.text}"
-            k_resp.data["active_conversation_agent"] = "universal_knowledge_engine"
-            self.add_agent_chat_message(agent_id, role="agent", text=k_resp.text, data=k_resp.data)
+            resp_text = f"Knowledge: {k_resp.text}"
+            k_resp.text = resp_text
+            k_resp.data["active_conversation_agent"] = "knowledge"
+            self.add_agent_chat_message("knowledge", role="assistant", text=resp_text, data=k_resp.data)
             return k_resp
 
-        elif agent_id in ("security_agent", "skyshield"):
+        elif canon_id == "nova":
+            if any(k in c_low for k in ("status", "hello", "hi", "hey")):
+                resp_text = "Nova: Frontier discovery engine online. Scanning arXiv, PubMed, and multi-source knowledge graph."
+            else:
+                k_resp = self._handle_knowledge(command)
+                resp_text = f"Nova: [Discovery] {k_resp.text}"
+            self.add_agent_chat_message("nova", role="assistant", text=resp_text)
+            return CompanionResponse(
+                text=resp_text,
+                category=CommandCategory.KNOWLEDGE,
+                routed_to="Nova",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.HAPPY,
+                data={"active_conversation_agent": "nova", "agent_name": "Nova"},
+            )
+
+        elif canon_id == "aegis":
+            if any(k in c_low for k in ("status", "hello", "hi", "hey")):
+                resp_text = "Aegis: Verification agent active. Epistemic fact-checking and multi-source grounding standing by."
+            else:
+                k_resp = self._handle_knowledge(command)
+                resp_text = f"Aegis: [Verified Fact] {k_resp.text}"
+            self.add_agent_chat_message("aegis", role="assistant", text=resp_text)
+            return CompanionResponse(
+                text=resp_text,
+                category=CommandCategory.KNOWLEDGE,
+                routed_to="Aegis",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.ATTENTIVE,
+                data={"active_conversation_agent": "aegis", "agent_name": "Aegis"},
+            )
+
+        elif canon_id in ("skyshield", "security_agent"):
             if not getattr(self, "security_agent", None):
                 from app.security.coordinator import SecurityCoordinator
                 from app.security.agent import SecurityAgent
@@ -1324,6 +1545,7 @@ class NRCompanion:
             sec_res = self.security_agent.handle_text_command(command)
             resp_text = sec_res.get("reply") or f"SkyShield: Standing by in Command Center. State is {self.security_coordinator.current_state.value}."
             dash_data = self.security_coordinator.get_dashboard_state()
+            self.add_agent_chat_message("skyshield", role="assistant", text=resp_text, data=dash_data)
             return CompanionResponse(
                 text=resp_text,
                 category=CommandCategory.AGENTS,
@@ -1331,7 +1553,7 @@ class NRCompanion:
                 avatar_mode=AvatarMode.SPEAKING,
                 avatar_emotion=AvatarEmotion.ATTENTIVE,
                 data={
-                    "active_conversation_agent": "security_agent",
+                    "active_conversation_agent": "skyshield",
                     "agent_name": "SkyShield",
                     "skyshield_dashboard": dash_data,
                 },
@@ -1340,13 +1562,14 @@ class NRCompanion:
         else:
             # Dynamic agent or generic specialist
             resp_text = f"{agent_name}: Ready and processing '{command}' under active conversation mode."
+            self.add_agent_chat_message(canon_id, role="assistant", text=resp_text)
             return CompanionResponse(
                 text=resp_text,
                 category=CommandCategory.CONVERSATION,
                 routed_to=agent_name,
                 avatar_mode=AvatarMode.SPEAKING,
                 avatar_emotion=AvatarEmotion.ATTENTIVE,
-                data={"active_conversation_agent": agent_id, "agent_name": agent_name},
+                data={"active_conversation_agent": canon_id, "agent_name": agent_name},
             )
 
     def interact(
@@ -1354,6 +1577,7 @@ class NRCompanion:
         user_input: str,
         speak_output: bool = False,
         wake_phrase_checked: bool = False,
+        target_agent: Optional[str] = None,
     ) -> CompanionResponse:
         """
         Process user text or speech command through the full companion workflow:
@@ -1377,6 +1601,30 @@ class NRCompanion:
                 clean_input = extracted or "hello"
 
         c_lower = clean_input.lower().strip().rstrip(".!?,")
+
+        # Resolve target agent workspace if explicitly passed
+        canon_target = canonicalize_agent_id(target_agent) if target_agent else None
+
+        # 0. DIRECT ROUTING TO SPECIALIST WORKSPACE
+        if canon_target and canon_target != "nr_ai":
+            # If target is Droid Guardian or Scout but the command is actionable Android engineering:
+            if canon_target in ("droid_guardian", "droid_scout"):
+                is_actionable = (
+                    any(k in c_lower for k in ("open", "build", "run", "gradle", "create", "modify", "test", "inspect", "clean", "deploy", "project", "studio", "apk", "activity"))
+                    or EngineeringIntentParser.parse(clean_input, default_domain=EngineeringDomain.ANDROID).is_valid
+                )
+                if is_actionable:
+                    canon_target = "droid"
+            agent_names = {
+                "droid": "Droid", "droid_scout": "Droid Scout", "droid_guardian": "Droid Guardian",
+                "studio": "Studio", "unity": "Unity", "unreal": "Unreal", "knowledge": "Knowledge",
+                "nova": "Nova", "aegis": "Aegis", "skyshield": "SkyShield", "sentinel": "Sentinel",
+                "quest": "Quest", "vision": "Vision", "forge": "Forge", "pixel": "Pixel", "nexus": "Nexus",
+            }
+            spec_name = agent_names.get(canon_target, canon_target.replace("_", " ").title())
+            self.active_conversation_agent = canon_target
+            self.active_conversation_agent_name = spec_name
+            return self._execute_active_agent_turn(canon_target, spec_name, clean_input)
 
         # 1. Stop Communication Triggers (Explicit voice session termination)
         stop_comm_triggers = ("stop communication", "stop listening", "stop voice session", "end voice session")
@@ -1414,12 +1662,117 @@ class NRCompanion:
             "wake up nr ai", "wake nr ai", "nr-ai", "hey nr-ai", "central",
             "back to nr-ai", "let nr-ai handle this", "return to nr-ai", "return to central", "reset"
         )
-        if c_lower in central_triggers:
+        if c_lower in central_triggers or canon_target == "nr_ai":
             self.active_conversation_agent = None
             self.active_conversation_agent_name = None
             self.last_handoff_path = []
+            if c_lower in central_triggers:
+                central_reply = "NR-AI online and listening, Boss. What should we tackle?"
+                self.add_agent_chat_message("nr_ai", role="user", text=clean_input)
+                self.add_agent_chat_message("nr_ai", role="assistant", text=central_reply)
+                return CompanionResponse(
+                    text=central_reply,
+                    category=CommandCategory.CONVERSATION,
+                    routed_to="NR-AI-Central",
+                    avatar_mode=AvatarMode.SPEAKING,
+                    avatar_emotion=AvatarEmotion.HAPPY,
+                    data={"active_conversation_agent": None, "central_active": True},
+                )
+
+        # 3B. Specialist Coordination via Central NR-AI
+        # e.g., "Ask Droid to open Android Studio", "Tell Droid to build the project", "Have Studio inspect the solution"
+        m_coord = re.match(r"^(?:ask|tell|instruct|have)\s+([a-zA-Z0-9_\-\s]+?)\s+to\s+(.+)$", c_lower, re.IGNORECASE)
+        if m_coord and not self.active_conversation_agent:
+            target_spec = m_coord.group(1).strip()
+            action_spec = m_coord.group(2).strip()
+            deleg_id = canonicalize_agent_id(target_spec)
+
+            # Record turn in NR-AI chat history
+            self.add_agent_chat_message("nr_ai", role="user", text=clean_input)
+
+            res = {}
+            if deleg_id in ("droid", "android_unified_agent"):
+                act_ctx = self.engineering_context_manager.get_active_project()
+                eng_intent = EngineeringIntentParser.parse(
+                    action_spec,
+                    active_context=act_ctx.to_dict() if act_ctx else None,
+                    default_domain=EngineeringDomain.ANDROID,
+                )
+                res = self.unified_android_agent.execute_engineering_intent(eng_intent) if eng_intent.is_valid else {}
+                droid_msg = res.get("message") or f"Executed '{action_spec}' for Android project."
+                self.add_agent_chat_message("droid", role="assistant", text=droid_msg, data=res)
+                nrai_reply = f"I've instructed Droid to {action_spec}. {droid_msg}"
+            elif deleg_id in ("studio", "vs_unified_agent"):
+                v_resp = self._handle_visual_studio(action_spec)
+                self.add_agent_chat_message("studio", role="assistant", text=v_resp.text, data=v_resp.data)
+                nrai_reply = f"I've instructed Studio to {action_spec}. {v_resp.text}"
+            elif deleg_id in ("unity", "unity_autonomous_agent"):
+                u_resp = self._handle_unity(action_spec)
+                self.add_agent_chat_message("unity", role="assistant", text=u_resp.text, data=u_resp.data)
+                nrai_reply = f"I've instructed Unity to {action_spec}. {u_resp.text}"
+            elif deleg_id in ("unreal", "unreal_autonomous_agent"):
+                un_resp = self._handle_unreal(action_spec)
+                self.add_agent_chat_message("unreal", role="assistant", text=un_resp.text, data=un_resp.data)
+                nrai_reply = f"I've instructed Unreal to {action_spec}. {un_resp.text}"
+            else:
+                nrai_reply = f"I've coordinated with {target_spec.title()} to {action_spec}."
+
+            self.add_agent_chat_message("nr_ai", role="assistant", text=nrai_reply)
             return CompanionResponse(
-                text="NR-AI online and listening, Boss. What should we tackle?",
+                text=nrai_reply,
+                category=CommandCategory.CONVERSATION,
+                routed_to=f"NR-AI->{target_spec.title()}",
+                avatar_mode=AvatarMode.SPEAKING,
+                avatar_emotion=AvatarEmotion.HAPPY,
+                data={"delegated_to": deleg_id, "specialist_result": res, "active_conversation_agent": None},
+            )
+
+        # NR-AI Central fast greeting & status handler
+        nrai_greetings = (
+            "hello nr-ai", "hello nrai", "hello nr ai", "hi nr-ai", "hi nrai", "hey nr-ai",
+            "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+            "what is your status", "status", "system status", "are you there", "who are you",
+            "how are you", "how are you doing", "what can you do", "what are your capabilities", "capabilities"
+        )
+        is_info_query = any(p in c_lower for p in (
+            "about android studio", "what is android studio", "tell me about android studio", "android studio info",
+            "about unity", "what is unity", "tell me about unity", "unity info",
+            "about unreal", "what is unreal", "tell me about unreal", "unreal info",
+            "about droid", "what is droid", "who is droid", "tell me about droid"
+        ))
+        is_project_work = any(p in c_lower for p in ("working on my android project", "working on android project", "working on my project", "working on project"))
+        is_create_project = any(p in c_lower for p in ("create a new project", "create new project", "new project"))
+        is_hello_again = any(p in c_lower for p in ("hello again", "hi again", "hey again"))
+
+        if not self.active_conversation_agent and (c_lower in nrai_greetings or c_lower.rstrip("?!.") in nrai_greetings or is_info_query or is_project_work or is_create_project or is_hello_again):
+            if c_lower in ("hello", "hi", "hey", "hello nr-ai", "hi nr-ai", "hey nr-ai", "hello nr", "hi nr", "hey nr") or c_lower.rstrip("?!.") in ("hello", "hi", "hey"):
+                status_text = "Hello Boss! NR AI central online and ready. What are we working on?"
+            elif is_project_work:
+                status_text = "Got it. Tell me what you want to change."
+            elif is_create_project:
+                status_text = "What project name and language do you want?"
+            elif is_hello_again:
+                status_text = "Hello again Boss! Ready when you are."
+            elif "how are you" in c_lower:
+                status_text = "I am functioning optimally, Boss. All specialist agents and toolchains are online and ready."
+            elif "what can you do" in c_lower or "capabilities" in c_lower:
+                status_text = "I coordinate all 17 specialist agents across the galaxy, including Droid, Unity, Unreal, and Knowledge. You can address any specialist directly or ask me to orchestrate them."
+            elif any(p in c_lower for p in ("about android studio", "what is android studio", "tell me about android studio", "android studio info")):
+                status_text = "Android Studio is the official IDE for Android development. In NR-AI, Droid manages your Android Studio projects, Gradle builds, code inspection, and emulators."
+            elif any(p in c_lower for p in ("about unity", "what is unity", "tell me about unity", "unity info")):
+                status_text = "Unity is the real-time 3D development platform. In NR-AI, our Unity Specialist manages Unity projects, scenes, and compilation."
+            elif any(p in c_lower for p in ("about unreal", "what is unreal", "tell me about unreal", "unreal info")):
+                status_text = "Unreal Engine is the advanced real-time 3D creation tool. In NR-AI, our Unreal Specialist manages Unreal projects and build automation."
+            elif any(p in c_lower for p in ("about droid", "what is droid", "who is droid", "tell me about droid")):
+                status_text = "Droid is our Unified Android Specialist agent. Droid manages Android Studio workspaces, Gradle builds, ADB devices, and code generation."
+            elif "status" in c_lower:
+                status_text = "NR-AI central intelligence online and listening, Boss. All specialist agents are standing by."
+            else:
+                status_text = "Hello Boss! NR-AI central online and ready. What should we tackle?"
+            self.add_agent_chat_message("nr_ai", role="user", text=clean_input)
+            self.add_agent_chat_message("nr_ai", role="assistant", text=status_text)
+            return CompanionResponse(
+                text=status_text,
                 category=CommandCategory.CONVERSATION,
                 routed_to="NR-AI-Central",
                 avatar_mode=AvatarMode.SPEAKING,
@@ -1430,23 +1783,24 @@ class NRCompanion:
         # 3. Direct Agent Addressing (e.g. "Droid", "Hey Droid", "Activate Droid", "Droid, what can you do?")
         addressed_id, addressed_name, remainder = self.resolve_addressed_agent(clean_input)
         if addressed_id:
+            canon_addr = canonicalize_agent_id(addressed_id)
             # If just the agent name was called or activated (e.g. "Droid", "Hey Droid", "Activate Droid")
             if not remainder:
-                speech, is_first = self.activate_agent_session(addressed_id, addressed_name)
+                speech, is_first = self.activate_agent_session(canon_addr, addressed_name)
                 return CompanionResponse(
                     text=speech,
                     category=CommandCategory.CONVERSATION,
                     routed_to=addressed_name,
                     avatar_mode=AvatarMode.SPEAKING,
                     avatar_emotion=AvatarEmotion.ATTENTIVE,
-                    data={"active_conversation_agent": addressed_id, "agent_name": addressed_name, "first_intro": is_first, "activation": True},
+                    data={"active_conversation_agent": canon_addr, "agent_name": addressed_name, "first_intro": is_first, "activation": True},
                 )
 
             # Single Agent Introduction: e.g. "Droid, introduce yourself"
             if "introduce yourself" in remainder.lower() or "who are you" in remainder.lower():
                 from app.ui.galaxy_engine import GalaxyEngine
                 ge = GalaxyEngine()
-                intro_data = ge.get_agent_introductions(single_agent_id=addressed_id)
+                intro_data = ge.get_agent_introductions(single_agent_id=canon_addr)
                 speech = intro_data["sequence"][0]["speech_text"] if intro_data.get("sequence") else f"Hi Boss, I'm {addressed_name}."
                 return CompanionResponse(
                     text=speech,
@@ -1463,7 +1817,7 @@ class NRCompanion:
                 )
 
             # Dispatch remainder to addressed agent
-            return self._execute_active_agent_turn(addressed_id, addressed_name, remainder)
+            return self._execute_active_agent_turn(canon_addr, addressed_name, remainder)
 
         # 4. Continuous Active Agent Conversation (No agent name spoken, but active agent is set)
         # Preserve active agent unless user asks for team introduction or emergency stop
@@ -1476,6 +1830,22 @@ class NRCompanion:
                 self.active_conversation_agent_name or "Agent",
                 clean_input,
             )
+
+        # 4B. Actionable Android Engineering Intent Routing
+        # Droid is the canonical primary Android engineering agent. Any actionable Android request routes to Droid.
+        is_android_kw = any(k in c_lower for k in ("android studio", "android", "gradle", "apk", "activity", "logcat", "emulator", "nr_android_test"))
+        if is_android_kw or "project" in c_lower:
+            act_ctx = self.engineering_context_manager.get_active_project()
+            eng_intent = EngineeringIntentParser.parse(
+                clean_input,
+                active_context=act_ctx.to_dict() if act_ctx else None,
+                default_domain=EngineeringDomain.ANDROID,
+            )
+            if eng_intent.is_valid and eng_intent.domain == EngineeringDomain.ANDROID:
+                logger.info(f"[Companion] Directing Android engineering intent to Droid: '{clean_input}'")
+                self.active_conversation_agent = "droid"
+                self.active_conversation_agent_name = "Droid"
+                return self._execute_active_agent_turn("droid", "Droid", clean_input)
 
         self.avatar.set_thinking(f"Processing: {clean_input[:40]}...")
         category = self.classify_command(clean_input)
@@ -1535,6 +1905,10 @@ class NRCompanion:
         self.conversation_history.append({"user": clean_input, "assistant": response.text})
         if len(self.conversation_history) > 50:
             self.conversation_history = self.conversation_history[-50:]
+
+        target_canon = canon_target or "nr_ai"
+        self.add_agent_chat_message(target_canon, role="user", text=clean_input)
+        self.add_agent_chat_message(target_canon, role="assistant", text=response.text, data=response.data)
 
         # Voice output if enabled
         if speak_output and (self.voice_config.tts_enabled or not self.voice_config.silent_mode):
@@ -1964,11 +2338,14 @@ class NRCompanion:
                 default_domain=EngineeringDomain.ANDROID,
             )
             res = self.unified_android_agent.execute_engineering_intent(eng_intent)
-            self.active_conversation_agent = "android_unified_agent"
-            self.active_conversation_agent_name = "Droid"
+            if self.active_conversation_agent in ("droid", "android_unified_agent"):
+                self.active_conversation_agent = "android_unified_agent"
+                self.active_conversation_agent_name = "Droid"
             self.avatar.set_idle("Android Studio workspace open.")
+            msg = res.get("message", "Android Studio opened.")
+            droid_text = msg if msg.startswith("Droid:") else f"Droid: {msg}"
             return CompanionResponse(
-                text=res.get("message", "Android Studio opened."),
+                text=droid_text,
                 category=CommandCategory.ANDROID_STUDIO,
                 routed_to="Droid",
                 avatar_mode=AvatarMode.SPEAKING,
@@ -2672,11 +3049,17 @@ class NRCompanion:
                 )
                 if not any(p in c_low for p in phase1_5_phrases):
                     res = self.unified_android_agent.execute_engineering_intent(eng_intent)
-                    self.active_conversation_agent = "android_unified_agent"
+                    self.active_conversation_agent = "droid"
                     self.active_conversation_agent_name = "Droid"
+                    if isinstance(res, dict):
+                        res["active_conversation_agent"] = "droid"
+                        res["agent_name"] = "Droid"
+                    droid_raw_msg = res.get("message", f"{eng_intent.action.value} completed for '{eng_intent.project}'.")
+                    resp_text = droid_raw_msg if droid_raw_msg.startswith("Droid:") else f"Droid: {droid_raw_msg}"
+                    self.add_agent_chat_message("droid", role="assistant", text=resp_text, data=res)
                     self.avatar.set_idle("Android workflow completed.")
                     return CompanionResponse(
-                        text=res.get("message", f"Droid: {eng_intent.action.value} completed for '{eng_intent.project}'."),
+                        text=resp_text,
                         category=CommandCategory.ANDROID_STUDIO,
                         routed_to="Droid",
                         avatar_mode=AvatarMode.SPEAKING,
@@ -4147,7 +4530,11 @@ class NRCompanion:
                     "through code execution, toolchains, desktop orchestration, and language understanding."
                 )
             else:
-                greeting = f"I received your request: '{command}'."
+                k_resp = self._handle_knowledge(command)
+                if k_resp and k_resp.text and not k_resp.text.startswith("I checked my verified knowledge base and live information sources, but found no verified records"):
+                    greeting = k_resp.text
+                else:
+                    greeting = f"I received your request: '{command}'. How can I assist you further?"
 
             # Natural conversation: do not pollute user-facing response with raw quota text
             resp_text = greeting

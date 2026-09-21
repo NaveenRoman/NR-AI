@@ -129,6 +129,16 @@ class ModelSpec:
     local_or_cloud: str = "cloud"  # "cloud", "local"
     local_hardware_req: Optional[str] = None
 
+    @property
+    def catalog_metadata(self) -> Optional[Any]:
+        """Lazy fetch catalog metadata with provenance."""
+        try:
+            from app.config.model_catalog import global_model_catalog
+            return global_model_catalog.get(self.model_id)
+        except Exception:
+            return None
+
+
 
 # Central Model Registry
 MODEL_REGISTRY: Dict[str, ModelSpec] = {

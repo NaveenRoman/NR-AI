@@ -559,6 +559,32 @@ class ModelRouter:
         """Fetch specification for a model."""
         return MODEL_REGISTRY.get(model_id)
 
+    def resolve_model_id(self, model_id: str) -> str:
+        """Resolves alias or shorthand to canonical model ID."""
+        cleaned = (model_id or "").strip().lower()
+        return self.MODEL_ALIASES.get(cleaned, model_id.strip() if model_id else "")
+
+    def evaluate_model_compatibility(
+        self,
+        model_id: str,
+        required_capabilities: Optional[Iterable[Union[ModelCapability, str]]] = None,
+        context_tokens_needed: int = 4096,
+    ) -> Any:
+        """
+        Advisory helper evaluating whether a model can run a specific task on the host hardware.
+        Preserves ModelRouter authority.
+        """
+        from app.config.model_catalog import global_compatibility_evaluator
+        norm_caps: Optional[Set[str]] = None
+        if required_capabilities:
+            norm_caps = {self.normalize_capability(c).value for c in required_capabilities}
+        canonical_id = self.resolve_model_id(model_id)
+        return global_compatibility_evaluator.evaluate(
+            model_id=canonical_id,
+            required_capabilities=norm_caps,
+            context_tokens_needed=context_tokens_needed,
+        )
+
     # -------------------------------------------------------------------------
     # Execution
     # -------------------------------------------------------------------------

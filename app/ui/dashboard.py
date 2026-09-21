@@ -28,7 +28,12 @@ import urllib.parse
 
 from app.ui.avatar_state import AvatarMode
 from app.remote.emergency import EmergencyStopController
-from app.agent.engineering_intent import EngineeringAction, EngineeringDomain, EngineeringIntent
+from app.agent.engineering_intent import (
+    EngineeringAction,
+    EngineeringDomain,
+    EngineeringIntent,
+    canonicalize_agent_id,
+)
 
 logger = logging.getLogger("NRAI.Dashboard")
 
@@ -518,7 +523,8 @@ class CompanionDashboard:
 
                 # 3b. Specific Agent Chat History API
                 elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/chat") or parsed.path.endswith("/chat/")):
-                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/chat", "").strip("/")
+                    raw_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/chat", "").strip("/")
+                    agent_id = canonicalize_agent_id(raw_id)
                     history = dashboard_ref.companion.get_agent_chat_history(agent_id) if hasattr(dashboard_ref.companion, "get_agent_chat_history") else []
                     payload = json.dumps({"success": True, "agent_id": agent_id, "count": len(history), "history": history}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
@@ -570,7 +576,8 @@ class CompanionDashboard:
                 elif parsed.path in ("/api/command", "/command"):
                     params = urllib.parse.parse_qs(parsed.query)
                     cmd = params.get("text", [""])[0] or params.get("command", [""])[0]
-                    resp = dashboard_ref.companion.interact(cmd, speak_output=False)
+                    target_agent = params.get("agent_id", [None])[0] or params.get("agent", [None])[0]
+                    resp = dashboard_ref.companion.interact(cmd, speak_output=False, target_agent=target_agent)
                     payload = json.dumps(resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
@@ -607,9 +614,11 @@ class CompanionDashboard:
                     try:
                         data = json.loads(body)
                         cmd = data.get("command") or data.get("text") or ""
+                        target_agent = data.get("agent_id") or data.get("agent")
                     except Exception:
                         cmd = body.strip()
-                    resp = dashboard_ref.companion.interact(cmd, speak_output=False)
+                        target_agent = None
+                    resp = dashboard_ref.companion.interact(cmd, speak_output=False, target_agent=target_agent)
                     payload = json.dumps(resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
@@ -1023,8 +1032,7 @@ class CompanionDashboard:
 
                 elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/chat") or parsed.path.endswith("/chat/")):
                     agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/chat", "").strip("/")
-                    if agent_id in ("nova_discovery_agent", "aegis_verification_agent"):
-                        agent_id = "universal_knowledge_engine"
+                    canon_id = canonicalize_agent_id(agent_id)
                     try:
                         c_data = json.loads(body) if body else {}
                     except Exception:
@@ -1034,12 +1042,11 @@ class CompanionDashboard:
                     comp = dashboard_ref.companion
                     try:
                         if comp and hasattr(comp, "interact"):
-                            comp.active_conversation_agent = agent_id
-                            resp = comp.interact(cmd, speak_output=speak)
+                            resp = comp.interact(cmd, speak_output=speak, target_agent=canon_id)
                             resp_dict = resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}
                             reply = getattr(resp, "text", str(resp))
                         else:
-                            reply = f"Agent '{agent_id}' processed: {cmd}"
+                            reply = f"Agent '{canon_id}' processed: {cmd}"
                             resp_dict = {"text": reply}
                     except Exception as e:
                         logger.exception(f"Error executing agent turn: {e}")
@@ -1047,11 +1054,19 @@ class CompanionDashboard:
                         resp_dict = {"text": reply, "error": str(e)}
                     payload = json.dumps({
                         "success": True,
-                        "agent_id": agent_id,
+                        "agent_id": canon_id,
                         "reply": reply,
                         "response": resp_dict,
                         "card": resp_dict.get("data", {}) if isinstance(resp_dict, dict) else {},
                     }, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
+
+                elif parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/clear") or parsed.path.endswith("/clear/")):
+                    agent_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/clear", "").strip("/")
+                    canon_id = canonicalize_agent_id(agent_id)
+                    if hasattr(dashboard_ref.companion, "clear_agent_chat_history"):
+                        dashboard_ref.companion.clear_agent_chat_history(canon_id)
+                    payload = json.dumps({"success": True, "agent_id": canon_id, "cleared": True}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
                 elif parsed.path.startswith("/api/agent/") and parsed.path.endswith("/action"):
@@ -1146,6 +1161,18 @@ class CompanionDashboard:
                     }, indent=2, default=str).encode("utf-8")
                     self._send_json(200, payload)
 
+                else:
+                    self._send_json(404, json.dumps({"error": "NOT_FOUND"}).encode("utf-8"))
+
+            def do_DELETE(self):
+                parsed = urllib.parse.urlparse(self.path)
+                if parsed.path.startswith("/api/agent/") and (parsed.path.endswith("/chat") or parsed.path.endswith("/chat/")):
+                    raw_id = parsed.path[len("/api/agent/"):].rstrip("/").replace("/chat", "").strip("/")
+                    agent_id = canonicalize_agent_id(raw_id)
+                    if hasattr(dashboard_ref.companion, "clear_agent_chat_history"):
+                        dashboard_ref.companion.clear_agent_chat_history(agent_id)
+                    payload = json.dumps({"success": True, "agent_id": agent_id, "cleared": True}, indent=2).encode("utf-8")
+                    self._send_json(200, payload)
                 else:
                     self._send_json(404, json.dumps({"error": "NOT_FOUND"}).encode("utf-8"))
 

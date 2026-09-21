@@ -153,12 +153,20 @@ class EngineeringIntentParser:
             except Exception:
                 active_domain = None
 
+        # Strip conversational preambles/polite requests (e.g. "can you", "please", "hey hi")
+        preamble_regex = r"^(?:(?:hey|hi|hello|yo|please|can you|could you|would you|activate|switch to|select|talk to|go to|wake up)\s+)+"
+        clean_cmd = re.sub(preamble_regex, "", cmd, flags=re.IGNORECASE).strip() or cmd
+        clean_cmd_lower = clean_cmd.lower()
+
         # 2. Domain Identification
-        domain = cls._identify_domain(cmd_lower, active_domain or default_domain)
+        domain = cls._identify_domain(clean_cmd_lower, active_domain or default_domain)
 
         # 3. Action & Target Identification
         action, target, extracted_project, params, verif_level = cls._identify_action_and_target(
-            cmd, cmd_lower, domain, active_ctx
+            clean_cmd,
+            clean_cmd_lower,
+            domain,
+            active_ctx,
         )
         if action is None:
             return EngineeringIntent(
@@ -258,11 +266,11 @@ class EngineeringIntentParser:
                 extracted_project = m_create_proj.group(1).strip()
             else:
                 m_the_proj = re.search(
-                    r"(?:open|load|import|switch\s+to|view)?\s*(?:the\s+)?([A-Za-z0-9_-]+)\s+project",
+                    r"(?:open|load|import|switch\s+to|view)?\s*(?:the\s+|our\s+|my\s+)?([A-Za-z0-9_-]+)\s+project",
                     cmd,
                     re.IGNORECASE,
                 )
-                if m_the_proj and m_the_proj.group(1).lower() not in ("a", "an", "the", "this", "new", "my", "active", "android", "unreal", "unity", "existing", "open"):
+                if m_the_proj and m_the_proj.group(1).lower() not in ("a", "an", "the", "this", "new", "my", "our", "active", "android", "unreal", "unity", "existing", "open"):
                     extracted_project = m_the_proj.group(1).strip()
                 else:
                     m_proj_named = re.search(
@@ -462,3 +470,71 @@ class EngineeringIntentParser:
 
         # No engineering action recognized
         return None, None, extracted_project, params, verif_level
+
+
+def canonicalize_agent_id(raw_id: Optional[str]) -> str:
+    """
+    Maps various aliases, class names, or friendly names to a stable canonical agent ID.
+    Examples:
+      'android_unified_agent' -> 'droid'
+      'droid_scout' -> 'droid_scout'
+      'vs_unified_agent' -> 'studio'
+      'unity_autonomous_agent' -> 'unity'
+      'unreal_autonomous_agent' -> 'unreal'
+      'universal_knowledge_engine' -> 'knowledge'
+      'nr_ai_central_intelligence' -> 'nr_ai'
+    """
+    if not raw_id:
+        return "nr_ai"
+    aid = str(raw_id).lower().strip().replace("-", "_").replace(" ", "_")
+    if aid in ("nr_ai", "nr_ai_central_intelligence", "central", "root", "nrai", "nr ai", "central_intelligence"):
+        return "nr_ai"
+    aliases = {
+        "android_unified_agent": "droid",
+        "android": "droid",
+        "android_agent": "droid",
+        "droid": "droid",
+        "droid_scout": "droid_scout",
+        "scout": "droid_scout",
+        "droid_guardian": "droid_guardian",
+        "guardian": "droid_guardian",
+        "vs_unified_agent": "studio",
+        "visual_studio": "studio",
+        "visual_studio_agent": "studio",
+        "studio": "studio",
+        "vs": "studio",
+        "unity_autonomous_agent": "unity",
+        "unity": "unity",
+        "unreal_autonomous_agent": "unreal",
+        "unreal": "unreal",
+        "security_agent": "skyshield",
+        "shield": "skyshield",
+        "security": "skyshield",
+        "skyshield": "skyshield",
+        "universal_knowledge_engine": "knowledge",
+        "knowledge": "knowledge",
+        "oracle": "knowledge",
+        "nova_discovery_agent": "nova",
+        "nova": "nova",
+        "aegis_verification_agent": "aegis",
+        "aegis": "aegis",
+        "research_agent": "quest",
+        "quest": "quest",
+        "research": "quest",
+        "vision_agent": "vision",
+        "vision": "vision",
+        "computer_control_agent": "sentinel",
+        "sentinel": "sentinel",
+        "computer": "sentinel",
+        "forge_dev_agent": "forge",
+        "forge": "forge",
+        "pixel_ui_agent": "pixel",
+        "pixel": "pixel",
+        "nexus_coordinator": "nexus",
+        "nexus": "nexus",
+        "coordinator": "nexus",
+    }
+    if aid in aliases:
+        return aliases[aid]
+    clean = aid.replace("_autonomous_agent", "").replace("_unified_agent", "").replace("_agent", "")
+    return clean

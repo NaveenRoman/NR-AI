@@ -347,5 +347,119 @@
       "firmware"
     ],
     "temporal_anchor": "1950s-present"
+  },
+  {
+    "node_id": "cs-android-studio-build-process",
+    "domain": "computer_science",
+    "topic": "software_engineering",
+    "title": "How Android Studio Builds an Android Application (Gradle Build System and APK Pipeline)",
+    "content": "Android Studio compiles and builds Android applications through a multi-stage deterministic pipeline orchestrated by the Gradle build system and the Android Gradle Plugin (AGP): 1) Resource Compilation: The Android Asset Packaging Tool 2 (AAPT2) parses and compiles XML layouts, drawables, strings, and manifest files into binary format, emitting the R.java class containing integer resource IDs. 2) Source Code Compilation: The Kotlin compiler (kotlinc) and Java compiler (javac) compile source code into standard JVM .class bytecode files. 3) Desugaring and Dexing: The D8 and R8 compiler desugars modern Java 8+ language features and translates .class bytecode into Dalvik Executable (.dex) bytecode designed for the Android Runtime (ART) and Dalvik virtual machine, performing dead-code stripping, tree shaking, and class shrinking. 4) Packaging: The apkbuilder bundles compiled resources (.arsc), DEX files, and native C/C++ shared libraries (.so) into an unsigned Android Package (APK) or Android App Bundle (AAB). 5) Optimization and Signing: The zipalign utility aligns uncompressed data on 4-byte boundaries to reduce memory overhead, and apksigner cryptographically signs the archive with V2, V3, or V4 signature schemes for secure device deployment.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Android Developers: Configure Your Build",
+        "publisher": "Google Android Open Source Project",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": ["android", "android_studio", "gradle", "aapt2", "d8", "r8", "dex", "apk", "kotlinc", "javac", "build_process"],
+    "temporal_anchor": "2013-present"
+  },
+  {
+    "node_id": "cs-python-decorators",
+    "domain": "computer_science",
+    "topic": "programming_languages",
+    "title": "Python Decorators Architecture, Higher-Order Functions, and Closures",
+    "content": "In Python, a decorator is a design pattern and syntactic feature (denoted by the '@decorator' prefix above a callable definition) that dynamically extends or modifies the behavior of a function, method, or class without altering its source code. Under the hood, decorators are higher-order functions that take a callable as an argument and return a wrapped callable. They rely on Python's first-class functions, lexical scoping, and closures to capture arguments and preserve state. The standard library 'functools.wraps' helper is typically used on the inner wrapper function to preserve original function attributes such as __name__, __doc__, and type annotations. Decorators are widely utilized across Python ecosystems for logging, authentication, caching/memoization (e.g., functools.lru_cache), rate-limiting, timing metrics, and framework routing (e.g., Flask and FastAPI route decorators).",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Python Language Reference: Compound Statements (Decorators)",
+        "publisher": "Python Software Foundation",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": ["python", "decorators", "functions", "closures", "higher_order_functions", "programming", "functools"],
+    "temporal_anchor": "2003-present"
+  },
+  {
+    "node_id": "cs-unreal-engine-architecture",
+    "domain": "computer_science",
+    "topic": "game_engines",
+    "title": "Unreal Engine Architecture, Systems, and Capabilities",
+    "content": "Unreal Engine is an advanced real-time 3D creation tool and game engine developed by Epic Games. Built on a high-performance modular C++ codebase, Unreal Engine is structured around several core architectural systems: 1) Gameplay Framework: An object-oriented hierarchy rooted in UObject, with AActor representing world-spawned entities, APawn/ACharacter for controllable agents, and UActorComponent for modular behaviors; 2) Build Automation: The UnrealHeaderTool (UHT) parses UCLASS, UPROPERTY, and UFUNCTION reflection macros to generate code for garbage collection, serialization, and network replication, while UnrealBuildTool (UBT) orchestrates native compilation; 3) Visual Scripting (Blueprints): A comprehensive node-based visual programming language compiled into fast virtual machine bytecode or nativized C++; 4) Graphics and Rendering: Nanite virtualized micropolygon geometry allowing film-quality source meshes, Lumen dynamic global illumination and reflections, and Virtual Shadow Maps; 5) Simulation and Audio: Chaos physics simulation, Niagara programmable visual effects, and MetaSounds procedural audio system.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Unreal Engine Documentation: Architecture and Core Systems",
+        "publisher": "Epic Games",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": ["unreal", "unreal_engine", "game_engine", "c++", "blueprints", "nanite", "lumen", "ubt", "uht"],
+    "temporal_anchor": "1998-present"
+  },
+  {
+    "node_id": "cs-unity-engine-architecture",
+    "domain": "computer_science",
+    "topic": "game_engines",
+    "title": "How Unity Works: Game Engine Architecture, Lifecycle, and Runtimes",
+    "content": "Unity is a cross-platform real-time 3D and 2D development platform developed by Unity Technologies. Unity operates primarily on a Component-Entity architecture where GameObjects act as containers for modular components derived from MonoBehaviour. Key operational systems include: 1) Deterministic Execution Loop: Game logic executes along a strictly ordered lifecycle, advancing through Awake, OnEnable, Start, FixedUpdate (physics tick), Update (frame tick), LateUpdate (camera tracking), and rendering passes. 2) Scripting and Compilation: Developers write C# scripts executed via the Mono runtime in development and ahead-of-time (AOT) compiled into optimized native C++ machine code using the IL2CPP toolchain for target platforms. 3) Rendering Pipelines: Scriptable Render Pipelines (SRP) including Universal Render Pipeline (URP) for performant multi-platform graphics and High Definition Render Pipeline (HDRP) for photorealistic compute-driven visuals. 4) High-Performance Tech: The Unity C# Job System and Burst Compiler leverage data-oriented technology stack (DOTS) to compile vectorized, multi-threaded native assembly.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Unity User Manual: Order of Execution for Event Functions",
+        "publisher": "Unity Technologies",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": ["unity", "game_engine", "c#", "monobehaviour", "lifecycle", "il2cpp", "urp", "hdrp", "dots"],
+    "temporal_anchor": "2005-present"
+  },
+  {
+    "node_id": "cs-machine-learning-foundations",
+    "domain": "computer_science",
+    "topic": "artificial_intelligence",
+    "title": "Machine Learning Foundations, Paradigms, and Core Concepts",
+    "content": "Machine Learning (ML) is a subfield of artificial intelligence and computer science focused on building mathematical algorithms and statistical models that learn patterns and rules directly from training data rather than requiring explicit manual programming. Machine learning is organized into three primary paradigms: 1) Supervised Learning: Models (Linear Regression, Support Vector Machines, Random Forests, Neural Networks) learn a functional mapping from feature inputs to known ground-truth targets for classification or regression; 2) Unsupervised Learning: Discovering inherent latent patterns, clusters, or probability distributions in unlabeled data via techniques like K-Means clustering, Gaussian Mixture Models, and Principal Component Analysis (PCA); 3) Reinforcement Learning: Autonomous agents learning optimal behavioral policies by taking actions in an environment to maximize cumulative reward signals through Markov Decision Processes. Modern deep learning extends these principles through multi-layer artificial neural networks and Transformer architectures trained via backpropagation and gradient descent optimization.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Pattern Recognition and Machine Learning",
+        "publisher": "Springer / Christopher Bishop",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": ["machine_learning", "ai", "artificial_intelligence", "supervised", "unsupervised", "reinforcement_learning", "neural_networks"],
+    "temporal_anchor": "1959-present"
+  },
+  {
+    "node_id": "cs-quantum-computing-foundations",
+    "domain": "computer_science",
+    "topic": "quantum_computing",
+    "title": "Quantum Computing Principles, Superposition, Entanglement, and Qubits",
+    "content": "Quantum computing is a revolutionary computing paradigm that harnesses the fundamental laws of quantum mechanics to process information exponentially faster than classical computers for specific computational problem classes. Fundamental principles include: 1) Qubits (Quantum Bits): Unlike classical bits that are deterministically 0 or 1, qubits exist in a linear superposition |ψ⟩ = α|0⟩ + β|1⟩, where α and β are complex probability amplitudes such that |α|² + |β|² = 1. 2) Quantum Entanglement: Multiple qubits can become entangled such that the quantum state of each particle cannot be described independently of the others; a system of N entangled qubits can simultaneously represent 2^N states. 3) Quantum Interference: Quantum algorithms choreograph constructive interference to amplify correct computational paths and destructive interference to cancel out incorrect ones. 4) Key Algorithms: Shor's algorithm provides exponential speedup for integer factorization (challenging RSA cryptography), and Grover's algorithm provides quadratic speedup for unstructured database searches.",
+    "epistemic_type": "VERIFIED_FACT",
+    "confidence": 1.0,
+    "sources": [
+      {
+        "name": "Quantum Computation and Quantum Information",
+        "publisher": "Cambridge University Press / Nielsen & Chuang",
+        "reliability_weight": 1.0,
+        "source_type": "academic"
+      }
+    ],
+    "tags": ["quantum_computing", "qubits", "superposition", "entanglement", "quantum_interference", "shor_algorithm", "grover"],
+    "temporal_anchor": "1980-present"
   }
 ]

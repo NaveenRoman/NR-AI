@@ -1,6 +1,10 @@
 import os
 
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
+
 
 from app.agent.window_manager import WindowManager
 from app.vision.screen import ScreenVision

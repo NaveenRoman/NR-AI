@@ -124,7 +124,6 @@ class TestGalaxyEngineBasics(unittest.TestCase):
             "nexus_coordinator",
             "security_agent",
             "research_agent",
-            "voice_agent",
             "vision_agent",
             "forge_dev_agent",
             "pixel_ui_agent",
@@ -777,7 +776,7 @@ class TestGalaxyUIRefinement2(unittest.TestCase):
                 self.assertEqual(nodes_by_id[aid].orbit_radius, ORBIT_INNER_RADIUS, f"{aid} must be on inner orbit")
 
         # Middle ring (400px) intelligence & system agents
-        mid_ids = ["universal_knowledge_engine", "nexus_coordinator", "security_agent", "research_agent", "voice_agent", "vision_agent", "computer_control_agent"]
+        mid_ids = ["universal_knowledge_engine", "nexus_coordinator", "security_agent", "research_agent", "vision_agent", "computer_control_agent"]
         for aid in mid_ids:
             if aid in nodes_by_id:
                 self.assertEqual(nodes_by_id[aid].orbit_radius, ORBIT_MIDDLE_RADIUS, f"{aid} must be on middle orbit")

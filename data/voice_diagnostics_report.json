@@ -1,0 +1,77 @@
+{
+  "microphone_enumeration": {
+    "status": "PASS",
+    "device_count": 23,
+    "devices": [
+      "Microsoft Sound Mapper - Input",
+      "Microphone (Realtek(R) Audio)",
+      "Microsoft Sound Mapper - Output",
+      "Speakers (Realtek(R) Audio)",
+      "Speakers (EPSON Projector UD Au",
+      "Primary Sound Capture Driver",
+      "Microphone (Realtek(R) Audio)",
+      "Primary Sound Driver",
+      "Speakers (Realtek(R) Audio)",
+      "Speakers (EPSON Projector UD Audio Device)"
+    ]
+  },
+  "default_microphone": {
+    "status": "PASS",
+    "name": "Microphone (Realtek(R) Audio)",
+    "index": 1,
+    "sample_rate": 44100.0,
+    "channels": 2
+  },
+  "audio_input_level": {
+    "status": "PASS",
+    "rms": 0.48,
+    "dbfs": -6.4,
+    "active_sound": false
+  },
+  "recording_test": {
+    "status": "PASS",
+    "bytes": 88108,
+    "sample_rate": 44100,
+    "sample_width": 2
+  },
+  "stt_test": {
+    "status": "PASS",
+    "mock_stt": "PASS",
+    "google_stt_class": "PASS"
+  },
+  "tts_test": {
+    "status": "PASS",
+    "engine": "Windows SAPI5 / pyttsx3",
+    "voices_count": 2,
+    "sample_voice": "Microsoft David Desktop - English (United States)",
+    "rate": 200,
+    "volume": 1.0
+  },
+  "speaker_playback": {
+    "status": "PASS",
+    "name": "Speakers (Realtek(R) Audio)",
+    "index": 3,
+    "sample_rate": 44100.0,
+    "channels": 2
+  },
+  "wake_word_test": {
+    "status": "PASS",
+    "test_cases_count": 6
+  },
+  "interruption_test": {
+    "status": "PASS",
+    "mechanism": "Acoustic cooldown + Muted state switching"
+  },
+  "cancellation_test": {
+    "status": "PASS"
+  },
+  "timeout_test": {
+    "status": "PASS",
+    "duration": 0.69,
+    "final_state": "idle"
+  },
+  "device_disconnect_reconnect": {
+    "status": "PASS",
+    "handled_exception": "AssertionError"
+  }
+}

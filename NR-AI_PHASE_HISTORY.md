@@ -1,5 +1,74 @@
 # NR-AI — Phase History Log
 
+### OpenJarvis Integration Phase 1: Model Intelligence + Task Memory + Guardrails + A2A/MCP Foundation (Report 35)
+- **Completion Date**: September 21, 2026 Continuum
+- **Status**: 100% COMPLETE & LIVE-VERIFIED (48/48 Dedicated Tests PASS; 7/7 Host Domains LIVE_VERIFIED; Zero Core Regressions)
+- **Objective**: Implement only the high-value, verified, low-risk OpenJarvis architectural capabilities identified in Report 34 as native NR-AI adapters under Apache 2.0 without replacing or disrupting NR-AI's central orchestrator, Knowledge Trinity, Droid specialist, Galaxy UI, ModelIsolationGate, or SkyShield security.
+- **Key Empirical Results**:
+  * **Model Catalog Intelligence (`app/config/model_catalog.py`)**: 20 canonical LLM models cataloged with context window and VRAM limits. Provenance tracking (`VERIFIED`, `CONFIGURED`, `PROVIDER_REPORTED`, `UNKNOWN`). Dynamic Windows host hardware probe (RAM, CPU cores, CUDA GPU). Advisory `ModelCompatibilityEvaluator` integrated into `ModelRouter` without breaking existing routing logic.
+  * **Persistent Task Checkpoints in SQLite (`app/task/checkpoint_store.py`)**: Thread-safe SQLite WAL store (`data/task_checkpoints.db`) supporting 9 lifecycle states (`CREATED`, `IN_PROGRESS`, `PAUSED`, `AWAITING_RETRY`, `COMPLETED`, `FAILED`, `CANCELLED`, `ROLLBACK_REQUESTED`, `ROLLED_BACK`). Enforces strict 64KB payload bounds, recursive secret scrubbing, and a deterministic recovery barrier blocking automatic resumption of destructive verbs (`DELETE`, `DROP`, `FORMAT`, `RMDIR`).
+  * **Prompt / PII / Secret Guardrails Engine (`app/security/guardrails.py`)**: Pure deterministic regex scanner detecting 11 secret patterns (Google, OpenAI, Anthropic, AWS, GitHub, JWT, Private Keys) and 4 PII patterns (Email, Phone, SSN, Credit Card) with structured redaction tokens. Code context preservation for variable names and assignments. Integrated pre-cloud transit scrubbing into `OpenAIProvider.generate()` and `GeminiProvider.generate()`.
+  * **Internal Local A2A Protocol & Router (`app/a2a/protocol.py`, `app/a2a/router.py`)**: Google A2A JSON-RPC 2.0 compliant agent-to-agent message broker supporting `MESSAGE_SEND`, `TASK_HANDOFF`, and `QUERY_CAPABILITIES`. Restricts transport to in-process memory and loopback (127.0.0.1). Enforces caller-target permissions via `A2APermissionScope` and logs an append-only, tamper-evident audit trail.
+  * **Model Context Protocol (MCP) Safety Adapter (`app/mcp/adapter.py`)**: Adapter mediating MCP server tools via `MCPSafetyGate`. Enforces the invariant that models cannot invoke tools directly (`MODEL_ISOLATION_VIOLATION`), maintains a prohibited tool blocklist, and supports instant emergency stop freezing across all connections.
+  * **Declarative Agent Definitions (`app/agent/definitions/declarative.py`)**: Declarative TOML configuration parser (`from_toml`) with strict `allow_shell=False` safety invariant mapping into `AgentSpecification`.
+  * **Explicit 5-Domain Memory Boundaries (`app/memory/boundaries.py`)**: Strict partitioning of memory into 5 distinct domains (`KNOWLEDGE`, `CONVERSATION`, `TASK`, `PROJECT`, `AGENT`) with automatic workspace cross-talk leakage prevention.
+  * **Empirical Verification & Metrics**:
+    - 48/48 dedicated Phase 1 tests pass 100% across 7 test suites.
+    - Live host verification (`scratch/validate_openjarvis_phase1.py`) verified 7/7 domains `LIVE_VERIFIED` in `data/openjarvis_phase1_live_validation.json`.
+    - Core regressions confirmed passing: Command routing (14/14), Droid Phase 4 (9/9), Universal Engineering (10/10), Chat isolation (6/6).
+    - Hard stop rules enforced: zero code changes to Kokoro / Faster-Whisper; Unreal Engine NOT started.
+  * **Published Milestone Report**: Comprehensive 10-section report published to `C:\Users\navee\Desktop\NR-AI Project Report\35_OPENJARVIS_INTEGRATION_PHASE1.md`.
+- **Verdict**: **REAL ENGINEERING EXECUTION: PASS (100%)**
+- **Hard Stop Directive**: Strict hard stop enforced — Unreal Engine, Unity, Visual Studio, and Droid Phase 5 workflows remain firmly NOT started.
+
+### Comprehensive OpenJarvis Architectural Capability Audit & Strategic Study (Report 34)
+- **Completion Date**: September 20, 2026 Continuum
+- **Status**: 100% COMPLETE — AUDIT ONLY (36/36 Dimensions Audited; Zero Source Code Mutations; Zero Model Downloads)
+- **Objective**: Execute an authoritative 36-dimension capability study comparing the OpenJarvis reference repository (`https://github.com/open-jarvis/OpenJarvis`, commit `9cd0a09`) against the native NR-AI system, identifying high-value complementary components, confirming areas of NR-AI dominance, verifying Apache 2.0 licensing terms, and publishing Report 34 with zero modifications to NR-AI source code.
+- **Key Empirical Results**:
+  * 36-Dimension Capability Matrix: Generated `C:\NR-AI\scratch\OPENJARVIS_FULL_CAPABILITY_COMPARISON.md` evaluating Voice, STT, TTS, Wake Word, VAD, Barge-In, Agents, Orchestration, Central Brain, Model Routing, Memory, Computer Control, File Ops, Shell, Browser, Planning, Research, Scheduling, Monitoring, Learning, UI, Desktop, Android, Tool Registry, A2A, Context, Error Recovery, Observability, and Licensing.
+  * Clear Component Recommendations: 17 KEEP NR-AI, 18 ADAPT OPENJARVIS IDEA, 1 BUILD NR-AI NATIVE VERSION (Local VAD), 0 REJECT, 0 NEEDS FURTHER TESTING.
+  * Verified Areas of NR-AI Dominance: OS desktop control (Win32 HWND, OCR, mouse/keyboard), Android Studio / Gradle / ADB / emulator engineering, real-time acoustic wake word and barge-in, multi-agent hierarchical orchestration, and Knowledge Trinity semantic graph.
+  * Identified High-Value OpenJarvis Patterns: 41 personal data connectors, Google Agent-to-Agent (A2A) JSON-RPC 2.0 protocol, native Model Context Protocol (MCP) client/server, persistent SQLite cron/interval task scheduler, prompt-level secret/PII guardrails engine, and async fact extraction memory quarantine.
+  * Strict Boundary Preservation: Zero source files edited, zero large models downloaded, Galaxy UI, Knowledge Trinity, Droid, and SkyShield untouched.
+  * Full Acceptance Report: Comprehensive 8-section report published to `C:\Users\navee\Desktop\NR-AI Project Report\34_OPENJARVIS_FULL_ARCHITECTURE_AUDIT.md`.
+- **Verdict**: **COMPREHENSIVE ARCHITECTURAL AUDIT: COMPLETE (AUDIT ONLY)**
+- **Hard Stop Directive**: Strict hard stop enforced — implementation paused; awaiting user review of comparison matrix.
+
+### OpenJarvis Voice Architecture Study & Safe Integration (Report 33)
+- **Completion Date**: September 20, 2026 Continuum
+- **Status**: 100% COMPLETE & LIVE-VERIFIED (12/12 Hardware Gates PASS; 5/5 E2E Flow Steps PASS; 68/68 Automated Tests PASS; Zero Regressions)
+- **Objective**: Study OpenJarvis (`https://github.com/open-jarvis/OpenJarvis`) voice architecture, diagnose desktop voice telemetry status (`ERROR: aborted`), architect pluggable STT/TTS provider abstractions, test on real Windows hardware (Realtek audio, SAPI5), enforce Central Intelligence authority with 100% chat workspace isolation, and publish Report 33.
+- **Key Empirical Results**:
+  * OpenJarvis In-Depth Study: Cloned commit `9cd0a09f` and analyzed `SpeechBackend`, `TTSBackend`, `SpeechRegistry`, `TTSRegistry`, and `voice_io.py`. Determined OpenJarvis lacks wake word engines, neural VAD, and conversational barge-in (uses blocking `sounddevice.wait()`). Extracted only the decoupled provider registry abstraction pattern.
+  * Desktop Telemetry Root Cause Resolved: Diagnosed that Chromium `state.recognition.abort()` in `galaxy.js` emitted `rec.onerror` with `e.error = "aborted"`, which CSS styled as a fatal red error during intentional quiescence. Updated telemetry state classification to render neutral `STANDBY` badge. Also fixed `VoiceListener.resume()` to prevent overriding `STOPPED` state.
+  * Pluggable Voice Provider Registry: Implemented `VoiceProviderRegistry`, `STTProvider`, `TTSProvider`, `TranscriptionResult`, and `TTSResult` in `app/voice/provider.py`. Added support for fallback chains (`SpeechRecognitionSTTProvider` -> `MockSTTProvider`, `SAPI5TTSProvider` -> `MemoryTTSProvider` -> `SilentTTSProvider`).
+  * Real Windows Hardware Diagnostics (12/12 PASS): Verified 23 audio endpoints, active Realtek microphone (44.1kHz, 2-channel, RMS 0.48), real 88KB audio capture, SAPI5 David & Zira voices, Realtek speaker playback, 6 phonetic wake word variants, acoustic cooldown, stream cancellation, and fault handling.
+  * Real Windows E2E Voice Flow (5/5 PASS): "Hello NR" wake detection (1.0ms) -> "What is the time?" central inquiry (SAPI5 spoken, 5.52ms routing) -> "Open Android Studio" droid routing (4.12ms) -> "stop" listener termination (0.13s) -> chat workspace isolation verified (0 cross-contamination).
+  * Automated Regression Battery: 68/68 tests passed 100% across `test_voice_provider_abstraction`, `test_voice_components`, `test_companion_voice_pipeline`, `test_step10_phase3_voice_audio`, `test_chat_workspace_isolation`, and `test_live_nr_ai_engineering_acceptance`.
+  * Comprehensive Report 33 Published: 22-section audit document published to `C:\Users\navee\Desktop\NR-AI Project Report\33_NR_AI_OPENJARVIS_VOICE_INTEGRATION_AUDIT.md`.
+- **Verdict**: **REAL ENGINEERING EXECUTION: PASS (100%)**
+- **Hard Stop Directive**: Strict hard stop enforced — Unreal Engine, Unity, Visual Studio, and Droid Phase 5 workflows remain firmly NOT started.
+
+### Full Android Project Live Verification & Real Emulator Validation (Report 32)
+- **Completion Date**: September 20, 2026 Continuum
+- **Status**: 100% COMPLETE & LIVE-VERIFIED (15/15 Verification Gates PASS; Zero Failures; Zero Regressions)
+- **Objective**: Execute complete real-world live verification of the NR-AI Android project (`C:\NR-AI\dev_projects\NR-AI`) with real Android Studio GUI detection, real hardware-accelerated emulator boot (`Pixel_6_API_34`), clean Gradle compilation, ADB installation, cold process launch, UI hierarchy extraction, interactive smoke testing, and framebuffer screenshot capture.
+- **Key Empirical Results**:
+  * Real Android Studio GUI Verification: Detected active `studio64.exe` (PID `7500`, HWND `7340222`) visible and responsive on Windows desktop station `WinSta0\default`, loaded with project `NR-AI – gradle-wrapper.properties`.
+  * Toolchain Inventory: OpenJDK 25.0.3+2 / Oracle JDK 23, Android SDK 34, AGP 8.7.0, Gradle 8.14.5 validated.
+  * Real Emulator Boot Verification: Pre-existing `Pixel_6_API_34` booted to `sys.boot_completed = 1` on `emulator-5554` (transport ID 3); package manager responsive (`pm path android` $\to$ `package:/system/framework/framework-res.apk`).
+  * Real Compilation: `.\gradlew.bat assembleDebug` completed with exit code 0 (53.25s), executing 32 tasks and generating `app-debug.apk` (9,153 bytes, SHA-256: `592cf722152a83bc4fc23da7f3273fa6a00558752e66ee7dfd6aaa105d520b25`).
+  * Real APK Installation: Streamed install via ADB completed in 2.48s (`Performing Streamed Install Success`); package `com.nrai.nrai` verified in package manager.
+  * Real Application Launch: Activity `com.nrai.nrai/.MainActivity` cold-launched in 3.44s (TotalTime: 3238ms); live PID `4161` verified via `pidof`; logcat crash buffer clean (`0` crashes).
+  * Real UI Hierarchy Extraction: `uiautomator dump` parsed view hierarchy, verifying `com.nrai.nrai:id/welcome_text` (`"Hello from NR-AI"`, bounds `[342,1155][737,1226]`) and `com.nrai.nrai:id/action_button` (`"Action"`, bounds `[424,1289][655,1457]`).
+  * Functional Interactive Smoke Test: Touch event tap sent to `(539, 1373)` (center of Action button); process PID `4161` remained active and alive; logcat confirmed zero ANRs and zero crashes.
+  * Real Visual Proof: Direct framebuffer screencap captured and saved to `C:\Users\navee\Desktop\NR-AI Project Report\emulator_live_screenshot.png` (1080x2400 PNG, 35,865 bytes, SHA-256: `237ab4113c3bc459086f5ac72fa65bcb44a281383a1a1dff054873ac443f9065`).
+  * Full Acceptance Report: Comprehensive 30-section report published to `C:\Users\navee\Desktop\NR-AI Project Report\32_NR_AI_ANDROID_FULL_LIVE_VERIFICATION.md`.
+  * Regression Verification: 38 test suites and Gradle unit tests passed 100%.
+- **Verdict**: **REAL ENGINEERING EXECUTION: PASS (100%)**
+- **Hard Stop Directive**: Strict hard stop enforced — Unreal Engine, Unity, Visual Studio, and Cross-Agent Fabric remain firmly NOT started.
+
 ### DROID UX, Voice, Child Specialists & Closed-Loop Live Validation
 - **Completion Date**: September 20, 2026 Continuum
 - **Status**: 100% COMPLETE & LIVE-VERIFIED (12/12 Live Steps PASS; 59/59 Automated Regression Suites PASS; Zero Regressions)

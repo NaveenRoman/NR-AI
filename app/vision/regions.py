@@ -1,4 +1,8 @@
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
+
 
 
 class UIRegions:
@@ -120,7 +124,16 @@ class UIRegions:
 
         # Keep the rectangle inside the screen.
 
-        screen_width, screen_height = pyautogui.size()
+        if pyautogui is not None:
+            screen_width, screen_height = pyautogui.size()
+        else:
+            try:
+                import ctypes
+                screen_width = ctypes.windll.user32.GetSystemMetrics(0)
+                screen_height = ctypes.windll.user32.GetSystemMetrics(1)
+            except Exception:
+                screen_width, screen_height = 1920, 1080
+
 
         left = max(
             0,

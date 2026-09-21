@@ -1,0 +1,40 @@
+{
+  "apk": {
+    "apk_path": "C:\\NR-AI\\dev_projects\\NR-AI\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+    "size_bytes": 9153,
+    "sha256": "592cf722152a83bc4fc23da7f3273fa6a00558752e66ee7dfd6aaa105d520b25",
+    "package_id": "com.nrai.nrai",
+    "variant": "debug"
+  },
+  "install": {
+    "install_duration_seconds": 2.48,
+    "status": "INSTALLED",
+    "pm_verification": "package:com.nrai.nrai"
+  },
+  "launch": {
+    "launch_duration_seconds": 3.44,
+    "pid": 4161,
+    "status": "RUNNING",
+    "component": "com.nrai.nrai/.MainActivity"
+  },
+  "ui": {
+    "welcome_text": "Hello from NR-AI",
+    "button_bounds": "[424,1289][655,1457]",
+    "ui_dump_file": "C:\\NR-AI\\data\\live_window_dump.xml"
+  },
+  "smoke": {
+    "tapped_coordinates": [
+      539,
+      1373
+    ],
+    "alive_pid": 4161,
+    "crash_detected": false,
+    "anr_detected": false
+  },
+  "screenshot": {
+    "path": "C:\\Users\\navee\\Desktop\\NR-AI Project Report\\emulator_live_screenshot.png",
+    "size_bytes": 35865,
+    "sha256": "237ab4113c3bc459086f5ac72fa65bcb44a281383a1a1dff054873ac443f9065"
+  },
+  "overall_status": "LIVE_VERIFIED"
+}

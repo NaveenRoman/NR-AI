@@ -120,6 +120,13 @@ class OpenAIProvider:
                 "fallback_used": False,
             }
 
+        # Sanitize payload via deterministic guardrails before network transit
+        try:
+            from app.security.guardrails import global_guardrails
+            payload_messages, _ = global_guardrails.sanitize_payload(payload_messages)
+        except Exception as ge:
+            logger.warning(f"Guardrail sanitization warning: {ge}")
+
         if not self.is_available():
             return {
                 "success": False,
@@ -387,6 +394,18 @@ class GeminiProvider:
                 "error": "NO_CREDENTIALS: GEMINI_API_KEY / GOOGLE_API_KEY is not configured in environment.",
                 "fallback_used": False,
             }
+
+        # Sanitize payload via deterministic guardrails before network transit
+        try:
+            from app.security.guardrails import global_guardrails
+            if system_prompt:
+                system_prompt = global_guardrails.redact(system_prompt)
+            if prompt is not None:
+                prompt = global_guardrails.redact(prompt)
+            if messages:
+                messages, _ = global_guardrails.sanitize_payload(messages)
+        except Exception as ge:
+            logger.warning(f"Gemini guardrail sanitization warning: {ge}")
 
         # Build contents payload
         parts = []

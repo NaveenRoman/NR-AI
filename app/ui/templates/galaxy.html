@@ -167,29 +167,29 @@
             <!-- Agent Information Panel (Placed ABOVE System Overview) -->
       <div id="agentInfoPanel" class="agent-info-card">
         <div class="agent-info-header">
-          <div class="agent-info-avatar-ring" id="infoAgentAvatar">🤖</div>
+          <div class="agent-info-avatar-ring" id="infoAgentAvatar">🌌</div>
           <div class="agent-info-meta">
-            <div class="agent-info-name" id="infoAgentName">Droid</div>
-            <div class="agent-info-role" id="infoAgentRole">Android Agent</div>
+            <div class="agent-info-name" id="infoAgentName">NR-AI</div>
+            <div class="agent-info-role" id="infoAgentRole">Central Intelligence Core</div>
           </div>
           <span class="agent-info-status-badge" id="infoAgentStatus">● ONLINE</span>
         </div>
         <div class="agent-info-details">
           <div class="info-stat-row">
             <span class="info-stat-key">PARENT:</span>
-            <strong class="info-stat-val" id="infoParentAgent">NR-AI</strong>
+            <strong class="info-stat-val" id="infoParentAgent">Root System</strong>
           </div>
           <div class="info-stat-row">
             <span class="info-stat-key">CHILDREN:</span>
-            <strong class="info-stat-val highlight-emerald" id="infoChildAgents">Droid Scout, Droid Guardian</strong>
+            <strong class="info-stat-val highlight-emerald" id="infoChildAgents">17 Specialist Agents</strong>
           </div>
           <div class="info-stat-row">
             <span class="info-stat-key">ACTIVE PROJECT:</span>
-            <strong class="info-stat-val" id="infoActiveProject">NR-AI</strong>
+            <strong class="info-stat-val" id="infoActiveProject">NR-AI Ecosystem</strong>
           </div>
           <div class="info-stat-row">
             <span class="info-stat-key">CURRENT TASK:</span>
-            <span class="info-stat-val" id="infoCurrentTask">Standing by in Android Studio workspace</span>
+            <span class="info-stat-val" id="infoCurrentTask">Orchestrating autonomous specialist network</span>
           </div>
           <div class="info-stat-row">
             <span class="info-stat-key">CURRENT STAGE:</span>
@@ -197,15 +197,15 @@
           </div>
           <div class="info-stat-row">
             <span class="info-stat-key">SAFETY STATE:</span>
-            <strong class="info-stat-val safe-badge" id="infoSafetyState">ModelIsolationGate (Deterministic)</strong>
+            <strong class="info-stat-val safe-badge" id="infoSafetyState">Autonomous Governance (Central Core)</strong>
           </div>
           <div class="info-capabilities-section">
             <div class="info-caps-title">CAPABILITIES:</div>
             <div class="info-caps-pills" id="infoCapabilitiesPills">
-              <span class="cap-pill">studio.workspace</span>
-              <span class="cap-pill">gradle.build</span>
-              <span class="cap-pill">adb.deploy</span>
-              <span class="cap-pill">bounded.repair</span>
+              <span class="cap-pill">orchestration</span>
+              <span class="cap-pill">voice.continuous</span>
+              <span class="cap-pill">multi.model</span>
+              <span class="cap-pill">galaxy.core</span>
             </div>
           </div>
         </div>
@@ -276,7 +276,7 @@
 
       <div class="bottom-command-bar">
         <div class="command-input-pill">
-          <button id="micBtn" class="action-btn" onclick="toggleVoiceInput()" title="Voice Dictation">
+          <button id="micBtn" class="action-btn" onclick="toggleVoiceSession()" title="Voice Dictation">
             🎙️
           </button>
           <input 
@@ -307,19 +307,41 @@
       <aside id="dedicatedChatPanel" class="dedicated-chat-panel">
         <div class="dedicated-chat-header">
           <div class="chat-agent-header-info">
-            <div class="chat-agent-avatar" id="dedicatedChatAvatar">🤖</div>
+            <div class="chat-agent-avatar" id="dedicatedChatAvatar">🌌</div>
             <div>
-              <div class="chat-header-title" id="dedicatedChatTitle">ACTIVE CHAT: Droid</div>
-              <div class="chat-header-sub" id="dedicatedChatSub">● ONLINE • DETERMINISTIC SAFETY GATE</div>
+              <div class="chat-header-title" id="dedicatedChatTitle">ACTIVE CHAT: NR-AI</div>
+              <div class="chat-header-sub" id="dedicatedChatSub">● ONLINE • CENTRAL INTELLIGENCE CORE</div>
             </div>
           </div>
           <div class="chat-header-controls">
             <span id="voiceSessionBadge" class="voice-session-badge">VOICE SESSION: INACTIVE</span>
             <span id="activeAgentBadge" class="active-agent-badge">ACTIVE AGENT: NR-AI</span>
-            <span id="voiceClapIndicator" class="voice-clap-pill">VOICE SESSION: INACTIVE</span>
+            <button id="voicePillBtn" class="voice-pill-btn ready" onclick="toggleVoiceSession()" title="Click to activate voice conversation">🎙️ ACTIVATE VOICE</button>
             <button class="chat-top-btn" onclick="clearActiveAgentChat()" title="Clear Chat">Clear</button>
             <button class="chat-top-btn estop" onclick="triggerEmergencyStop()" title="Emergency Stop">🛑</button>
           </div>
+        </div>
+
+        <!-- Live Voice & Transcript Status Row -->
+        <div id="chatLiveStatusRow" class="chat-live-status-row">
+          <div class="live-status-pill">
+            <span id="chatLiveStatusDot" class="status-dot inactive"></span>
+            <span id="chatLiveStatusText" class="status-text">VOICE: INACTIVE • CLICK MIC TO START</span>
+          </div>
+
+          <div id="chatLiveInterimNotice" class="chat-live-interim-notice" style="display: none;">
+            <span class="hearing-pulse">🎙️</span> <span id="chatLiveInterimText">Hearing speech...</span>
+          </div>
+        </div>
+
+        <!-- Compact Speech & Recognition Developer Telemetry Bar -->
+        <div id="speechDebugBar" class="speech-debug-bar">
+          <span class="dbg-item">SPEECH: <strong id="dbgSpeech">READY</strong></span> •
+          <span class="dbg-item">MIC: <strong id="dbgMic">INACTIVE</strong></span> •
+          <span class="dbg-item">RECOGNITION: <strong id="dbgRec">STOPPED</strong></span> •
+          <span class="dbg-item">AUDIO: <strong id="dbgAudio">NO AUDIO</strong></span> •
+          <span class="dbg-item">LAST EVENT: <strong id="dbgEvent">NONE</strong></span> •
+          <span class="dbg-item">ERROR: <strong id="dbgError">NONE</strong></span>
         </div>
 
         <!-- Real Progress State Banner -->
@@ -343,19 +365,19 @@
         <!-- Chat Controls & Text Console -->
         <div class="dedicated-chat-footer">
           <div class="chat-quick-chips">
-            <button id="btnClapMode" class="chip-action" onclick="toggleClapDetection()">👏 Clap Mode: ON</button>
+            <button id="btnVoiceToggle" class="chip-action" onclick="toggleVoiceSession()">🎙️ Voice: OFF</button>
             <button id="btnCentralReturn" class="chip-action" onclick="returnToCentral()">🌌 Central Core</button>
             <button id="btnFocusDroidToggle" class="chip-action active" onclick="selectAgent('android_unified_agent')">🪐 Focus Droid</button>
           </div>
           <div class="chat-input-bar">
-            <button id="dedicatedMicBtn" class="chat-mic-icon-btn" onclick="toggleVoiceInput()" title="Voice Dictation">
+            <button id="dedicatedMicBtn" class="chat-mic-icon-btn" onclick="toggleVoiceSession()" title="Voice Dictation">
               🎤
             </button>
             <input 
               id="dedicatedChatInput" 
               type="text" 
               class="chat-text-input" 
-              placeholder="Talk to Droid (e.g. 'Open the NR-AI project in Android Studio')..." 
+              placeholder="Talk to NR-AI Central Intelligence (or call 'Droid', 'Unity', 'Unreal')..." 
               onkeydown="if(event.key==='Enter') sendDedicatedChatMessage()"
             />
             <button id="dedicatedSendBtn" class="chat-send-icon-btn" onclick="sendDedicatedChatMessage()" title="Send">

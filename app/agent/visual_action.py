@@ -1,5 +1,9 @@
 import time
-import pyautogui
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None
+
 
 from app.agent.visual_agent import VisualAgent
 

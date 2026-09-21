@@ -12,6 +12,8 @@ from app.agent.engineering_context import (
 )
 from app.agent.android_scaffold import AndroidProjectScaffolder
 from app.agent.droid_child_agents import DroidContext, DroidScoutAgent, DroidGuardianAgent
+from app.agent.window_manager import WindowManager
+
 
 """
 NR-AI Unified Android Agent: End-to-End Autonomous Android Integration Layer (Step 6 Phase 7).
@@ -808,6 +810,8 @@ class UnifiedAndroidAgent:
 
         self.planner = UnifiedAndroidPlanner(model_router=self.router)
         self.context_manager = context_manager or ActiveProjectContextManager()
+        self.window_manager = WindowManager()
+
 
         # Droid Child Specialists & Controlled Shared Context
         proj_path = str(self.safety.authorized_project) if hasattr(self.safety, "authorized_project") else r"C:\NR-AI\dev_projects\NR-AI"
@@ -2127,103 +2131,299 @@ class UnifiedAndroidAgent:
                     return p.info["pid"]
         except Exception:
             pass
-        return None
+    def _launch_studio_desktop_process(
+        self,
+        studio_path: str,
+        target_proj_path: Optional[str] = None,
+    ) -> Tuple[bool, Optional[int], Optional[str]]:
+        """
+        Launches Android Studio (studio64.exe) directly on the interactive user desktop (WinSta0\\default).
+        Ensures the physical GUI window appears on the user's visible Windows screen.
+        """
+        cmd = f'"{studio_path}"'
+        if target_proj_path and os.path.exists(target_proj_path):
+            cmd += f' "{target_proj_path}"'
+
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                import ctypes.wintypes
+
+                class STARTUPINFO(ctypes.Structure):
+                    _fields_ = [
+                        ("cb", ctypes.wintypes.DWORD),
+                        ("lpReserved", ctypes.c_wchar_p),
+                        ("lpDesktop", ctypes.c_wchar_p),
+                        ("lpTitle", ctypes.c_wchar_p),
+                        ("dwX", ctypes.wintypes.DWORD),
+                        ("dwY", ctypes.wintypes.DWORD),
+                        ("dwXSize", ctypes.wintypes.DWORD),
+                        ("dwYSize", ctypes.wintypes.DWORD),
+                        ("dwXCountChars", ctypes.wintypes.DWORD),
+                        ("dwYCountChars", ctypes.wintypes.DWORD),
+                        ("dwFillAttribute", ctypes.wintypes.DWORD),
+                        ("dwFlags", ctypes.wintypes.DWORD),
+                        ("wShowWindow", ctypes.wintypes.WORD),
+                        ("cbReserved2", ctypes.wintypes.WORD),
+                        ("lpReserved2", ctypes.c_char_p),
+                        ("hStdInput", ctypes.wintypes.HANDLE),
+                        ("hStdOutput", ctypes.wintypes.HANDLE),
+                        ("hStdError", ctypes.wintypes.HANDLE),
+                    ]
+
+                class PROCESS_INFORMATION(ctypes.Structure):
+                    _fields_ = [
+                        ("hProcess", ctypes.wintypes.HANDLE),
+                        ("hThread", ctypes.wintypes.HANDLE),
+                        ("dwProcessId", ctypes.wintypes.DWORD),
+                        ("dwThreadId", ctypes.wintypes.DWORD),
+                    ]
+
+                si = STARTUPINFO()
+                si.cb = ctypes.sizeof(STARTUPINFO)
+                si.lpDesktop = r"WinSta0\default"
+                pi = PROCESS_INFORMATION()
+
+                creation_flags = 0x01000008  # CREATE_BREAKAWAY_FROM_JOB | DETACHED_PROCESS
+                res = ctypes.windll.kernel32.CreateProcessW(
+                    None,
+                    cmd,
+                    None,
+                    None,
+                    False,
+                    creation_flags,
+                    None,
+                    None,
+                    ctypes.byref(si),
+                    ctypes.byref(pi),
+                )
+                if not res:
+                    # Fallback without breakaway
+                    res = ctypes.windll.kernel32.CreateProcessW(
+                        None,
+                        cmd,
+                        None,
+                        None,
+                        False,
+                        0x00000008,  # DETACHED_PROCESS
+                        None,
+                        None,
+                        ctypes.byref(si),
+                        ctypes.byref(pi),
+                    )
+                if res and pi.dwProcessId:
+                    return True, int(pi.dwProcessId), None
+
+            except Exception as e:
+                logger.warning(f"CreateProcessW on WinSta0\\default failed: {e}, falling back to subprocess.Popen")
+
+        # Fallback to subprocess.Popen
+        try:
+            c_args = [studio_path]
+            if target_proj_path and os.path.exists(target_proj_path):
+                c_args.append(str(target_proj_path))
+            flags = subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0
+            proc = subprocess.Popen(
+                c_args,
+                shell=False,
+                creationflags=flags,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+            return True, proc.pid, None
+        except Exception as e:
+            return False, None, str(e)
+
+    def _inspect_real_gui_state(
+
+        self,
+        target_project_name: str = "NR-AI",
+        target_project_path: str = r"C:\NR-AI\dev_projects\NR-AI",
+        restore_if_minimized: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Authoritatively inspects real Android Studio GUI state on the Windows host.
+        Validates:
+        - Process existence (PID)
+        - Window existence, visibility, geometry on WinSta0\\default
+        - Not minimized/hidden, not cloaked
+        - Responsive message loop (not hung)
+        - Not an error/setup dialog
+        - Not on launcher/welcome screen
+        - Project loaded in window title
+        - Project files verified on disk
+        """
+        studio_path = self._resolve_studio_executable()
+        pids = []
+        try:
+            for p in psutil.process_iter(["pid", "name"]):
+                name = (p.info.get("name") or "").lower()
+                if "studio64.exe" in name or ("studio" in name and name.endswith(".exe")):
+                    pids.append(p.info["pid"])
+        except Exception:
+            pass
+
+        if not pids:
+            return {
+                "process_exists": False,
+                "process_pid": None,
+                "studio_path": studio_path,
+                "window_exists": False,
+                "hwnd": None,
+                "window_title": None,
+                "visible": False,
+                "minimized": False,
+                "responsive": False,
+                "is_welcome_screen": False,
+                "is_error_window": False,
+                "project_loaded": False,
+                "other_project": None,
+                "verified_files": [],
+            }
+
+        # Studio processes exist. Check real interactive desktop windows
+        if not hasattr(self, "window_manager") or self.window_manager is None:
+            self.window_manager = WindowManager()
+        all_windows = self.window_manager.get_windows(include_cloaked=False)
+
+        studio_windows = [
+            w for w in all_windows
+            if (w.get("process_name") or "").lower() in ("studio64.exe", "studio.exe") or w.get("pid") in pids
+        ]
+
+        if not studio_windows and restore_if_minimized:
+            # Check if minimized or cloaked windows exist
+            cloaked_windows = self.window_manager.get_windows(include_cloaked=True)
+            cloaked_studio = [
+                w for w in cloaked_windows
+                if (w.get("process_name") or "").lower() in ("studio64.exe", "studio.exe") or w.get("pid") in pids
+            ]
+            for cw in cloaked_studio:
+                if cw.get("hwnd"):
+                    try:
+                        import ctypes
+                        user32 = ctypes.windll.user32
+                        user32.ShowWindow(cw["hwnd"], 9)  # SW_RESTORE
+                        user32.BringWindowToTop(cw["hwnd"])
+                    except Exception:
+                        pass
+            time.sleep(0.4)
+            all_windows = self.window_manager.get_windows(include_cloaked=False)
+            studio_windows = [
+                w for w in all_windows
+                if (w.get("process_name") or "").lower() in ("studio64.exe", "studio.exe") or w.get("pid") in pids
+            ]
+
+        if not studio_windows:
+            return {
+                "process_exists": True,
+                "process_pid": pids[0],
+                "studio_path": studio_path,
+                "window_exists": False,
+                "hwnd": None,
+                "window_title": None,
+                "visible": False,
+                "minimized": False,
+                "responsive": False,
+                "is_welcome_screen": False,
+                "is_error_window": False,
+                "project_loaded": False,
+                "other_project": None,
+                "verified_files": [],
+            }
+
+        # Find the primary application window (prefer non-minimized SunAwtFrame or largest window)
+        chosen = studio_windows[0]
+        for w in studio_windows:
+            if not w.get("minimized") and w.get("class_name") == "SunAwtFrame":
+                chosen = w
+                break
+
+        hwnd = chosen["hwnd"]
+        raw_title = (chosen.get("title") or "").strip()
+        title = raw_title.replace("\u200b", "").strip()
+        title_lower = title.lower()
+
+        # Responsiveness check
+        responsive = True
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            if user32.IsHungAppWindow(hwnd) != 0:
+                responsive = False
+        except Exception:
+            pass
+
+        # Error window check
+        is_error = self.window_manager.is_error_window(chosen) or any(
+            k in title_lower for k in ("setup error", "fatal error", "crash reporter", "application error", "unhandled exception")
+        )
+
+        # Welcome screen check
+        is_welcome = "welcome to android studio" in title_lower
+
+        # Project match check
+        target_name_clean = (target_project_name or "NR-AI").strip().lower()
+        target_path_clean = (target_project_path or "").strip().lower()
+        target_path_norm = target_path_clean.replace("/", "\\")
+
+        project_loaded = False
+        other_project = None
+        if not is_welcome and not is_error:
+            if (
+                target_name_clean in title_lower
+                or (target_path_clean and target_path_clean in title_lower)
+                or (target_path_norm and target_path_norm in title_lower)
+            ):
+                project_loaded = True
+            elif title and title != "Android Studio":
+                other_project = title
+
+
+        # Verify files on disk in project view
+        v_files = []
+        if target_project_path and os.path.exists(target_project_path):
+            base_dir = Path(target_project_path)
+            target_file_list = [
+                "app/src/main/java/com/nrai/nrai/MainActivity.java",
+                "app/src/main/res/layout/activity_main.xml",
+                "build.gradle.kts",
+                "settings.gradle.kts",
+                "app/src/main/AndroidManifest.xml",
+            ]
+            for rf in target_file_list:
+                if (base_dir / rf).exists():
+                    v_files.append(rf)
+
+        return {
+            "process_exists": True,
+            "process_pid": chosen.get("pid") or pids[0],
+            "studio_path": studio_path,
+            "window_exists": True,
+            "hwnd": hwnd,
+            "window_title": title,
+            "visible": bool(chosen.get("visible", False)),
+            "minimized": bool(chosen.get("minimized", False)),
+            "responsive": responsive,
+            "is_welcome_screen": is_welcome,
+            "is_error_window": is_error,
+            "project_loaded": project_loaded,
+            "other_project": other_project,
+            "verified_files": v_files,
+        }
 
     def _check_studio_window(self, pid: Optional[int] = None, project_name: Optional[str] = None) -> Tuple[bool, Optional[str]]:
         """
         Authoritatively checks if a visible Android Studio window is open for the specified project.
-        Enumerates both current desktop and WinSta0\\default desktop.
-        Also inspects recentProjects.xml and idea.log as authoritative validation fallbacks.
+        Uses real Win32 desktop window inspection on WinSta0\\default.
+        NO fallbacks to recentProjects.xml or fake titles.
         """
-        if os.name != "nt":
-            return False, None
-        try:
-            import ctypes
-            from ctypes import wintypes
-            found_title = None
-            user32 = ctypes.windll.user32
-            target_proj_clean = (project_name or "").strip().lower()
-
-            def inspect_window(hwnd, lparam=0) -> bool:
-                nonlocal found_title
-                if not user32.IsWindowVisible(hwnd):
-                    return True
-                proc_id = wintypes.DWORD()
-                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc_id))
-
-                # Check process identity
-                is_studio = False
-                if pid and proc_id.value == pid:
-                    is_studio = True
-                else:
-                    try:
-                        pname = psutil.Process(proc_id.value).name().lower()
-                        if "studio" in pname:
-                            is_studio = True
-                    except Exception:
-                        pass
-
-                if not is_studio:
-                    return True
-
-                length = user32.GetWindowTextLengthW(hwnd)
-                if length > 0:
-                    buff = ctypes.create_unicode_buffer(length + 1)
-                    user32.GetWindowTextW(hwnd, buff, length + 1)
-                    title = buff.value.strip()
-                    low_title = title.lower()
-                    if title and title.lower() != "splash":
-                        if target_proj_clean:
-                            if (target_proj_clean in low_title or
-                                target_proj_clean.replace("-", "_") in low_title or
-                                "nr-ai" in low_title or
-                                f"[{target_proj_clean}" in low_title):
-                                found_title = title
-                                try:
-                                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-                                    user32.SetForegroundWindow(hwnd)
-                                except Exception:
-                                    pass
-                                return False
-                        elif "android studio" in low_title or "nr-ai" in low_title:
-                            found_title = title
-                            return False
-                return True
-
-            cb_type = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-
-            # 1. Enumerate on WinSta0\default desktop (user interactive desktop)
-            hdesk = user32.OpenDesktopW("default", 0, False, 0x01FF)
-            if hdesk:
-                try:
-                    user32.EnumDesktopWindows(hdesk, cb_type(inspect_window), 0)
-                finally:
-                    user32.CloseDesktop(hdesk)
-
-            # 2. Enumerate on current desktop if not yet found
-            if not found_title:
-                user32.EnumWindows(cb_type(inspect_window), 0)
-
-            # 3. Fallback: check recentProjects.xml
-            if not found_title and target_proj_clean:
-                recent_xml = Path(os.path.expandvars(r"%APPDATA%\Google\AndroidStudio2024.2\options\recentProjects.xml"))
-                if recent_xml.exists():
-                    try:
-                        t = recent_xml.read_text(encoding="utf-8", errors="ignore")
-                        if target_proj_clean in t.lower() or "c:/nr-ai/dev_projects/nr-ai" in t.lower():
-                            import re
-                            m = re.search(r'frameTitle="([^"]*' + re.escape(target_proj_clean) + r'[^"]*)"', t, re.IGNORECASE)
-                            if m:
-                                found_title = m.group(1)
-                            else:
-                                found_title = f"{project_name} [C:\\NR-AI\\dev_projects\\{project_name}]"
-                    except Exception:
-                        pass
-
-            return (found_title is not None), found_title
-        except Exception as e:
-            logger.warning(f"Error checking Studio window: {e}")
-            return False, None
+        st = self._inspect_real_gui_state(target_project_name=project_name or "NR-AI")
+        if st.get("window_exists") and st.get("visible") and st.get("project_loaded"):
+            return True, st.get("window_title")
+        return False, None
 
     def _launch_android_studio(self, project_path: Optional[str] = None) -> Tuple[bool, Optional[int], Optional[str], str]:
         """
@@ -2300,13 +2500,13 @@ class UnifiedAndroidAgent:
             prog_tracker = EngineeringProgressTracker.get_instance()
             cmd_text = getattr(intent, "instruction", None) or getattr(intent, "raw_command", "") or "Open the NR-AI project in Android Studio."
 
-            # Resolve target project path
+            # Resolve target project path and name
             target_proj_path = None
-            if intent.project:
+            if intent.project and intent.project.lower() not in ("nr_android_test", "android studio", "studio", "project", "workspace"):
                 candidate = Path(r"C:\NR-AI\dev_projects") / intent.project
                 if candidate.exists():
                     target_proj_path = str(candidate)
-                    project_name = intent.project
+                    project_name = candidate.name
             if not target_proj_path:
                 if act_proj and act_proj.canonical_path and os.path.exists(act_proj.canonical_path) and act_proj.project_name.lower() != "nr_android_test":
                     target_proj_path = act_proj.canonical_path
@@ -2323,159 +2523,489 @@ class UnifiedAndroidAgent:
                 canonical_path=target_proj_path,
             )
 
-            # Stage 1: Opening NR-AI project
-            prog_tracker.start_task(
-                command=cmd_text,
-                stage="Opening NR-AI project",
-                progress=15,
-                message=f"Opening {project_name} project at {target_proj_path}...",
-            )
-            time.sleep(0.8)
+            studio_path = self._resolve_studio_executable()
+            if not studio_path:
+                # CASE 5: Android Studio fails to launch (binary not found)
+                prog_tracker.start_task(
+                    command=cmd_text,
+                    stage="Starting",
+                    progress=0,
+                    message="Locating Android Studio installation...",
+                )
+                err_msg = "Android Studio executable (studio64.exe) not found on host machine."
+                prog_tracker.fail_task(
+                    error=err_msg,
+                    message=f"Android Studio could not be verified as open. Reason: {err_msg}",
+                )
+                return {
+                    "success": False,
+                    "status": "FAILED",
+                    "action": "OPEN",
+                    "opened": False,
+                    "target": "Android Studio",
+                    "project": project_name,
+                    "project_path": target_proj_path,
+                    "studio_pid": None,
+                    "studio_path": None,
+                    "window_verified": False,
+                    "error": err_msg,
+                    "process_state": "not_found",
+                    "window_state": "none",
+                    "message": f"Android Studio could not be verified as open. Reason: {err_msg}",
+                }
 
-            # Launch / Signal Android Studio
-            studio_ok, studio_pid, studio_path, studio_msg = self._launch_android_studio(target_proj_path)
+            # STEP 1: Inspect current Android Studio process / window state
+            initial_state = self._inspect_real_gui_state(project_name, target_proj_path, restore_if_minimized=True)
 
-            # Stage 2: Waiting for Android Studio
-            prog_tracker.update_stage(
-                stage="Waiting for Android Studio",
-                progress=35,
-                status=ProgressState.WAITING,
-                message=f"Waiting for Android Studio to initialize (PID: {studio_pid or 'pending'})...",
-                evidence=f"studio64.exe PID: {studio_pid}" if studio_pid else None,
-            )
-
-            # Poll for Studio process if needed
-            for _ in range(12):
-                if studio_pid and psutil.pid_exists(studio_pid):
-                    break
-                found_pid = self._find_running_studio_process()
-                if found_pid:
-                    studio_pid = found_pid
-                    studio_ok = True
-                    break
-                time.sleep(1.0)
-
-            # Stage 3: Loading Gradle
-            prog_tracker.update_stage(
-                stage="Loading Gradle",
-                progress=55,
-                status=ProgressState.EXECUTING,
-                message="Loading Gradle build scripts and project configurations...",
-                evidence=f"Gradle root: {target_proj_path}\\build.gradle.kts",
-            )
-            time.sleep(1.2)
-
-            # Stage 4: Loading project
-            prog_tracker.update_stage(
-                stage="Loading project",
-                progress=75,
-                status=ProgressState.EXECUTING,
-                message=f"Loading {project_name} project components and indexing source roots...",
-                evidence=f"Workspace: {target_proj_path}",
-            )
-            time.sleep(1.2)
-
-            # Stage 5: Verifying workspace
-            prog_tracker.update_stage(
-                stage="Verifying workspace",
-                progress=90,
-                status=ProgressState.VERIFYING,
-                message="Verifying Android Studio window title and Project view files...",
-            )
-
-            # Check window title with polling
-            window_ok = False
-            window_title = None
-            for _ in range(15):
-                window_ok, window_title = self._check_studio_window(studio_pid, project_name)
-                if window_ok:
-                    break
-                time.sleep(1.0)
-
-            if not window_title:
-                window_title = f"{project_name} [{target_proj_path}]"
-                window_ok = True
-
-            # Verify Project View and actual files
-            base_dir = Path(target_proj_path)
-            target_files = [
-                "app/src/main/java/com/nrai/nrai/MainActivity.java",
-                "app/src/main/res/layout/activity_main.xml",
-                "build.gradle.kts",
-                "settings.gradle.kts",
-                "app/src/main/AndroidManifest.xml",
-            ]
-            verified_files = []
-            for rf in target_files:
-                fp = base_dir / rf
-                if fp.exists():
-                    verified_files.append(rf)
-
-            time.sleep(0.5)
-
-            if studio_ok and studio_pid:
+            # CASE 2 — Android Studio is ALREADY OPEN with NR-AI
+            if initial_state.get("process_exists") and initial_state.get("visible") and initial_state.get("project_loaded"):
+                # Do NOT launch another Android Studio instance
+                self.window_manager.activate_window("Android Studio")
+                prog_tracker.start_task(
+                    command=cmd_text,
+                    stage="Starting",
+                    progress=0,
+                    message=f"Checking Android Studio workspace for {project_name}...",
+                )
+                prog_tracker.update_stage(
+                    stage="Android Studio process detected",
+                    progress=20,
+                    status=ProgressState.EXECUTING,
+                    message=f"Android Studio process detected (PID: {initial_state['process_pid']})...",
+                    evidence=f"studio64.exe PID: {initial_state['process_pid']}",
+                )
+                prog_tracker.update_stage(
+                    stage="GUI window detected",
+                    progress=40,
+                    status=ProgressState.EXECUTING,
+                    message=f"GUI window detected: '{initial_state['window_title']}'...",
+                    evidence=f"HWND: {initial_state['hwnd']}, Title: '{initial_state['window_title']}'",
+                )
+                prog_tracker.update_stage(
+                    stage="Project UI verification",
+                    progress=80,
+                    status=ProgressState.VERIFYING,
+                    message=f"Verifying {project_name} project UI in active Android Studio window...",
+                    evidence=[
+                        f"Window: {initial_state['window_title']}",
+                        f"Files: {', '.join(initial_state['verified_files'])}",
+                    ],
+                )
+                prog_tracker.complete_task(
+                    stage="Android Studio + NR-AI verified",
+                    progress=100,
+                    message=f"Android Studio is already open with the {project_name} project.",
+                    evidence=[
+                        f"studio64.exe active (PID: {initial_state['process_pid']})",
+                        f"Window: {initial_state['window_title']}",
+                        f"Workspace: {target_proj_path}",
+                        f"Files verified ({len(initial_state['verified_files'])}): {', '.join(initial_state['verified_files'])}",
+                    ],
+                )
                 self.context_manager.record_action(
                     "OPEN",
                     target="Android Studio",
-                    parameters={"pid": studio_pid, "path": target_proj_path, "window": window_title, "verified_files": verified_files},
+                    parameters={
+                        "pid": initial_state["process_pid"],
+                        "path": target_proj_path,
+                        "window": initial_state["window_title"],
+                        "verified_files": initial_state["verified_files"],
+                        "already_open": True,
+                    },
                 )
-                ev_list = [
-                    f"studio64.exe active (PID: {studio_pid})",
-                    f"Workspace: {target_proj_path}",
-                    f"Window: {window_title}",
-                    f"Project view files ({len(verified_files)}/5): {', '.join(verified_files)}",
-                ]
+                return {
+                    "success": True,
+                    "status": "ALREADY_OPEN",
+                    "action": "OPEN",
+                    "opened": True,
+                    "already_open": True,
+                    "target": "Android Studio",
+                    "project": project_name,
+                    "project_path": target_proj_path,
+                    "studio_pid": initial_state["process_pid"],
+                    "studio_path": studio_path,
+                    "window_verified": True,
+                    "window_title": initial_state["window_title"],
+                    "verified_files": initial_state["verified_files"],
+                    "message": f"Android Studio is already open with the {project_name} project.",
+                }
 
-                # Stage 6: Completed
+            # CASE 3 — Android Studio is open but another project is loaded (or on Welcome screen)
+            if initial_state.get("process_exists") and initial_state.get("visible") and not initial_state.get("project_loaded"):
+                # Do NOT claim success. Bring existing Android Studio window to foreground and load target project
+                self.window_manager.activate_window("Android Studio")
+                prog_tracker.start_task(
+                    command=cmd_text,
+                    stage="Starting",
+                    progress=0,
+                    message=f"Android Studio is open with another workspace. Loading {project_name}...",
+                )
+                prog_tracker.update_stage(
+                    stage="Android Studio process detected",
+                    progress=20,
+                    status=ProgressState.EXECUTING,
+                    message=f"Existing Android Studio process detected (PID: {initial_state['process_pid']})...",
+                    evidence=f"studio64.exe PID: {initial_state['process_pid']}",
+                )
+                prog_tracker.update_stage(
+                    stage="GUI window detected",
+                    progress=40,
+                    status=ProgressState.EXECUTING,
+                    message=f"Existing GUI window detected: '{initial_state['window_title']}'...",
+                    evidence=f"HWND: {initial_state['hwnd']}, Title: '{initial_state['window_title']}'",
+                )
+                prog_tracker.update_stage(
+                    stage="NR-AI project loading",
+                    progress=60,
+                    status=ProgressState.EXECUTING,
+                    message=f"Loading {project_name} project at {target_proj_path}...",
+                    evidence=f"Target: {target_proj_path}",
+                )
+                # Signal existing studio instance to open target_proj_path on desktop
+                self._launch_studio_desktop_process(studio_path, target_proj_path)
+
+
+                # Bounded wait for window title and project to load
+                loaded_state = None
+                poll_deadline = time.time() + 25.0
+                while time.time() < poll_deadline:
+                    time.sleep(1.0)
+                    st = self._inspect_real_gui_state(project_name, target_proj_path, restore_if_minimized=True)
+                    if st.get("project_loaded") and st.get("visible") and st.get("responsive"):
+                        loaded_state = st
+                        break
+
+                if not loaded_state or not loaded_state.get("project_loaded"):
+                    # CASE 6 — Project loading fails
+                    curr_title = (st.get("window_title") if st else None) or initial_state.get("window_title") or "Unknown"
+                    reason = f"Window title did not reflect project '{project_name}' within timeout (current window title: '{curr_title}')."
+                    prog_tracker.fail_task(
+                        error=reason,
+                        message=f"Android Studio opened, but the {project_name} project could not be verified as loaded.",
+                    )
+                    return {
+                        "success": False,
+                        "status": "FAILED",
+                        "action": "OPEN",
+                        "opened": False,
+                        "project_loaded": False,
+                        "target": "Android Studio",
+                        "project": project_name,
+                        "project_path": target_proj_path,
+                        "studio_pid": initial_state["process_pid"],
+                        "studio_path": studio_path,
+                        "window_verified": True,
+                        "window_title": curr_title,
+                        "reason": reason,
+                        "message": f"Android Studio opened, but the {project_name} project could not be verified as loaded. Reason: {reason}",
+                    }
+
+                # Project loaded successfully in existing instance!
+                prog_tracker.update_stage(
+                    stage="Project UI verification",
+                    progress=80,
+                    status=ProgressState.VERIFYING,
+                    message=f"Verifying {project_name} project UI and workspace files...",
+                    evidence=[
+                        f"Window: {loaded_state['window_title']}",
+                        f"Files: {', '.join(loaded_state['verified_files'])}",
+                    ],
+                )
                 prog_tracker.complete_task(
-                    message=f"Android Studio workspace verified for {project_name} at {target_proj_path}",
-                    stage="Completed",
-                    evidence=ev_list,
+                    stage="Android Studio + NR-AI verified",
+                    progress=100,
+                    message=f"Android Studio is open and the {project_name} project is loaded.",
+                    evidence=[
+                        f"studio64.exe active (PID: {loaded_state['process_pid']})",
+                        f"Window: {loaded_state['window_title']}",
+                        f"Workspace: {target_proj_path}",
+                        f"Files verified ({len(loaded_state['verified_files'])}): {', '.join(loaded_state['verified_files'])}",
+                    ],
                 )
-
-                msg = (
-                    f"LIVE VERIFIED: Android Studio workspace launched and confirmed active for target project '{project_name}' at {target_proj_path}.\n\n"
-                    f"Window title verified: '{window_title}'.\n\n"
-                    f"Project view verified files:\n"
-                    f"```\n"
-                    f"app\n"
-                    f"  src\n"
-                    f"    main\n"
-                    f"      java\n"
-                    f"        com.nrai.nrai\n"
-                    f"          MainActivity.java\n\n"
-                    f"      res\n"
-                    f"        layout\n"
-                    f"          activity_main.xml\n\n"
-                    f"build.gradle.kts\n"
-                    f"settings.gradle.kts\n"
-                    f"AndroidManifest.xml\n"
-                    f"```"
+                self.context_manager.record_action(
+                    "OPEN",
+                    target="Android Studio",
+                    parameters={
+                        "pid": loaded_state["process_pid"],
+                        "path": target_proj_path,
+                        "window": loaded_state["window_title"],
+                        "verified_files": loaded_state["verified_files"],
+                    },
                 )
                 return {
                     "success": True,
                     "status": "LIVE_VERIFIED",
                     "action": "OPEN",
+                    "opened": True,
+                    "target": "Android Studio",
+                    "project": project_name,
+                    "project_path": target_proj_path,
+                    "studio_pid": loaded_state["process_pid"],
+                    "studio_path": studio_path,
+                    "window_verified": True,
+                    "window_title": loaded_state["window_title"],
+                    "verified_files": loaded_state["verified_files"],
+                    "message": f"Android Studio is open and the {project_name} project is loaded.",
+                }
+
+            # CASE 4 — Android Studio process exists but GUI is not visible
+            if initial_state.get("process_exists") and not initial_state.get("visible"):
+                recovered = False
+                recovery_deadline = time.time() + 5.0
+                while time.time() < recovery_deadline:
+                    self.window_manager.activate_window("Android Studio")
+                    time.sleep(1.0)
+                    rec_state = self._inspect_real_gui_state(project_name, target_proj_path, restore_if_minimized=True)
+                    if rec_state.get("visible") and rec_state.get("responsive"):
+                        recovered = True
+                        initial_state = rec_state
+                        break
+
+                if not recovered:
+                    pid = initial_state.get("process_pid")
+                    reason = f"Android Studio process is running (PID: {pid}), but no visible top-level GUI window could be established on the desktop."
+                    prog_tracker.fail_task(
+                        error=reason,
+                        message=f"Android Studio could not be verified as open. Reason: {reason}",
+                    )
+                    return {
+                        "success": False,
+                        "status": "NOT_VERIFIED",
+                        "action": "OPEN",
+                        "opened": False,
+                        "target": "Android Studio",
+                        "project": project_name,
+                        "project_path": target_proj_path,
+                        "studio_pid": pid,
+                        "studio_path": studio_path,
+                        "window_verified": False,
+                        "reason": reason,
+                        "message": f"Android Studio could not be verified as open. Reason: {reason}",
+                    }
+
+            # CASE 1 — Android Studio is NOT open
+            # STEP 1: Process and window inspected (not running)
+            # STEP 2: Launch real Android Studio GUI
+            prog_tracker.start_task(
+                command=cmd_text,
+                stage="Starting",
+                progress=0,
+                message="Starting Android Studio...",
+            )
+
+            launched, studio_pid, launch_err = self._launch_studio_desktop_process(studio_path, target_proj_path)
+            if not launched:
+                # CASE 5 — Android Studio fails to launch
+                prog_tracker.fail_task(
+                    error=str(launch_err),
+                    message=f"Android Studio could not be verified as open. Reason: Failed to launch: {launch_err}",
+                )
+                return {
+                    "success": False,
+                    "status": "FAILED",
+                    "action": "OPEN",
+                    "opened": False,
+                    "target": "Android Studio",
+                    "project": project_name,
+                    "project_path": target_proj_path,
+                    "studio_pid": None,
+                    "studio_path": studio_path,
+                    "window_verified": False,
+                    "error": str(launch_err),
+                    "process_state": "launch_error",
+                    "window_state": "none",
+                    "diagnostic_evidence": [f"Launch executable: {studio_path}", f"Exception: {launch_err}"],
+                    "message": f"Android Studio could not be verified as open. Reason: Failed to launch: {launch_err}",
+                }
+
+            # STEP 3: WAIT. Do not immediately return success.
+            # 20% Android Studio process detected
+            proc_deadline = time.time() + 15.0
+            while time.time() < proc_deadline:
+                if studio_pid and psutil.pid_exists(studio_pid):
+                    break
+                found_pid = self._find_running_studio_process()
+                if found_pid:
+                    studio_pid = found_pid
+                    break
+                time.sleep(0.8)
+
+            if not studio_pid:
+                # CASE 5 — Android Studio fails to launch (exited immediately)
+                reason = "Android Studio process failed to spawn or exited immediately."
+                prog_tracker.fail_task(error=reason, message=f"Android Studio could not be verified as open. Reason: {reason}")
+                return {
+                    "success": False,
+                    "status": "FAILED",
+                    "action": "OPEN",
+                    "opened": False,
+                    "target": "Android Studio",
+                    "project": project_name,
+                    "project_path": target_proj_path,
+                    "studio_pid": None,
+                    "studio_path": studio_path,
+                    "window_verified": False,
+                    "error": reason,
+                    "process_state": "terminated",
+                    "window_state": "none",
+                    "message": f"Android Studio could not be verified as open. Reason: {reason}",
+                }
+
+
+            prog_tracker.update_stage(
+                stage="Android Studio process detected",
+                progress=20,
+                status=ProgressState.EXECUTING,
+                message=f"Android Studio process detected (PID: {studio_pid})...",
+                evidence=f"studio64.exe PID: {studio_pid}",
+            )
+
+            # 40% GUI window detected
+            win_deadline = time.time() + 30.0
+            gui_state = None
+            while time.time() < win_deadline:
+                time.sleep(1.0)
+                st = self._inspect_real_gui_state(project_name, target_proj_path, restore_if_minimized=True)
+                if st.get("window_exists") and st.get("visible") and st.get("responsive"):
+                    gui_state = st
+                    break
+
+            if not gui_state or not gui_state.get("visible"):
+                reason = f"Android Studio process (PID: {studio_pid}) active, but top-level GUI window was not visible within 30s."
+                prog_tracker.fail_task(error=reason, message=f"Android Studio could not be verified as open. Reason: {reason}")
+                return {
+                    "success": False,
+                    "status": "NOT_VERIFIED",
+                    "action": "OPEN",
+                    "opened": False,
                     "target": "Android Studio",
                     "project": project_name,
                     "project_path": target_proj_path,
                     "studio_pid": studio_pid,
                     "studio_path": studio_path,
-                    "window_verified": window_ok,
-                    "window_title": window_title,
-                    "verified_files": verified_files,
-                    "message": msg,
+                    "window_verified": False,
+                    "reason": reason,
+                    "message": f"Android Studio could not be verified as open. Reason: {reason}",
                 }
-            else:
-                prog_tracker.fail_task(error=studio_msg, message="Failed to open Android Studio")
+
+            prog_tracker.update_stage(
+                stage="GUI window detected",
+                progress=40,
+                status=ProgressState.EXECUTING,
+                message=f"GUI window detected: '{gui_state['window_title']}'...",
+                evidence=f"HWND: {gui_state['hwnd']}, Title: '{gui_state['window_title']}'",
+            )
+
+            # 60% NR-AI project loading
+            prog_tracker.update_stage(
+                stage="NR-AI project loading",
+                progress=60,
+                status=ProgressState.EXECUTING,
+                message=f"Loading {project_name} project in Android Studio GUI...",
+                evidence=f"Workspace: {target_proj_path}",
+            )
+
+            # STEP 5 & 6: WAIT for project to load and verify real GUI state
+            load_deadline = time.time() + 30.0
+            final_gui_state = None
+            while time.time() < load_deadline:
+                time.sleep(1.2)
+                st = self._inspect_real_gui_state(project_name, target_proj_path, restore_if_minimized=True)
+                if st.get("is_error_window"):
+                    reason = f"Android Studio showed an error dialog: '{st['window_title']}'."
+                    prog_tracker.fail_task(error=reason, message=f"Android Studio could not be verified as open. Reason: {reason}")
+                    return {
+                        "success": False,
+                        "status": "FAILED",
+                        "action": "OPEN",
+                        "opened": False,
+                        "target": "Android Studio",
+                        "project": project_name,
+                        "project_path": target_proj_path,
+                        "studio_pid": studio_pid,
+                        "studio_path": studio_path,
+                        "window_verified": True,
+                        "window_title": st["window_title"],
+                        "error": reason,
+                        "message": f"Android Studio could not be verified as open. Reason: {reason}",
+                    }
+                if st.get("project_loaded") and st.get("visible") and st.get("responsive"):
+                    final_gui_state = st
+                    break
+
+            if not final_gui_state or not final_gui_state.get("project_loaded"):
+                # CASE 6 — Project loading fails
+                curr_t = (st.get("window_title") if st else None) or gui_state.get("window_title") or "Unknown"
+                reason = f"Android Studio window remained at '{curr_t}' and did not load '{project_name}' within timeout."
+                prog_tracker.fail_task(error=reason, message=f"Android Studio opened, but the {project_name} project could not be verified as loaded.")
                 return {
                     "success": False,
                     "status": "FAILED",
                     "action": "OPEN",
+                    "opened": False,
+                    "project_loaded": False,
                     "target": "Android Studio",
-                    "error": studio_msg,
-                    "message": f"Failed to open Android Studio: {studio_msg}",
+                    "project": project_name,
+                    "project_path": target_proj_path,
+                    "studio_pid": studio_pid,
+                    "studio_path": studio_path,
+                    "window_verified": True,
+                    "window_title": curr_t,
+                    "reason": reason,
+                    "message": f"Android Studio opened, but the {project_name} project could not be verified as loaded. Reason: {reason}",
                 }
+
+            # 80% Project UI verification
+            prog_tracker.update_stage(
+                stage="Project UI verification",
+                progress=80,
+                status=ProgressState.VERIFYING,
+                message=f"Verifying {project_name} project UI and workspace files...",
+                evidence=[
+                    f"Window: {final_gui_state['window_title']}",
+                    f"Files: {', '.join(final_gui_state['verified_files'])}",
+                ],
+            )
+
+            # 100% Android Studio + NR-AI verified
+            prog_tracker.complete_task(
+                stage="Android Studio + NR-AI verified",
+                progress=100,
+                message=f"Android Studio is open and the {project_name} project is loaded.",
+                evidence=[
+                    f"studio64.exe active (PID: {final_gui_state['process_pid']})",
+                    f"Workspace: {target_proj_path}",
+                    f"Window: {final_gui_state['window_title']}",
+                    f"Project view files ({len(final_gui_state['verified_files'])}): {', '.join(final_gui_state['verified_files'])}",
+                ],
+            )
+
+            self.context_manager.record_action(
+                "OPEN",
+                target="Android Studio",
+                parameters={
+                    "pid": final_gui_state["process_pid"],
+                    "path": target_proj_path,
+                    "window": final_gui_state["window_title"],
+                    "verified_files": final_gui_state["verified_files"],
+                },
+            )
+
+            return {
+                "success": True,
+                "status": "LIVE_VERIFIED",
+                "action": "OPEN",
+                "opened": True,
+                "target": "Android Studio",
+                "project": project_name,
+                "project_path": target_proj_path,
+                "studio_pid": final_gui_state["process_pid"],
+                "studio_path": studio_path,
+                "window_verified": True,
+                "window_title": final_gui_state["window_title"],
+                "verified_files": final_gui_state["verified_files"],
+                "message": f"Android Studio is open and the {project_name} project is loaded.",
+            }
 
         # 2. CREATE_PROJECT
         if act == EngineeringAction.CREATE_PROJECT:

@@ -18,6 +18,19 @@ from app.voice.speaker import (
     VoiceSpeaker,
 )
 
+from app.voice.provider import (
+    STTProvider,
+    TTSProvider,
+    TranscriptionResult,
+    TTSResult,
+    VoiceProviderRegistry,
+    SpeechRecognitionSTTProvider,
+    MockSTTProvider,
+    SAPI5TTSProvider,
+    MemoryTTSProvider,
+    SilentTTSProvider,
+)
+
 __all__ = [
     "VoiceListener",
     "VoiceSpeaker",
@@ -30,4 +43,14 @@ __all__ = [
     "Pyttsx3TTS",
     "MemoryTTS",
     "SilentTTS",
+    "STTProvider",
+    "TTSProvider",
+    "TranscriptionResult",
+    "TTSResult",
+    "VoiceProviderRegistry",
+    "SpeechRecognitionSTTProvider",
+    "MockSTTProvider",
+    "SAPI5TTSProvider",
+    "MemoryTTSProvider",
+    "SilentTTSProvider",
 ]

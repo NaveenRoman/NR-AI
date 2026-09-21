@@ -1,12 +1,57 @@
 # NR-AI — Current State
-**Date**: September 20, 2026 Continuum  
-**Active Milestone**: DROID UX, Voice, Child Specialists & Closed-Loop Live Validation (100% COMPLETE & LIVE-VERIFIED — REAL ENGINEERING EXECUTION: PASS)  
-**System Status**: All Subsystems Online & Passing (Full Automated Regression 59/59 Suites Passing 100%, 12/12 Real Galaxy UI & Droid Closed-Loop Steps LIVE_VERIFIED, Real Host/Emulator Workflow Verified, All Gate Actions LIVE_VERIFIED)  
+**Date**: September 21, 2026 Continuum  
+**Active Milestone**: OpenJarvis Integration Phase 1: Model Intelligence + Task Memory + Guardrails + A2A/MCP Foundation (100% COMPLETE & LIVE-VERIFIED — REPORT 35)  
+**System Status**: All Subsystems Online & Passing (48/48 Dedicated Unit Tests PASS; 7/7 Host Domains LIVE_VERIFIED; Zero Core Regressions; Strict Engineering Boundary Preserved)  
+**Voice Integration Status**: **OPERATIONAL (Report 33/35)** — Pluggable Voice Provider Registry Verified; Safe Standby Classification Active; Whisper/Kokoro Deferred to Phase 2.  
 **Droid Phase 5 Readiness Audit**: PASS (25 PASS, 0 FAIL, 1 NOT_AVAILABLE, 0 NOT_TESTED across 26 Dimensions)  
 **Unreal Engine Status**: HARD STOP ENFORCED — UNREAL ENGINE NOT STARTED (Awaiting explicit user command)  
 
 ## Subsystems Summary
-- **DROID UX, Voice, Child Specialists & Closed-Loop Live Validation**: **Complete (`LIVE_VERIFIED`) — 12/12 Live Steps PASS, 59/59 Regression Suites PASS (100% Empirical Evidence)**
+- **OpenJarvis Integration Phase 1: Architecture Adapters & Safety Foundations (Report 35)**: **Complete (`LIVE_VERIFIED`) — 100% Empirical Evidence**
+  - Implemented 7 native NR-AI adapters incorporating validated patterns from OpenJarvis commit `9cd0a09` under Apache 2.0:
+    1. **Model Catalog Intelligence (`app/config/model_catalog.py`)**: 20 standard models cataloged with verified hardware limits, provenance tracking (`VERIFIED`, `CONFIGURED`, `PROVIDER_REPORTED`, `UNKNOWN`), host hardware probe (RAM, CPU, CUDA GPU), and advisory `ModelCompatibilityEvaluator` integrated into `ModelRouter`.
+    2. **Persistent Task Checkpoints in SQLite (`app/task/checkpoint_store.py`)**: Thread-safe SQLite WAL store (`data/task_checkpoints.db`), 9 lifecycle states, 64KB bounded payloads, recursive secret scrubbing, and deterministic recovery barrier blocking auto-resume of destructive verbs.
+    3. **Prompt / PII / Secret Guardrails Engine (`app/security/guardrails.py`)**: Deterministic regex scanning for 11 secret patterns (Google, OpenAI, Anthropic, AWS, GitHub, JWT, Private Keys) and 4 PII patterns (Email, Phone, SSN, Credit Card) with structured redaction tokens and pre-cloud transit scrubbing in `app/agent/model_provider.py`.
+    4. **Internal Local A2A Protocol & Router (`app/a2a/protocol.py`, `app/a2a/router.py`)**: Google A2A JSON-RPC 2.0 compliant agent-to-agent message broker, local in-process / 127.0.0.1 transport, `A2APermissionScope` authorization, and tamper-evident audit trail.
+    5. **Model Context Protocol (MCP) Safety Adapter (`app/mcp/adapter.py`)**: Tool invocation gateway mediated by `MCPSafetyGate`, strictly blocking direct LLM tool calls (`MODEL_ISOLATION_VIOLATION`), enforcing tool blocklists, and supporting instant emergency stop freezes.
+    6. **Declarative Agent Definitions (`app/agent/definitions/declarative.py`)**: Declarative TOML parsing (`from_toml`) with strict `allow_shell=False` safety invariant mapping to `AgentSpecification`.
+    7. **Explicit 5-Domain Memory Boundaries (`app/memory/boundaries.py`)**: Enforces strict boundaries across Knowledge, Conversation, Task, Project, and Agent domains with workspace leak prevention.
+  - **Test & Empirical Proof**:
+    * 48/48 dedicated Phase 1 unit tests passed 100% across 7 test suites.
+    * Real Windows host validation (`scratch/validate_openjarvis_phase1.py`) passed 100% (7/7 domains `LIVE_VERIFIED` in `data/openjarvis_phase1_live_validation.json`).
+    * Regression suites passing: Command routing (14/14 PASS), Droid Phase 4 (9/9 PASS), Universal Engineering Workflow (10/10 PASS), Chat workspace isolation (6/6 PASS).
+  - Published comprehensive Report 35 to `C:\Users\navee\Desktop\NR-AI Project Report\35_OPENJARVIS_INTEGRATION_PHASE1.md`.
+  - Invariants: NR-AI remains sole orchestrator; `shell=True` in new code = 0; no `eval`/`exec`; Kokoro/Faster-Whisper deferred to Phase 2; Unreal Engine NOT started.
+
+- **Comprehensive OpenJarvis Architectural Capability Audit (Report 34)**: **Complete (`AUDIT ONLY`) — 100% Empirical Evidence**
+  - Inspected OpenJarvis commit `9cd0a09f30e1f270e2cac7af449d259a5129683b` on `main`.
+  - Built exhaustive 36-dimension capability comparison matrix in `C:\NR-AI\scratch\OPENJARVIS_FULL_CAPABILITY_COMPARISON.md`.
+  - Audited agents, orchestration, central brain, model routing, memory, computer control, real-time voice, scheduling, security, and Apache 2.0 licensing.
+  - Formulated prioritized integration roadmap (Priority 1: Model Catalog, Guardrails, Scheduler; Priority 2: A2A Protocol, MCP; Priority 3: Faster-Whisper, Kokoro, Tauri).
+  - Preserved strict non-mutation invariant: zero code changed, zero large models downloaded, zero alterations to Galaxy, Knowledge Trinity, Droid, or SkyShield.
+  - Published comprehensive Report 34 to `C:\Users\navee\Desktop\NR-AI Project Report\34_OPENJARVIS_FULL_ARCHITECTURE_AUDIT.md`.
+
+- **OpenJarvis Voice Architecture Study & Safe Integration (Report 33)**: **Complete (`LIVE_VERIFIED`) — 100% Empirical Evidence**
+  - Read-only audit of OpenJarvis (`9cd0a09f30e1f270e2cac7af449d259a5129683b`) and NR-AI voice completed.
+  - Root cause of `ERROR: aborted` identified and resolved: browser `recognition.abort()` during clean standby was falsely styled as red error; refined to neutral `STANDBY` state.
+  - Implemented `app/voice/provider.py` featuring `VoiceProviderRegistry`, `STTProvider`, and `TTSProvider` with prioritized fallback chains and zero dependency bloat.
+  - Real Windows 11 hardware diagnostics: 12/12 PASS (Microphone Realtek Audio, Speakers Realtek Audio, Windows SAPI5 pyttsx3, 6-case phonetic wake word detection, interruption state control).
+  - Real Windows end-to-end voice flow PASS: "Hello NR" (1.0ms) $\to$ "What is the time?" (SAPI5 spoken, 5.52ms) $\to$ "Open Android Studio" (routed to Droid, 4.12ms) $\to$ "stop" (clean listener stop).
+  - Chat workspace isolation verified: NR-AI Central history and Droid history strictly separated with zero cross-contamination.
+  - Published comprehensive 22-section Report 33 to `C:\Users\navee\Desktop\NR-AI Project Report\33_NR_AI_OPENJARVIS_VOICE_INTEGRATION_AUDIT.md`.
+
+- **Full Android Project Live Verification & Real Emulator Validation (Report 32)**: **Complete (`LIVE_VERIFIED`) — 15/15 Verification Gates PASS (100% Empirical Evidence)**
+  - Real Android Studio GUI verified open on Windows desktop (`studio64.exe`, PID `7500`, HWND `7340222`, title `"NR-AI – gradle-wrapper.properties"`, `visible: True`, `responsive: True`).
+  - Full toolchain verified: JDK 25/23, Android SDK 34, AGP 8.7.0, Gradle 8.14.5.
+  - Real hardware-accelerated AVD `Pixel_6_API_34` booted to `sys.boot_completed = 1` and responsive on `emulator-5554` (transport ID 3).
+  - Gradle `assembleDebug` completed with exit code 0 (53.25s), producing verified APK `app-debug.apk` (9,153 bytes, SHA-256: `592cf722...`).
+  - Streamed install via ADB completed in 2.48s (`package:com.nrai.nrai`).
+  - Cold launch succeeded (TotalTime: 3,238ms) with live PID `4161` and clean crash buffer.
+  - UI hierarchy dumped via `uiautomator dump`, proving `welcome_text` (`"Hello from NR-AI"`, bounds `[342,1155][737,1226]`) and `action_button` (`"Action"`, bounds `[424,1289][655,1457]`).
+  - Functional smoke test executed via `input tap 539 1373`, verifying zero ANRs and zero crashes.
+  - Live 1080x2400 PNG screenshot captured from framebuffer to `C:\Users\navee\Desktop\NR-AI Project Report\emulator_live_screenshot.png` (35,865 bytes, SHA-256: `237ab411...`).
+  - Full acceptance report written to `C:\Users\navee\Desktop\NR-AI Project Report\32_NR_AI_ANDROID_FULL_LIVE_VERIFICATION.md`.
+
   - Direct live interaction verified in Chromium via Playwright against the running web server (`http://127.0.0.1:8585/`), active Android Studio (`studio64.exe`), and live Android emulator (`emulator-5554` / `Pixel_6_API_34`).
   - Child Specialist Hierarchy & Invariant Enforced: Central Sun (`nr_ai_central_intelligence`) $\to$ Droid (`android_unified_agent`) $\to$ Droid Scout (`droid_scout`, $r=150\text{px}$) & Droid Guardian (`droid_guardian`, $r=185\text{px}$). Scout & Guardian connect exclusively to Droid with 0 Sun links.
   - 4-Area Layout Geometry: Top Navigation, Agent Info Panel (`#agentInfoPanel`, $y=489$, $x=214$) sitting directly above System Overview (`.system-overview-card`, $y=784$, $x=214$) on the left, Central Canvas (`#galaxyCanvas`), and Dedicated Chat Panel (`#dedicatedChatPanel`, $x=1136$) on the right.

@@ -135,6 +135,47 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
    - **Local Bounded Clap Detector**: High Crest Factor ($> 3.2$), rapid energy decay ($< 80\text{ms}$), 1.5s refractory debounce. Instantaneously triggers DOM banner `ðŸ‘ CLAP DETECTED â€¢ LISTENING...` with zero cloud latency.
    - **Time-Based Greetings (`/api/session/greeting`)**: Returns contextual morning/afternoon/evening greetings and session resume greetings.
 
-10. **Hard Stop Rule Enforcement**:
-    - Android Engineering Workflow, Droid, Child Agents, Voice, and Live Verification are 100% complete and empirically verified.
-    - Unreal Engine, Unity, Visual Studio, and Cross-Agent Fabric remain strictly NOT started awaiting explicit user command.
+10. **OpenJarvis Reference Integration Topology & Boundary Strategy**:
+    - **Voice Provider Registry Abstraction (`app/voice/provider.py`)**: Inspired by OpenJarvis's decoupled backend registry pattern, providing pluggable STT and TTS backends with strict fallback resolution (`SpeechRecognitionSTTProvider` -> `MockSTTProvider`, `SAPI5TTSProvider` -> `MemoryTTSProvider` -> `SilentTTSProvider`).
+    - **Architectural Boundary Invariant**: Voice is strictly an I/O channel into NR-AI; Central Intelligence (`app/brain/companion.py`) remains the sole authoritative brain and router.
+    - **Prioritized Integration Strategy (Report 34 & Report 35)**:
+      * Priority 1 (Implemented & Verified): Model catalog metadata (VRAM / context limits), prompt-level secret/PII guardrails, persistent SQLite task checkpointing, declarative agent specs, and 5-domain memory boundaries.
+      * Priority 2 (Implemented & Verified): Google Agent-to-Agent (A2A) protocol endpoints and Model Context Protocol (MCP) safety bridge.
+      * Priority 3 (Deferred to Phase 2): Optional local STT/TTS models (Faster-Whisper, Kokoro) and Tauri desktop wrapper.
+      * Firm Non-Integration: OpenJarvis orchestrator, computer control, and voice loop rejected in favor of superior native NR-AI systems.
+
+11. **OpenJarvis Integration Phase 1: Native Adapters & Safety Foundations**:
+    - **Architectural Integration Topology**:
+      ```
+      [OpenJarvis Verified Capabilities (Apache 2.0)]
+                             |
+                             v
+                 [NR-AI Native Adapters]
+      - Model Catalog Intelligence (app/config/model_catalog.py)
+      - SQLite Task Checkpoints (app/task/checkpoint_store.py)
+      - Deterministic Guardrails (app/security/guardrails.py)
+      - Local A2A Protocol Router (app/a2a/router.py)
+      - MCP Safety Adapter (app/mcp/adapter.py)
+      - Declarative Agent TOML (app/agent/definitions/declarative.py)
+      - 5-Domain Memory Boundaries (app/memory/boundaries.py)
+                             |
+                             v
+              [Existing NR-AI Central Brain]
+      - NRCompanion / ModelRouter / MultiAgentOrchestrator
+                             |
+                             v
+             [Existing Safety & Verification]
+      - ModelIsolationGate / MCPSafetyGate / Shell Execution Barrier
+      ```
+    - **Model Catalog Intelligence (`app/config/model_catalog.py`)**: 20 standard models cataloged with verified hardware limits, provenance tracking (`VERIFIED`, `CONFIGURED`, `PROVIDER_REPORTED`, `UNKNOWN`), host hardware probe (RAM, CPU, CUDA GPU), and advisory `ModelCompatibilityEvaluator` integrated into `ModelRouter`.
+    - **SQLite Task Checkpoints (`app/task/checkpoint_store.py`)**: Thread-safe WAL store (`data/task_checkpoints.db`), 9 lifecycle states, 64KB bounded payloads, recursive secret scrubbing, and deterministic recovery barrier blocking automatic resumption of destructive verbs.
+    - **Prompt & Secret Guardrails (`app/security/guardrails.py`)**: Deterministic regex scanning for 11 secret patterns and 4 PII patterns with structured redaction tokens and pre-cloud transit scrubbing in `app/agent/model_provider.py`.
+    - **Google A2A Local Router (`app/a2a/protocol.py`, `app/a2a/router.py`)**: Google A2A JSON-RPC 2.0 compliant agent-to-agent message broker, local in-process / 127.0.0.1 transport, `A2APermissionScope` authorization, and tamper-evident audit trail.
+    - **MCP Safety Adapter (`app/mcp/adapter.py`)**: Tool invocation gateway mediated by `MCPSafetyGate`, strictly blocking direct LLM tool calls (`MODEL_ISOLATION_VIOLATION`), enforcing tool blocklists, and supporting instant emergency stop freezes.
+    - **Declarative Agent Definitions (`app/agent/definitions/declarative.py`)**: Declarative TOML parsing (`from_toml`) with strict `allow_shell=False` safety invariant mapping to `AgentSpecification`.
+    - **Explicit 5-Domain Memory Boundaries (`app/memory/boundaries.py`)**: Enforces strict boundaries across Knowledge, Conversation, Task, Project, and Agent domains with workspace leak prevention.
+
+12. **Hard Stop Rule Enforcement**:
+    - Android Engineering Workflow, Droid, Child Agents, Voice, and OpenJarvis Phase 1 Adapters are 100% complete and empirically verified.
+    - Unreal Engine, Unity, Visual Studio, Voice Phase 2 (Whisper/Kokoro), and Cross-Agent Fabric remain strictly NOT started awaiting explicit user command.
+
