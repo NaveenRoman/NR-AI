@@ -277,9 +277,45 @@ NR-AI is an autonomous, multi-agent AI engineering continuum orchestrating cogni
       - Host audit verified: `rustc` NOT installed, `cargo` NOT installed; Node `v22.20.0`, npm `10.9.3`.
       - Live validation truthfully records: `TAURI_LIVE_VERIFICATION = NOT_VERIFIED`, while Python desktop shell, permissions, events, health, and evaluation engine are `LIVE_VERIFIED`.
 
-15. **Hard Stop Rule Enforcement**:
-    - Android Engineering Workflow, Droid, Child Agents, Voice, OpenJarvis Phase 1, Phase 2, Phase 3, and Phase 4 are 100% complete and empirically verified.
+15. **🤖 Jarvis Central Assistant & Unified Memory View (`app/jarvis/`)**:
+    - **Architectural Topology**:
+      ```
+      [User / Galaxy UI / Voice PTT]
+                    |
+                    v
+      [Jarvis Workspace (/api/jarvis/chat)]
+                    |
+                    +---> [Live System State Inspector] (STT/TTS, Git checkpoint, Android AVD, E-Stop)
+                    |
+                    +---> [Specialist Delegation Router] ---> [Droid / SkyShield / Studio / Unity / Unreal]
+                    |
+                    +---> [Jarvis Memory Orchestrator] (ContextManager 4000 char budget)
+                    |       |-- Domain 1: Knowledge Trinity (factual veracity, consensus verification)
+                    |       |-- Domain 2: Task Checkpoints Store (SQLite WAL checkpoints.db)
+                    |       |-- Domain 3: Project Context (Active project, features, affected files)
+                    |       |-- Domain 4: Authorized Git Memory & Reports (commits, tags, status, reports)
+                    |       +-- Domain 5: Conversation Continuity (recent turns, turn history)
+                    |
+                    v
+      [Epistemic Honesty Classifier & Guardrails]
+                    |-- Epistemic Classes: VERIFIED_FACT, CURRENT_STATE, ATTRIBUTED_HISTORY,
+                    |                      SPECIALIST_DELEGATION, INFERENCE, UNCERTAINTY
+                    |-- Strict Epistemic Honesty: Unverified knowledge explicitly disclaimed
+                    +-- PromptGuardrails: Secret redaction ([SECRET_REDACTED:*])
+      ```
+    - **Subsystems**:
+      - `models.py`: Strict typing for `EpistemicClass`, `SourceDomain`, `SourceProvenance` (with badges: `[LIVE]`, `[MEMORY]`, `[GITHUB]`, `[KNOWLEDGE]`, `[REPORT]`, `[SPECIALIST]`, `[CONVERSATION]`), `JarvisRequest`, `JarvisResponse`.
+      - `repo_memory.py`: Safe, bounded Git retrieval via `subprocess.run(shell=False)` with strictly validated arguments. File path validator blocking secrets (`.env*`, `*.pem`, `*.key`), commit log extraction, and repository status.
+      - `live_state.py`: Non-blocking telemetry inspector querying voice providers, connected Android AVD (`Pixel_6_API_34` on `emulator-5554`), latest Git checkpoint, and Emergency Stop status.
+      - `delegation.py`: `SpecialistDelegator` routing physical action requests to specialist agents (`droid`, `skyshield`, `studio`, `unity`, `unreal`, `quest`, `sentinel`) via `NRCompanion.interact()`, while answering informational queries conversationally.
+      - `memory_orchestrator.py`: `JarvisMemoryOrchestrator` federating retrieval across 5 authoritative domains within a `ContextBudget(max_total_chars=4000)`.
+      - `assistant.py`: Central `JarvisCentralAssistant` coordinator. Verifies emergency stop, coordinates memory retrieval, invokes specialist delegation when appropriate, applies strict epistemic honesty, and scrubs secrets.
+      - `galaxy.html`, `galaxy.css`, `galaxy.js`: First-class Galaxy UI integration with `nav-item-jarvis` below Dynamic Agents, dedicated workspace panel with live telemetry pills, 5 authoritative domain tabs, conversational stream with epistemic badges, and voice PTT.
+
+16. **Hard Stop Rule Enforcement**:
+    - Android Engineering Workflow, Droid, Child Agents, Voice, OpenJarvis Phase 1, Phase 2, Phase 3, Phase 4, and 🤖 Jarvis Central Assistant are 100% complete and empirically verified.
     - Unreal Engine, Unity, Visual Studio, and Droid Phase 5 remain strictly NOT started awaiting explicit user command.
+
 
 
 

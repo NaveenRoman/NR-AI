@@ -320,6 +320,17 @@ class CompanionDashboard:
                     }, indent=2).encode("utf-8")
                     self._send_json(200, payload)
 
+                # Jarvis Central Assistant Status API
+                elif parsed.path in ("/api/jarvis/status", "/api/jarvis/status/"):
+                    try:
+                        from app.jarvis.assistant import JarvisCentralAssistant
+                        jarvis = JarvisCentralAssistant.get_instance(companion=dashboard_ref.companion)
+                        status_data = jarvis.get_status()
+                        self._send_json(200, json.dumps({"success": True, "status": status_data}, indent=2).encode("utf-8"))
+                    except Exception as exc:
+                        logger.error("Jarvis status route error: %s", exc)
+                        self._send_json(500, json.dumps({"success": False, "error": str(exc)}).encode("utf-8"))
+
                 # Droid Context & Child Agents APIs
                 elif parsed.path in ("/api/droid/context", "/api/droid/context/"):
                     droid_agent = getattr(dashboard_ref.companion, "android_agent", None)
@@ -621,6 +632,28 @@ class CompanionDashboard:
                     resp = dashboard_ref.companion.interact(cmd, speak_output=False, target_agent=target_agent)
                     payload = json.dumps(resp.to_dict() if hasattr(resp, "to_dict") else {"text": str(resp)}, indent=2).encode("utf-8")
                     self._send_json(200, payload)
+
+                # Jarvis Central Assistant Chat API
+                elif parsed.path in ("/api/jarvis/chat", "/api/jarvis/chat/"):
+                    try:
+                        data = json.loads(body) if body else {}
+                        from app.jarvis.assistant import JarvisCentralAssistant
+                        from app.jarvis.models import JarvisRequest
+                        jarvis = JarvisCentralAssistant.get_instance(companion=dashboard_ref.companion)
+                        req = JarvisRequest(
+                            message=data.get("message", ""),
+                            session_id=data.get("session_id", "galaxy_jarvis_session"),
+                            workspace_scope=data.get("workspace_scope", "global"),
+                            include_live_state=data.get("include_live_state", True),
+                            context_budget_chars=int(data.get("context_budget_chars", 4000)),
+                            delegation_allowed=bool(data.get("delegation_allowed", True)),
+                        )
+                        resp = jarvis.process_message(req)
+                        payload = json.dumps({"success": True, "response": resp.to_dict()}, indent=2).encode("utf-8")
+                        self._send_json(200, payload)
+                    except Exception as exc:
+                        logger.error("Jarvis chat route error: %s", exc)
+                        self._send_json(500, json.dumps({"success": False, "error": str(exc)}).encode("utf-8"))
 
                 # Voice Clap Trigger API (Local simulation / test trigger)
                 elif parsed.path in ("/api/voice/clap/trigger", "/api/voice/clap/trigger/"):

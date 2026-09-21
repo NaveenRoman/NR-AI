@@ -5024,3 +5024,236 @@ document.addEventListener("DOMContentLoaded", () => {
   initSpeechRecognition();
   updateVoiceUI();
 });
+
+// =============================================================================
+// 🤖 JARVIS CENTRAL ASSISTANT & UNIFIED MEMORY WORKSPACE CONTROLLER
+// =============================================================================
+
+let jarvisVoiceActive = false;
+
+function openJarvisWorkspace(elem) {
+  // 1. Highlight sidebar item
+  document.querySelectorAll(".nav-list .nav-item").forEach(el => el.classList.remove("active"));
+  if (elem) elem.classList.add("active");
+
+  // 2. Display workspace panel
+  const panel = document.getElementById("jarvisWorkspacePanel");
+  if (panel) {
+    panel.style.display = "flex";
+  }
+
+  // 3. Load latest status & telemetry
+  loadJarvisStatus();
+}
+window.openJarvisWorkspace = openJarvisWorkspace;
+
+function closeJarvisWorkspace() {
+  const panel = document.getElementById("jarvisWorkspacePanel");
+  if (panel) {
+    panel.style.display = "none";
+  }
+  // Reset active item in nav
+  const firstNav = document.querySelector(".nav-list .nav-item");
+  if (firstNav) {
+    document.querySelectorAll(".nav-list .nav-item").forEach(el => el.classList.remove("active"));
+    firstNav.classList.add("active");
+  }
+}
+window.closeJarvisWorkspace = closeJarvisWorkspace;
+
+async function loadJarvisStatus() {
+  try {
+    const res = await fetch("/api/jarvis/status");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.success || !data.status) return;
+
+    const st = data.status;
+    const tel = st.live_telemetry || {};
+    const git = st.git || {};
+
+    const elBackend = document.getElementById("jLiveBackend");
+    if (elBackend) elBackend.textContent = tel.backend_reachable ? "ONLINE (127.0.0.1:8585)" : "LOCAL ONLY";
+
+    const elAgent = document.getElementById("jLiveAgent");
+    if (elAgent) elAgent.textContent = tel.active_agent || "Central Intelligence";
+
+    const elVoice = document.getElementById("jLiveVoice");
+    if (elVoice) elVoice.textContent = `${tel.voice_stt || "faster-whisper"} / ${tel.voice_tts || "kokoro"}`;
+
+    const elDevice = document.getElementById("jLiveDevice");
+    if (elDevice) elDevice.textContent = tel.connected_device || "None";
+
+    const elGit = document.getElementById("jLiveGit");
+    if (elGit) elGit.textContent = git.latest_commit ? git.latest_commit.substring(0, 7) : (tel.latest_git_checkpoint ? tel.latest_git_checkpoint.substring(0, 7) : "HEAD");
+
+    const elEstop = document.getElementById("jLiveEstop");
+    if (elEstop) {
+      if (tel.emergency_stopped) {
+        elEstop.textContent = "ACTIVE (HALTED)";
+        elEstop.style.color = "#ef4444";
+      } else {
+        elEstop.textContent = "CLEAR (NORMAL)";
+        elEstop.style.color = "#10b981";
+      }
+    }
+
+    const badgeGit = document.getElementById("jarvisGitBadge");
+    if (badgeGit) {
+      badgeGit.textContent = `GIT: ${git.branch || "main"} (${git.latest_commit ? git.latest_commit.substring(0, 7) : "HEAD"})`;
+    }
+  } catch (err) {
+    console.warn("Failed to load Jarvis status:", err);
+  }
+}
+window.loadJarvisStatus = loadJarvisStatus;
+
+function executeJarvisQuickPrompt(text) {
+  const input = document.getElementById("jarvisTextInput");
+  if (input) {
+    input.value = text;
+  }
+  sendJarvisMessage();
+}
+window.executeJarvisQuickPrompt = executeJarvisQuickPrompt;
+
+async function sendJarvisMessage() {
+  const input = document.getElementById("jarvisTextInput");
+  if (!input) return;
+  const prompt = input.value.trim();
+  if (!prompt) return;
+  input.value = "";
+
+  // Append user turn
+  appendJarvisTurn("user", prompt);
+
+  const stream = document.getElementById("jarvisChatHistory");
+  if (stream) stream.scrollTop = stream.scrollHeight;
+
+  try {
+    const res = await fetch("/api/jarvis/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: prompt,
+        session_id: "galaxy_jarvis_session",
+        include_live_state: true,
+        delegation_allowed: true,
+      }),
+    });
+
+    if (!res.ok) {
+      appendJarvisTurn("assistant", "I encountered an error communicating with the Jarvis Central Assistant service.", [], "UNCERTAINTY");
+      return;
+    }
+
+    const data = await res.json();
+    if (!data.success || !data.response) {
+      appendJarvisTurn("assistant", "No response received from Jarvis.", [], "UNCERTAINTY");
+      return;
+    }
+
+    const resp = data.response;
+    appendJarvisTurn(
+      "assistant",
+      resp.reply || "",
+      resp.sources || [],
+      resp.epistemic_class || "VERIFIED_FACT",
+      resp.delegated_to
+    );
+
+    // Speak reply if voice is active
+    if (jarvisVoiceActive && resp.reply && state.ttsEnabled) {
+      speakText(resp.reply);
+    }
+  } catch (err) {
+    appendJarvisTurn("assistant", `Jarvis execution error: ${err.message}`, [], "UNCERTAINTY");
+  } finally {
+    if (stream) stream.scrollTop = stream.scrollHeight;
+    loadJarvisStatus();
+  }
+}
+window.sendJarvisMessage = sendJarvisMessage;
+
+function appendJarvisTurn(role, text, sources = [], epistemicClass = "VERIFIED_FACT", delegatedTo = null) {
+  const stream = document.getElementById("jarvisChatHistory");
+  if (!stream) return;
+
+  const turn = document.createElement("div");
+  turn.className = `jarvis-turn ${role}`;
+
+  const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+  let badgeClass = "verified";
+  if (epistemicClass === "CURRENT_INFORMATION") badgeClass = "current";
+  else if (epistemicClass === "SOURCE_ATTRIBUTED_CLAIM") badgeClass = "attributed";
+  else if (epistemicClass === "INFERENCE") badgeClass = "inference";
+  else if (epistemicClass === "UNCERTAINTY") badgeClass = "uncertainty";
+
+  const author = role === "user" ? "👤 YOU" : "🤖 JARVIS";
+
+  let headerHtml = `
+    <div class="jarvis-turn-header">
+      <span class="turn-author">${author}</span>
+      ${role === "assistant" ? `<span class="turn-epistemic-badge ${badgeClass}">[${epistemicClass}]</span>` : ""}
+      <span class="turn-time">${nowStr}</span>
+    </div>
+  `;
+
+  let delegationHtml = "";
+  if (delegatedTo) {
+    delegationHtml = `
+      <div class="jarvis-delegation-card">
+        <span>⚡</span> <span>Specialist Task Delegated to: <strong>${delegatedTo.toUpperCase()}</strong></span>
+      </div>
+    `;
+  }
+
+  // Format text safely
+  const formattedText = escapeHtml(text)
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\n/g, "<br/>");
+
+  let sourcesHtml = "";
+  if (sources && sources.length > 0) {
+    const chips = sources.map(s => {
+      let label = s.title || s.ref || "Source";
+      if (s.source_domain === "GITHUB") label = `Git ${s.ref}`;
+      else if (s.source_domain === "REPORT") label = s.title;
+      else if (s.source_domain === "LIVE") label = "Live Telemetry";
+      else if (s.source_domain === "KNOWLEDGE") label = `Knowledge: ${s.ref}`;
+      return `<span class="jprov-chip" title="${escapeHtml(s.snippet || '')}">[${escapeHtml(label)}]</span>`;
+    }).join("");
+    sourcesHtml = `<div class="jarvis-provenance-chips">${chips}</div>`;
+  }
+
+  turn.innerHTML = `
+    ${headerHtml}
+    ${delegationHtml}
+    <div class="jarvis-turn-body">${formattedText}</div>
+    ${sourcesHtml}
+  `;
+
+  stream.appendChild(turn);
+}
+window.appendJarvisTurn = appendJarvisTurn;
+
+function toggleJarvisVoice() {
+  const btn = document.getElementById("jarvisMicBtn");
+  jarvisVoiceActive = !jarvisVoiceActive;
+  if (jarvisVoiceActive) {
+    if (btn) btn.classList.add("listening");
+    if (typeof safeStartRecognition === "function") {
+      safeStartRecognition();
+    }
+  } else {
+    if (btn) btn.classList.remove("listening");
+    if (typeof stopVoiceCommunication === "function") {
+      stopVoiceCommunication();
+    }
+  }
+}
+window.toggleJarvisVoice = toggleJarvisVoice;
+

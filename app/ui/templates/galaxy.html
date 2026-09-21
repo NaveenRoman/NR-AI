@@ -98,6 +98,10 @@
           <span class="nav-icon">✨</span>
           <span>Dynamic Agents</span>
         </a>
+        <a class="nav-item nav-item-jarvis" id="navItemJarvis" onclick="openJarvisWorkspace(this)" title="Jarvis Central Assistant & Unified Memory">
+          <span class="nav-icon">🤖</span>
+          <span>Jarvis</span>
+        </a>
       </nav>
 
       <div class="sidebar-quote">
@@ -926,6 +930,155 @@
                     <button class="skyshield-btn secondary" onclick="closeSkyShieldPairingModal()">Close</button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+      <!-- 🤖 Dedicated Jarvis Central Assistant & Unified Memory Workspace -->
+      <aside id="jarvisWorkspacePanel" class="jarvis-workspace-panel" style="display: none;">
+        <!-- Header -->
+        <div class="jarvis-header">
+          <div class="jarvis-brand">
+            <div class="jarvis-avatar">🤖</div>
+            <div class="jarvis-title-block">
+              <div class="jarvis-title">JARVIS</div>
+              <div class="jarvis-subtitle">CENTRAL PERSONAL ASSISTANT • UNIFIED MEMORY VIEW</div>
+            </div>
+          </div>
+          <div class="jarvis-header-badges">
+            <span id="jarvisStatusPill" class="jarvis-badge live">● ONLINE</span>
+            <span id="jarvisTrinityBadge" class="jarvis-badge trinity">TRINITY: ACTIVE</span>
+            <span id="jarvisGitBadge" class="jarvis-badge git">GIT: CHECKPOINT</span>
+            <span id="jarvisVoiceBadge" class="jarvis-badge voice">VOICE: READY</span>
+            <button class="jarvis-top-btn estop" onclick="triggerEmergencyStop()" title="Emergency Stop">🛑</button>
+            <button class="jarvis-top-btn close" onclick="closeJarvisWorkspace()" title="Close Jarvis Workspace">✕</button>
+          </div>
+        </div>
+
+        <!-- Main 2-Column Body -->
+        <div class="jarvis-body">
+          <!-- Left Column: Memory & Live State Inspector -->
+          <div class="jarvis-inspector-col">
+            <!-- 1. Live Runtime Telemetry Card -->
+            <div class="jarvis-card">
+              <div class="jarvis-card-header">
+                <span>📡 LIVE RUNTIME TELEMETRY</span>
+                <span class="jarvis-mini-tag" id="jarvisLiveTimestamp">LIVE</span>
+              </div>
+              <div class="jarvis-card-body" id="jarvisLiveTelemetryContent">
+                <div class="jarvis-prop-row"><span>Backend:</span> <strong id="jLiveBackend">ONLINE (127.0.0.1:8585)</strong></div>
+                <div class="jarvis-prop-row"><span>Active Agent:</span> <strong id="jLiveAgent">Central Intelligence</strong></div>
+                <div class="jarvis-prop-row"><span>Voice STT / TTS:</span> <strong id="jLiveVoice">Faster-Whisper / Kokoro</strong></div>
+                <div class="jarvis-prop-row"><span>Connected Device:</span> <strong id="jLiveDevice">Pixel_6_API_34</strong></div>
+                <div class="jarvis-prop-row"><span>Latest Git Checkpoint:</span> <strong id="jLiveGit">HEAD</strong></div>
+                <div class="jarvis-prop-row"><span>Emergency Stop:</span> <strong id="jLiveEstop" style="color: #10b981;">CLEAR (NORMAL)</strong></div>
+              </div>
+            </div>
+
+            <!-- 2. Authoritative Memory Domains Card -->
+            <div class="jarvis-card">
+              <div class="jarvis-card-header">
+                <span>🧠 5 AUTHORITATIVE MEMORY DOMAINS</span>
+                <span class="jarvis-mini-tag">FEDERATED</span>
+              </div>
+              <div class="jarvis-card-body">
+                <div class="jarvis-memory-domain-item">
+                  <span class="jdom-icon">📚</span>
+                  <div class="jdom-info">
+                    <span class="jdom-name">Knowledge Trinity</span>
+                    <span class="jdom-sub">Factual veracity, consensus verification, core schema</span>
+                  </div>
+                  <span class="jdom-tag active">ACTIVE</span>
+                </div>
+                <div class="jarvis-memory-domain-item">
+                  <span class="jdom-icon">⚡</span>
+                  <div class="jdom-info">
+                    <span class="jdom-name">Task Checkpoints</span>
+                    <span class="jdom-sub">Task store, workflow step progression, recovery</span>
+                  </div>
+                  <span class="jdom-tag active">ACTIVE</span>
+                </div>
+                <div class="jarvis-memory-domain-item">
+                  <span class="jdom-icon">📁</span>
+                  <div class="jdom-info">
+                    <span class="jdom-name">Project Context</span>
+                    <span class="jdom-sub">Active project, domain, feature context memory</span>
+                  </div>
+                  <span class="jdom-tag active">ACTIVE</span>
+                </div>
+                <div class="jarvis-memory-domain-item">
+                  <span class="jdom-icon">🐙</span>
+                  <div class="jdom-info">
+                    <span class="jdom-name">Authorized Git &amp; Reports</span>
+                    <span class="jdom-sub">Commit log, checkpoints, phase audit reports (safe, shell=False)</span>
+                  </div>
+                  <span class="jdom-tag active">ACTIVE</span>
+                </div>
+                <div class="jarvis-memory-domain-item">
+                  <span class="jdom-icon">💬</span>
+                  <div class="jdom-info">
+                    <span class="jdom-name">Conversation Continuity</span>
+                    <span class="jdom-sub">Bounded session history, contextual cross-references</span>
+                  </div>
+                  <span class="jdom-tag active">ACTIVE</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Quick Action Chips -->
+            <div class="jarvis-card">
+              <div class="jarvis-card-header">
+                <span>⚡ ASSISTANT CAPABILITIES</span>
+              </div>
+              <div class="jarvis-quick-chips">
+                <button class="jarvis-chip" onclick="executeJarvisQuickPrompt('System status and runtime telemetry')">📡 System Telemetry</button>
+                <button class="jarvis-chip" onclick="executeJarvisQuickPrompt('Recent git checkpoints and commit history')">🐙 Git Checkpoints</button>
+                <button class="jarvis-chip" onclick="executeJarvisQuickPrompt('Explain Knowledge Trinity architecture')">📚 Knowledge Trinity</button>
+                <button class="jarvis-chip" onclick="executeJarvisQuickPrompt('Summarize OpenJarvis integration phase 1 to 4')">🚀 Phase Summary</button>
+                <button class="jarvis-chip" onclick="executeJarvisQuickPrompt('Security scan with SkyShield')">🛡️ Audit Security</button>
+                <button class="jarvis-chip" onclick="executeJarvisQuickPrompt('Droid, check android studio environment status')">📱 Droid Android</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Conversation Stream & Memory Context View -->
+          <div class="jarvis-chat-col">
+            <!-- Messages Container -->
+            <div id="jarvisChatHistory" class="jarvis-chat-stream">
+              <!-- Default welcome turn -->
+              <div class="jarvis-turn assistant">
+                <div class="jarvis-turn-header">
+                  <span class="turn-author">🤖 JARVIS (Central Personal Assistant)</span>
+                  <span class="turn-epistemic-badge verified">[VERIFIED_FACT]</span>
+                  <span class="turn-time">Now</span>
+                </div>
+                <div class="jarvis-turn-body">
+                  Good day. I am <strong>Jarvis</strong>, your Central Personal Assistant and Unified Memory View for NR-AI. I synthesize verified evidence across Knowledge Trinity, Task Checkpoints, Project Context, Git Checkpoints, and Live Telemetry, while coordinating specialist delegation to Droid, SkyShield, Studio, Unity, Unreal, and Sentinel.
+                </div>
+                <div class="jarvis-provenance-chips">
+                  <span class="jprov-chip">[Knowledge Trinity: core]</span>
+                  <span class="jprov-chip">[Live Telemetry]</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Input Bar -->
+            <div class="jarvis-input-container">
+              <div class="jarvis-input-bar">
+                <button id="jarvisMicBtn" class="jarvis-mic-btn" onclick="toggleJarvisVoice()" title="Push-to-Talk / Voice Dictation">
+                  🎤
+                </button>
+                <input 
+                  id="jarvisTextInput" 
+                  type="text" 
+                  class="jarvis-text-input" 
+                  placeholder="Ask Jarvis anything about project memory, git checkpoints, architecture, or delegate tasks..." 
+                  onkeydown="if(event.key==='Enter') sendJarvisMessage()"
+                />
+                <button id="jarvisSendBtn" class="jarvis-send-btn" onclick="sendJarvisMessage()" title="Send">
+                  ➔
+                </button>
               </div>
             </div>
           </div>
